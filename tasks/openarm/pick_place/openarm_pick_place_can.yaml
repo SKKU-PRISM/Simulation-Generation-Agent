@@ -1,0 +1,168 @@
+# Task Document: OpenArmPickPlaceCan
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: OpenArm robot picks a tomato soup can and places it at a target position on the table
+# Reference: Adapted from franka/pick_place_can for OpenArm (~0.6m reach)
+
+task:
+  name: OpenArmPickPlaceCan
+  description: "OpenArm unimanual robot picks up a YCB tomato soup can from one position on the table and places it at a target position marked by a green pad"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01                     # 100 Hz simulation
+  decimation: 5                      # control at 20 Hz (every 5 sim steps)
+  episode_length: 15.0               # seconds (longer than Franka 8s for slower OpenArm)
+  render_interval: 2
+  physx:
+    bounce_threshold: 0.01           # m/s
+    friction_correlation_distance: 0.00625  # m
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]          # IsaacLab convention
+
+assets:
+  # OpenArm Unimanual robot
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/OpenArm/openarm_unimanual/openarm_unimanual.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    initial_joints:
+      openarm_joint1: 1.57               # pi/2
+      openarm_joint2: 0.0
+      openarm_joint3: -1.57              # -pi/2
+      openarm_joint4: 1.57               # pi/2
+      openarm_joint5: 0.0
+      openarm_joint6: 0.0
+      openarm_joint7: 0.0
+      openarm_finger_joint1: 0.044       # gripper open
+      openarm_finger_joint2: 0.044       # gripper open
+    actuators:
+      arm:
+        joint_names: ["openarm_joint1", "openarm_joint2", "openarm_joint3", "openarm_joint4", "openarm_joint5", "openarm_joint6", "openarm_joint7"]
+        stiffness: 80.0
+        damping: 4.0
+        effort_limit_per_joint:
+          openarm_joint1: 40.0
+          openarm_joint2: 40.0
+          openarm_joint3: 27.0
+          openarm_joint4: 27.0
+          openarm_joint5: 7.0
+          openarm_joint6: 7.0
+          openarm_joint7: 7.0
+      gripper:
+        joint_names: ["openarm_finger_joint1", "openarm_finger_joint2"]
+        effort_limit: 333.33          # N
+        stiffness: 2000.0
+        damping: 100.0
+        open_position: 0.044
+        close_position: 0.0
+    ee_frame:
+      body: openarm_hand
+      tcp_frame: openarm_ee_tcp
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable (same as other OpenArm tasks)
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]   # wxyz: Z-axis 90-degree rotation
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # YCB Tomato Soup Can (diameter 6.8cm, height 10.2cm)
+  - name: can
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned_Physics/005_tomato_soup_can.usd"
+    prim_path: "/World/Object"
+    position: [0.3, -0.10, 0.051]    # on table surface, left side (scaled from Franka [0.4, -0.15])
+    rotation: [0.7071, 0.7071, 0, 0] # wxyz: 90 X-rotation to stand upright (USD default height axis is Y)
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.25, 0.38]              # scaled from Franka [0.35, 0.50] by 0.71 ratio
+        y: [-0.18, -0.04]            # scaled from Franka [-0.25, -0.05]
+        z: 0.051                      # fixed on table surface (half of 10.2cm height)
+
+  # Target placement marker (flat green pad on table)
+  - name: target_marker
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/TargetMarker"
+    position: [0.35, 0.10, 0.02]     # on table surface, right side (scaled from Franka [0.5, 0.15])
+    scale: [0.06, 0.06, 0.003]       # flat pad (6cm x 6cm x 3mm)
+    color: [0.0, 0.8, 0.0]           # green
+    physics:
+      rigid_body: false               # static visual marker only
+      collision: false
+    randomize:
+      position:
+        type: absolute
+        x: [0.28, 0.43]              # scaled from Franka [0.40, 0.60] by 0.71 ratio
+        y: [0.04, 0.18]              # scaled from Franka [0.05, 0.25]
+        z: 0.02                       # fixed on table surface
+
+goal:
+  description: "Pick the tomato soup can and place it on the green target marker"
+  conditions:
+    - subject: can
+      relation: at_position
+      target: target_marker
+      tolerance: 0.03                 # 3cm
+    - subject: can
+      relation: on_surface
+      target: table
+      description: "Can must be placed on the table (not dropped)"
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.2, 1.0, 0.8]          # front-oblique tabletop view (OpenArm profile)
+  target: [0.3, 0, 0.2]              # looking at table center (closer for OpenArm)
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Adapted from franka/pick_place_can for OpenArm (~0.6m reach vs Franka ~0.85m)"
+  - "Reach ratio: 0.6/0.85 = 0.71 — spawn ranges scaled proportionally"
+  - "YCB 005_tomato_soup_can: diameter 6.8cm, height 10.2cm"
+  - "OpenArm gripper max opening 0.088m > can diameter 6.8cm (grippable)"
+  - "Can initial z=0.051m (half of 10.2cm height, upright on table)"
+  - "Pick zone: left side of table (y < 0), place zone: right side (y > 0)"
+  - "Target marker is a flat 6cm green pad, randomized on right half of table"
+  - "Episode 15s (longer than Franka 8s for slower OpenArm control)"
+  - "Control rate: 20Hz (decimation=5) vs Franka 50Hz (decimation=2)"
+  - "Finger DOFs: openarm_finger_joint1 + openarm_finger_joint2 (0.044 = open)"
+  - "self_collision: false (OpenArm convention)"
+  - "Ground plane at z=-1.05 (IsaacLab convention)"

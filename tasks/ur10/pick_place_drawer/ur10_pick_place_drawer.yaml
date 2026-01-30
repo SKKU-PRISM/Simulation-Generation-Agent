@@ -1,0 +1,170 @@
+# Task Document: UR10PickPlaceDrawer
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: UR10 robot with suction gripper picks a DexCube and places it on top of a small drawer
+# Reference: Based on franka/pick_place_drawer + UR10 robot config from ur10/pick_place
+
+task:
+  name: UR10PickPlaceDrawer
+  description: "UR10 robot with suction gripper picks up a DexCube from the table and places it on top of a small drawer box positioned on the table"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01                     # 100 Hz simulation
+  decimation: 5                      # control at 20 Hz (matching UR10 convention)
+  episode_length: 15.0               # seconds (longer for pick + transport + elevated place)
+  render_interval: 5
+  physx:
+    bounce_threshold: 0.01           # m/s
+    friction_correlation_distance: 0.00625  # m
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]          # IsaacLab convention
+
+assets:
+  # UR10 robot (suction gripper variant)
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    variant_sets:
+      Gripper: Long_Suction           # activate suction gripper visual
+    initial_joints:                   # EE pointing down
+      shoulder_pan_joint: 0.0
+      shoulder_lift_joint: -1.5707    # -pi/2
+      elbow_joint: 1.5707            # pi/2
+      wrist_1_joint: -1.5707         # -pi/2
+      wrist_2_joint: -1.5707         # -pi/2
+      wrist_3_joint: 0.0
+    actuators:
+      arm:
+        joint_names: ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
+                      "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"]
+        effort_limit: 87.0            # N*m
+        stiffness: 800.0
+        damping: 40.0
+    ee_frame:
+      body: ee_link
+      offset_position: [0.22, 0, 0]  # long suction gripper TCP offset
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]   # wxyz: Z-axis 90-degree rotation
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # Small Sektion Cabinet on table (articulated drawer)
+  - name: drawer
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Sektion_Cabinet/sektion_cabinet_instanceable.usd"
+    prim_path: "/World/Drawer"
+    position: [0.5, 0.15, 0.12]      # right side of table, z = half scaled height
+    rotation: [0, 0, 0, 1]           # wxyz: 180° Z-rotation (front faces robot)
+    scale: [0.3, 0.3, 0.3]           # 0.3x scale → ~24cm tall, ~18cm wide
+    joints:
+      door_left_joint: 0.0
+      door_right_joint: 0.0
+      drawer_bottom_joint: 0.0
+      drawer_top_joint: 0.1           # top drawer slightly open
+    actuators:
+      drawers:
+        joint_names: ["drawer_top_joint", "drawer_bottom_joint"]
+        effort_limit: 87.0
+        stiffness: 10.0
+        damping: 1.0
+      doors:
+        joint_names: ["door_left_joint", "door_right_joint"]
+        effort_limit: 87.0
+        stiffness: 10.0
+        damping: 2.5
+
+  # DexCube to pick up (0.8x scaled)
+  - name: cube
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd"
+    prim_path: "/World/Object"
+    position: [0.4, -0.15, 0.055]    # on table surface, left side
+    rotation: [1, 0, 0, 0]
+    scale: [0.8, 0.8, 0.8]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.35, 0.50]              # left half of table
+        y: [-0.25, -0.05]
+        z: 0.055
+
+  # Target marker on top of cabinet (green pad)
+  - name: target_marker
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/TargetMarker"
+    position: [0.5, 0.15, 0.245]     # on top of scaled cabinet (~0.24m tall)
+    scale: [0.14, 0.10, 0.006]       # 14cm x 10cm x 6mm flat pad
+    color: [0.0, 1.0, 0.0]           # bright green
+    physics:
+      rigid_body: false               # static visual marker only
+      collision: false
+
+goal:
+  description: "Pick the DexCube with suction gripper and place it on top of the small drawer box (green marker)"
+  conditions:
+    - subject: cube
+      relation: at_position
+      target: target_marker
+      tolerance: 0.04                 # 4cm (slightly more tolerant for elevated placement)
+    - subject: cube
+      relation: above
+      target: drawer
+      description: "Cube must be on top of the drawer box"
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.5, 1.2, 1.0]
+  target: [0.5, 0, 0.3]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Based on franka/pick_place_drawer but with UR10 robot"
+  - "UR10 with Gripper variant=Long_Suction (SurfaceGripper at ee_link, TCP offset 0.22m)"
+  - "Sektion Cabinet 0.3x scale on table, top drawer pre-opened 0.1"
+  - "Cabinet rotation [0,0,0,1] wxyz = 180° Z so front faces robot"
+  - "Cube starts on left side (y < 0), must be placed on top of cabinet (y > 0)"
+  - "Episode 15s, dt=0.01, decimation=5 (20Hz control)"
+  - "Ground plane at z=-1.05 (IsaacLab convention)"

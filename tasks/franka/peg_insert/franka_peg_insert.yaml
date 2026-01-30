@@ -1,0 +1,159 @@
+# Task Document: FrankaFactoryPegInsert
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: Franka robot inserts an 8mm peg into a matching 8mm socket hole
+# Reference: IsaacLab factory_env_cfg.py, factory_tasks_cfg.py, factory_env.py
+
+task:
+  name: FrankaFactoryPegInsert
+  description: "Franka Panda robot inserts an 8mm peg into a matching socket hole on a table (contact-rich assembly task)"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.00833                   # 1/120s, 120 Hz simulation
+  decimation: 8                       # control at 15 Hz (120/8)
+  episode_length: 10.0                # seconds
+  render_interval: 2
+  physx:
+    solver_type: TGS                  # Temporal Gauss-Seidel
+    bounce_threshold: 0.2             # m/s
+    friction_correlation_distance: 0.00625  # m
+    friction_offset_threshold: 0.01
+    gpu_max_rigid_contact_count: 8388608    # 2^23, for contact-rich sim
+
+scene:
+  lighting:
+    type: dome
+    intensity: 2000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]
+
+assets:
+  # Franka Panda robot (standard, with Factory-specific initial joints)
+  - name: robot
+    type: articulation
+    source: usd
+    robot_type: franka
+    asset_path: "{ISAACLAB_NUCLEUS_DIR}/Robots/FrankaEmika/panda_instanceable.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    initial_joints:
+      panda_joint1: 0.00871
+      panda_joint2: -0.10368
+      panda_joint3: -0.00794
+      panda_joint4: -1.49139
+      panda_joint5: -0.00083
+      panda_joint6: 1.38774
+      panda_joint7: 0.0
+      panda_finger_joint: 0.04       # gripper open
+    actuators:
+      shoulder:
+        joint_names: ["panda_joint1", "panda_joint2", "panda_joint3", "panda_joint4"]
+        effort_limit: 87.0            # N*m
+        stiffness: 80.0               # N*m/rad
+        damping: 4.0                  # N*m*s/rad
+      forearm:
+        joint_names: ["panda_joint5", "panda_joint6", "panda_joint7"]
+        effort_limit: 12.0            # N*m
+        stiffness: 80.0
+        damping: 4.0
+      hand:
+        joint_names: ["panda_finger_joint.*"]
+        effort_limit: 200.0           # N
+        stiffness: 2000.0             # N/m
+        damping: 100.0                # N*s/m
+    ee_frame:
+      body: panda_hand
+      offset_position: [0, 0, 0.1034] # m, TCP above hand frame
+    physics:
+      self_collision: false
+      solver_position_iterations: 192  # High for contact-rich task
+      solver_velocity_iterations: 1
+      max_depenetration_velocity: 5.0
+
+  # Seattle Lab Table
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.55, 0.0, 0.0]
+    rotation: [0.70711, 0, 0, 0.70711]  # wxyz, 90° Z-rotation
+
+  # Fixed Asset: 8mm Hole socket (on table surface)
+  - name: hole
+    type: rigid
+    source: usd
+    asset_path: "{ISAACLAB_NUCLEUS_DIR}/Factory/factory_hole_8mm.usd"
+    prim_path: "/World/FixedAsset"
+    position: [0.6, 0.0, 0.05]
+    rotation: [1, 0, 0, 0]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.05                      # kg
+      solver_position_iterations: 192
+      solver_velocity_iterations: 1
+      max_depenetration_velocity: 5.0
+      max_linear_velocity: 1000.0
+      max_angular_velocity: 3666.0
+
+  # Held Asset: 8mm Peg (to be inserted into hole)
+  # NOTE: position is a staging pose (original IsaacLab). In RL, peg is placed in gripper via IK at reset.
+  - name: peg
+    type: rigid
+    source: usd
+    asset_path: "{ISAACLAB_NUCLEUS_DIR}/Factory/factory_peg_8mm.usd"
+    prim_path: "/World/HeldAsset"
+    position: [0.0, 0.4, 0.1]
+    rotation: [1, 0, 0, 0]
+    physics:
+      rigid_body: true
+      collision: true
+      disable_gravity: true           # held in gripper during RL (matches IsaacLab source)
+      mass: 0.019                     # kg
+      solver_position_iterations: 192
+      solver_velocity_iterations: 1
+      max_depenetration_velocity: 5.0
+      max_linear_velocity: 1000.0
+      max_angular_velocity: 3666.0
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.0, 0.8, 0.6]          # angled view of table workspace
+  target: [0.6, 0.0, 0.05]           # looking at hole position
+  fov: 60
+  resolution: [1280, 720]
+
+goal:
+  description: "Insert the 8mm peg into the 8mm hole socket on the table"
+  conditions:
+    - subject: peg
+      relation: inserted_into
+      target: hole
+      tolerance: 0.001                # m, XY alignment tolerance
+      description: "Peg centered above hole (XY alignment within 1mm)"
+    - subject: peg
+      relation: height_below
+      target: hole
+      value: 0.02                     # m, insertion depth
+      description: "Peg inserted to at least 80% of hole depth (0.025m)"
+
+notes:
+  - "Source: Isaac Lab factory_env_cfg.py, factory_tasks_cfg.py, factory_env.py"
+  - "Isaac-Factory-PegInsert-Direct-v0 environment"
+  - "Factory 원본은 franka_mimic.usd이지만 씬 구성용으로 robot_type: franka 사용"
+  - "Contact-rich task: PhysX solver iterations = 192 (vs typical 8-16)"
+  - "Peg diameter: 7.986mm, Hole diameter: 8.1mm (clearance: ~0.114mm)"
+  - "Held asset (peg) has gravity disabled in RL training (held in gripper)"
+  - "Fixed asset (hole) sits on table surface at z=0.05m"
+  - "Table at (0.55, 0, 0) with 90° rotation, same as all Factory tasks"
+  - "Episode: 10s, sim dt: 1/120s, control dt: 8/120s = ~15Hz"
+  - "Reward: multi-scale keypoints [baseline(5,4), coarse(50,2), fine(100,0)]"
+  - "Success threshold: 4% of hole height, Engage threshold: 90% of hole height"

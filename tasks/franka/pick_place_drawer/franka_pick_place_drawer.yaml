@@ -1,0 +1,181 @@
+# Task Document: FrankaPickPlaceDrawer
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: Franka robot picks a DexCube from the table and places it on top of a small drawer
+# Reference: Based on franka/pick_place with added drawer container on table
+
+task:
+  name: FrankaPickPlaceDrawer
+  description: "Franka Panda robot picks up a DexCube from the table and places it on top of a small drawer box positioned on the table"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01                     # 100 Hz simulation
+  decimation: 2                      # control at 50 Hz (every 2 sim steps)
+  episode_length: 10.0               # seconds (longer than standard pick_place for elevated placement)
+  render_interval: 2
+  physx:
+    bounce_threshold: 0.01           # m/s
+    friction_correlation_distance: 0.00625  # m
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]          # IsaacLab convention
+
+assets:
+  # Franka Panda robot (FRANKA_PANDA_CFG global default)
+  - name: robot
+    type: articulation
+    source: usd
+    robot_type: franka
+    asset_path: "{ISAACLAB_NUCLEUS_DIR}/Robots/FrankaEmika/panda_instanceable.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    initial_joints:                       # Franka ready pose (gripper pointing down)
+      panda_joint1: 0.0
+      panda_joint2: -0.7854              # -pi/4
+      panda_joint3: 0.0
+      panda_joint4: -2.3562              # -3pi/4
+      panda_joint5: 0.0
+      panda_joint6: 1.5708               # pi/2
+      panda_joint7: 0.7854               # pi/4
+      panda_finger_joint: 0.04           # gripper open
+    actuators:
+      shoulder:
+        joint_names: ["panda_joint1", "panda_joint2", "panda_joint3", "panda_joint4"]
+        effort_limit: 87.0            # N*m
+        stiffness: 80.0               # N*m/rad
+        damping: 4.0                  # N*m*s/rad
+      forearm:
+        joint_names: ["panda_joint5", "panda_joint6", "panda_joint7"]
+        effort_limit: 12.0            # N*m
+        stiffness: 80.0
+        damping: 4.0
+      hand:
+        joint_names: ["panda_finger_joint.*"]
+        effort_limit: 200.0           # N
+        stiffness: 2000.0             # N/m
+        damping: 100.0                # N*s/m
+    ee_frame:
+      body: panda_hand
+      offset_position: [0, 0, 0.1034] # m, TCP above hand frame
+    physics:
+      self_collision: true
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]   # wxyz: Z-axis 90-degree rotation
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # Small Sektion Cabinet on table (articulated drawer)
+  - name: drawer
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Sektion_Cabinet/sektion_cabinet_instanceable.usd"
+    prim_path: "/World/Drawer"
+    position: [0.5, 0.15, 0.12]      # right side of table, z = half scaled height
+    rotation: [0, 0, 0, 1]           # wxyz: 180° Z-rotation (front faces robot)
+    scale: [0.3, 0.3, 0.3]           # 0.3x scale → ~24cm tall, ~18cm wide
+    joints:
+      door_left_joint: 0.0
+      door_right_joint: 0.0
+      drawer_bottom_joint: 0.0
+      drawer_top_joint: 0.1           # top drawer slightly open
+    actuators:
+      drawers:
+        joint_names: ["drawer_top_joint", "drawer_bottom_joint"]
+        effort_limit: 87.0
+        stiffness: 10.0
+        damping: 1.0
+      doors:
+        joint_names: ["door_left_joint", "door_right_joint"]
+        effort_limit: 87.0
+        stiffness: 10.0
+        damping: 2.5
+
+  # DexCube to pick up (0.8x scaled)
+  - name: cube
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd"
+    prim_path: "/World/Object"
+    position: [0.4, -0.15, 0.055]    # on table surface, left side
+    rotation: [1, 0, 0, 0]
+    scale: [0.8, 0.8, 0.8]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0    # rad/s
+      max_linear_velocity: 1000.0     # m/s
+      max_depenetration_velocity: 5.0 # m/s
+    randomize:
+      position:
+        type: absolute
+        x: [0.35, 0.50]              # left half of table
+        y: [-0.25, -0.05]
+        z: 0.055                      # fixed on table surface
+
+  # Target marker on top of cabinet (green pad)
+  - name: target_marker
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/TargetMarker"
+    position: [0.5, 0.15, 0.245]     # on top of scaled cabinet (~0.24m tall)
+    scale: [0.14, 0.10, 0.006]       # 14cm x 10cm x 6mm flat pad (fits on scaled cabinet top)
+    color: [0.0, 1.0, 0.0]           # bright green
+    physics:
+      rigid_body: false               # static visual marker only
+      collision: false
+
+goal:
+  description: "Pick the DexCube from the table and place it on top of the small drawer box (green marker)"
+  conditions:
+    - subject: cube
+      relation: at_position
+      target: target_marker
+      tolerance: 0.04                 # 4cm (slightly more tolerant for elevated placement)
+    - subject: cube
+      relation: above
+      target: drawer
+      description: "Cube must be on top of the drawer box"
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.5, 1.2, 1.0]          # front-oblique tabletop view
+  target: [0.5, 0, 0.3]              # looking at table center
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Based on franka/pick_place with Sektion Cabinet as small drawer on table"
+  - "Cabinet scaled to 0.3x → ~24cm tall, ~18cm wide, with actual articulated drawers"
+  - "Cabinet rotation [0,0,0,1] wxyz = 180° Z so front faces robot"
+  - "Top drawer pre-opened 0.1 for visual cue"
+  - "Cube starts on left side (y < 0), must be placed on top of cabinet (y > 0)"
+  - "Elevated placement: cabinet top ~0.24m, cube target z ~0.27"
+  - "Episode 10s (longer than basic pick_place 8s for precision placement)"
+  - "Ground plane at z=-1.05 (IsaacLab convention)"
