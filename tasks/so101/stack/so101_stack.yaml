@@ -1,0 +1,198 @@
+# Task Document: SO101Stack
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: SO-101 robot stacks 3 small colored cubes on a desktop workspace
+# Reference: FrankaStack adapted for SO-101 (LeRobot) small desktop arm
+
+task:
+  name: SO101Stack
+  description: "SO-101 follower arm picks up small colored cubes and stacks them in order: Cube_1/Blue (bottom) -> Cube_2/Red (middle) -> Cube_3/Green (top)"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01                     # 100 Hz simulation
+  decimation: 5                      # control at 20 Hz (every 5 sim steps)
+  episode_length: 30.0               # seconds
+  render_interval: 2
+  physx:
+    bounce_threshold: 0.01           # m/s
+    friction_correlation_distance: 0.00625  # m
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]          # IsaacLab convention
+
+assets:
+  # SO-101 Follower Arm (LeRobot)
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "assets/robots/so101/so101.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    initial_joints:
+      shoulder_pan: 0.0
+      shoulder_lift: -1.57            # -pi/2
+      elbow_flex: 1.57                # pi/2
+      wrist_flex: 0.0
+      wrist_roll: 0.0
+      gripper: 1.0                    # open
+    actuators:
+      arm:
+        joint_names: ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"]
+        effort_limit: 10.0            # N*m (STS3215 servo)
+        stiffness: 17.8               # N*m/rad (Seeed Studio recommended)
+        damping: 0.60                 # N*m*s/rad
+      hand:
+        joint_names: ["gripper"]
+        effort_limit: 10.0            # N*m
+        stiffness: 200.0              # N*m/rad
+        damping: 10.0                 # N*m*s/rad
+    ee_frame:
+      body: gripper_frame_link
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+    randomize:
+      joint_position:
+        distribution: gaussian
+        mean: 0.0
+        std: 0.02                     # rad
+
+  # Small desktop table (primitive box)
+  - name: table
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Table"
+    position: [0.15, 0.0, -0.015]    # just below workspace level
+    scale: [0.30, 0.30, 0.03]        # 30cm x 30cm x 3cm flat surface
+    color: [0.6, 0.5, 0.4]           # light wood color
+    physics:
+      rigid_body: false
+      collision: true
+
+  # Cube_1 (Blue block — small 2cm cube)
+  - name: cube_1
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Cube_1"
+    position: [0.12, 0.0, 0.01]
+    scale: [0.02, 0.02, 0.02]        # 2cm cube (fits SO-101 gripper)
+    color: [0.2, 0.3, 0.9]           # blue
+    semantic_tag: ["class", "cube_1"]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.02                      # 20g
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0    # rad/s
+      max_linear_velocity: 1000.0     # m/s
+      max_depenetration_velocity: 5.0 # m/s
+    randomize:
+      position:
+        type: absolute
+        x: [0.10, 0.20]
+        y: [-0.08, 0.08]
+        z: 0.01                       # fixed on table
+      orientation:
+        yaw: [-1.0, 1.0]             # rad
+      min_separation: 0.04            # 4cm min between cubes
+
+  # Cube_2 (Red block — small 2cm cube)
+  - name: cube_2
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Cube_2"
+    position: [0.15, 0.04, 0.01]
+    scale: [0.02, 0.02, 0.02]
+    color: [0.9, 0.2, 0.2]           # red
+    semantic_tag: ["class", "cube_2"]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.02
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.10, 0.20]
+        y: [-0.08, 0.08]
+        z: 0.01
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.04
+
+  # Cube_3 (Green block — small 2cm cube)
+  - name: cube_3
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Cube_3"
+    position: [0.18, -0.04, 0.01]
+    scale: [0.02, 0.02, 0.02]
+    color: [0.2, 0.9, 0.3]           # green
+    semantic_tag: ["class", "cube_3"]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.02
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.10, 0.20]
+        y: [-0.08, 0.08]
+        z: 0.01
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.04
+
+goal:
+  description: "Stack cubes in order: Cube_1/Blue (bottom) -> Cube_2/Red (middle) -> Cube_3/Green (top)"
+  success_criteria:
+    xy_threshold: 0.02                # m, max x-y distance between stacked cubes (tighter for small cubes)
+    height_diff: 0.02                 # m, expected vertical distance between cubes (2cm cube size)
+    height_threshold: 0.003           # m, tolerance on height difference
+    gripper_must_be_open: true
+
+camera:
+  prim_path: "/World/Camera"
+  position: [0.5, 0.4, 0.35]         # close desktop view
+  target: [0.15, 0, 0.1]             # looking at workspace center
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "SO-101 follower arm (LeRobot/HuggingFace), 5 arm DOF + 1 gripper DOF"
+  - "Local USD asset from URDF conversion (not Nucleus)"
+  - "Small 2cm primitive cubes (no USD block assets) to fit SO-101 claw gripper"
+  - "Desktop workspace ~30cm x 30cm, reach_ratio 0.33 vs Franka"
+  - "Cube spawn range: x=[0.10, 0.20], y=[-0.08, 0.08], min 4cm separation"
+  - "Table is a primitive box (no SeattleLabTable — too large for SO-101)"
+  - "Control rate: 20Hz (decimation=5), episode: 30s"
+  - "Ground plane at z=-1.05 (IsaacLab convention)"
