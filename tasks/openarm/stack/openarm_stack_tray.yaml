@@ -1,0 +1,269 @@
+# Task Document: OpenArmStackTray
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: OpenArm robot stacks 3 colored cubes inside a tray on the table
+# Reference: Based on franka/stack_tray adapted for OpenArm (~0.6m reach, ratio 0.71)
+
+task:
+  name: OpenArmStackTray
+  description: "OpenArm unimanual robot picks up colored cubes and stacks them inside a tray on the table in order: Blue (bottom) -> Red (middle) -> Green (top)"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]
+  timestep: 0.01
+  decimation: 5
+  episode_length: 40.0               # longer for OpenArm (slower)
+  render_interval: 2
+  physx:
+    bounce_threshold: 0.01
+    friction_correlation_distance: 0.00625
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]
+
+assets:
+  # OpenArm Unimanual robot
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/OpenArm/openarm_unimanual/openarm_unimanual.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]
+    initial_joints:
+      openarm_joint1: 1.57
+      openarm_joint2: 0.0
+      openarm_joint3: -1.57
+      openarm_joint4: 1.57
+      openarm_joint5: 0.0
+      openarm_joint6: 0.0
+      openarm_joint7: 0.0
+      openarm_finger_joint1: 0.044
+      openarm_finger_joint2: 0.044
+    actuators:
+      arm:
+        joint_names: ["openarm_joint1", "openarm_joint2", "openarm_joint3", "openarm_joint4", "openarm_joint5", "openarm_joint6", "openarm_joint7"]
+        stiffness: 80.0
+        damping: 4.0
+        effort_limit_per_joint:
+          openarm_joint1: 40.0
+          openarm_joint2: 40.0
+          openarm_joint3: 27.0
+          openarm_joint4: 27.0
+          openarm_joint5: 7.0
+          openarm_joint6: 7.0
+          openarm_joint7: 7.0
+      gripper:
+        joint_names: ["openarm_finger_joint1", "openarm_finger_joint2"]
+        effort_limit: 333.33
+        stiffness: 2000.0
+        damping: 100.0
+        open_position: 0.044
+        close_position: 0.0
+    ee_frame:
+      body: openarm_hand
+      tcp_frame: openarm_ee_tcp
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+    randomize:
+      joint_position:
+        distribution: gaussian
+        mean: 0.0
+        std: 0.02
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # === Tray: base + 4 walls (same size, closer to robot) ===
+  # Tray center: [0.35, 0, 0] for OpenArm reach
+
+  - name: tray_base
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Tray/Base"
+    position: [0.35, 0.0, 0.002]
+    scale: [0.17, 0.17, 0.004]
+    color: [0.65, 0.50, 0.30]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: tray_wall_front
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Tray/WallFront"
+    position: [0.435, 0.0, 0.034]
+    scale: [0.005, 0.17, 0.06]
+    color: [0.65, 0.50, 0.30]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: tray_wall_back
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Tray/WallBack"
+    position: [0.265, 0.0, 0.034]
+    scale: [0.005, 0.17, 0.06]
+    color: [0.65, 0.50, 0.30]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: tray_wall_left
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Tray/WallLeft"
+    position: [0.35, -0.085, 0.034]
+    scale: [0.17, 0.005, 0.06]
+    color: [0.65, 0.50, 0.30]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: tray_wall_right
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Tray/WallRight"
+    position: [0.35, 0.085, 0.034]
+    scale: [0.17, 0.005, 0.06]
+    color: [0.65, 0.50, 0.30]
+    physics:
+      rigid_body: false
+      collision: true
+
+  # === Cubes (spawn outside tray) ===
+
+  - name: cube_1
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/blue_block.usd"
+    prim_path: "/World/Cube_1"
+    position: [0.3, -0.2, 0.0203]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    semantic_tag: ["class", "cube_1"]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.25, 0.45]
+        y: [-0.25, -0.15]
+        z: 0.0203
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.08
+
+  - name: cube_2
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/red_block.usd"
+    prim_path: "/World/Cube_2"
+    position: [0.35, -0.2, 0.0203]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    semantic_tag: ["class", "cube_2"]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.25, 0.45]
+        y: [-0.25, -0.15]
+        z: 0.0203
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.08
+
+  - name: cube_3
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/green_block.usd"
+    prim_path: "/World/Cube_3"
+    position: [0.40, -0.22, 0.0203]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    semantic_tag: ["class", "cube_3"]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.25, 0.45]
+        y: [-0.25, -0.15]
+        z: 0.0203
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.08
+
+goal:
+  description: "Stack cubes inside the tray in order: Blue (bottom) -> Red (middle) -> Green (top)"
+  success_criteria:
+    xy_threshold: 0.04
+    height_diff: 0.0468
+    height_threshold: 0.005
+    gripper_must_be_open: true
+    inside_tray: true
+    tray_center: [0.35, 0.0]
+    tray_half_extent: 0.08
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.2, 1.0, 0.8]
+  target: [0.3, 0, 0.2]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Based on franka/stack_tray adapted for OpenArm (~0.6m reach)"
+  - "Tray center at [0.35, 0, 0] — closer to robot for shorter reach"
+  - "Cubes spawn outside tray (y < -0.15), must be stacked inside"
+  - "Episode 40s (longer than Franka 30s for slower OpenArm)"
+  - "self_collision: false (OpenArm convention)"

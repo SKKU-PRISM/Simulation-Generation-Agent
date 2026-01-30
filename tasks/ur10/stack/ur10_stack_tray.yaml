@@ -1,0 +1,249 @@
+# Task Document: UR10StackTray
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: UR10 robot with suction gripper stacks 3 colored cubes inside a tray
+# Reference: Based on franka/stack_tray with UR10 robot config
+
+task:
+  name: UR10StackTray
+  description: "UR10 robot with suction gripper picks and stacks three colored cubes inside a tray on the table in order: Blue (bottom) -> Red (middle) -> Green (top)"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]
+  timestep: 0.01
+  decimation: 5
+  episode_length: 30.0
+  render_interval: 5
+  physx:
+    bounce_threshold: 0.01
+    friction_correlation_distance: 0.00625
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]
+
+assets:
+  # UR10 robot (suction gripper)
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]
+    variant_sets:
+      Gripper: Long_Suction
+    initial_joints:
+      shoulder_pan_joint: 0.0
+      shoulder_lift_joint: -1.5707
+      elbow_joint: 1.5707
+      wrist_1_joint: -1.5707
+      wrist_2_joint: -1.5707
+      wrist_3_joint: 0.0
+    actuators:
+      arm:
+        joint_names: ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
+                      "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"]
+        effort_limit: 87.0
+        stiffness: 800.0
+        damping: 40.0
+    ee_frame:
+      body: ee_link
+      offset_position: [0.22, 0, 0]
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # === Tray: base + 4 walls ===
+  # Tray center: [0.5, 0, 0] (same as Franka)
+
+  - name: tray_base
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Tray/Base"
+    position: [0.5, 0.0, 0.002]
+    scale: [0.17, 0.17, 0.004]
+    color: [0.65, 0.50, 0.30]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: tray_wall_front
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Tray/WallFront"
+    position: [0.585, 0.0, 0.034]
+    scale: [0.005, 0.17, 0.06]
+    color: [0.65, 0.50, 0.30]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: tray_wall_back
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Tray/WallBack"
+    position: [0.415, 0.0, 0.034]
+    scale: [0.005, 0.17, 0.06]
+    color: [0.65, 0.50, 0.30]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: tray_wall_left
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Tray/WallLeft"
+    position: [0.5, -0.085, 0.034]
+    scale: [0.17, 0.005, 0.06]
+    color: [0.65, 0.50, 0.30]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: tray_wall_right
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Tray/WallRight"
+    position: [0.5, 0.085, 0.034]
+    scale: [0.17, 0.005, 0.06]
+    color: [0.65, 0.50, 0.30]
+    physics:
+      rigid_body: false
+      collision: true
+
+  # === Cubes (spawn outside tray) ===
+
+  - name: cube_1
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/blue_block.usd"
+    prim_path: "/World/Cube_1"
+    position: [0.4, -0.2, 0.0203]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    semantic_tag: ["class", "cube_1"]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.35, 0.65]
+        y: [-0.30, -0.15]
+        z: 0.0203
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.08
+
+  - name: cube_2
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/red_block.usd"
+    prim_path: "/World/Cube_2"
+    position: [0.55, -0.2, 0.0203]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    semantic_tag: ["class", "cube_2"]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.35, 0.65]
+        y: [-0.30, -0.15]
+        z: 0.0203
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.08
+
+  - name: cube_3
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/green_block.usd"
+    prim_path: "/World/Cube_3"
+    position: [0.60, -0.25, 0.0203]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    semantic_tag: ["class", "cube_3"]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.35, 0.65]
+        y: [-0.30, -0.15]
+        z: 0.0203
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.08
+
+goal:
+  description: "Stack cubes inside the tray with suction gripper in order: Blue (bottom) -> Red (middle) -> Green (top)"
+  success_criteria:
+    xy_threshold: 0.04
+    height_diff: 0.0468
+    height_threshold: 0.005
+    gripper_must_be_open: true
+    inside_tray: true
+    tray_center: [0.5, 0.0]
+    tray_half_extent: 0.08
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.5, 1.2, 1.0]
+  target: [0.25, 0, 0.3]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Based on franka/stack_tray with UR10 robot"
+  - "UR10 suction gripper (Long_Suction variant)"
+  - "Cubes spawn outside tray (y < -0.15), must be stacked inside"
+  - "Episode 30s, dt=0.01, decimation=5 (20Hz control)"
