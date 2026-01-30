@@ -91,8 +91,6 @@ AutoEnvConstruction/
 │   └── robot_profiles/           # 로봇별 kinematics 프로파일
 ├── prompts/
 │   └── vlm_evaluation.md         # VLM 평가 프롬프트 템플릿
-├── .claude/skills/               # Claude Code 스킬 정의
-├── CLAUDE.md                     # Claude Code 가이드
 └── requirements.txt
 ```
 
