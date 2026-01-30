@@ -1,0 +1,144 @@
+# Task Document: FrankaLift
+# Version: 1.1.0
+# Template: v2.0.0
+# Description: Franka robot lifts a DexCube from the table to a target height
+# Reference: IsaacLab lift_env_cfg.py, config/franka/joint_pos_env_cfg.py
+
+task:
+  name: FrankaLift
+  description: "Franka Panda robot grasps a DexCube on the table and lifts it to a commanded target pose above the table"
+  version: "1.1.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01                     # 100 Hz simulation
+  decimation: 2                      # control at 50 Hz (every 2 sim steps)
+  episode_length: 5.0                # seconds
+  render_interval: 2
+  physx:
+    bounce_threshold: 0.01           # m/s
+    friction_correlation_distance: 0.00625  # m
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]          # IsaacLab convention
+
+assets:
+  # Franka Panda robot
+  - name: robot
+    type: articulation
+    source: usd
+    robot_type: franka
+    asset_path: "{ISAACLAB_NUCLEUS_DIR}/Robots/FrankaEmika/panda_instanceable.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    initial_joints:                       # Franka ready pose (gripper pointing down)
+      panda_joint1: 0.0
+      panda_joint2: -0.7854              # -pi/4
+      panda_joint3: 0.0
+      panda_joint4: -2.3562              # -3pi/4
+      panda_joint5: 0.0
+      panda_joint6: 1.5708               # pi/2
+      panda_joint7: 0.7854               # pi/4
+      panda_finger_joint: 0.04           # gripper open
+    actuators:
+      shoulder:
+        joint_names: ["panda_joint1", "panda_joint2", "panda_joint3", "panda_joint4"]
+        effort_limit: 87.0            # N*m
+        stiffness: 80.0               # N*m/rad
+        damping: 4.0                  # N*m*s/rad
+      forearm:
+        joint_names: ["panda_joint5", "panda_joint6", "panda_joint7"]
+        effort_limit: 12.0            # N*m
+        stiffness: 80.0
+        damping: 4.0
+      hand:
+        joint_names: ["panda_finger_joint.*"]
+        effort_limit: 200.0           # N
+        stiffness: 2000.0             # N/m
+        damping: 100.0                # N*s/m
+    ee_frame:
+      body: panda_hand
+      offset_position: [0, 0, 0.1034] # m, TCP above hand frame
+    physics:
+      self_collision: true
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]   # wxyz: 90-degree rotation
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # DexCube (0.8x scaled)
+  - name: cube
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd"
+    prim_path: "/World/Object"
+    position: [0.5, 0.0, 0.055]      # on table surface
+    rotation: [1, 0, 0, 0]
+    scale: [0.8, 0.8, 0.8]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0    # rad/s
+      max_linear_velocity: 1000.0     # m/s
+      max_depenetration_velocity: 5.0 # m/s
+    randomize:
+      position:
+        type: relative                # offset from initial position
+        x: [-0.1, 0.1]
+        y: [-0.25, 0.25]
+        z: 0.0                        # fixed on table
+
+goal:
+  description: "Lift the cube to the commanded target pose above the table"
+  conditions:
+    - subject: cube
+      relation: height_above
+      value: 0.04                     # minimum lift threshold (m)
+    - subject: cube
+      relation: at_position
+      target: command_pose
+      tolerance: 0.05                 # coarse tracking (m)
+  command_ranges:
+    position:
+      x: [0.4, 0.6]
+      y: [-0.25, 0.25]
+      z: [0.25, 0.5]                 # target height range
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.5, 1.2, 1.0]              # front-oblique tabletop view
+  target: [0.5, 0, 0.3]                # looking at table center
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Values from IsaacLab lift_env_cfg.py and config/franka/joint_pos_env_cfg.py"
+  - "DexCube at 0.8x scale, initial z=0.055m (table surface height)"
+  - "Object drops below z=-0.05m triggers episode termination"
+  - "Control rate: 50Hz (decimation=2), episode: 5s"
+  - "Cube position randomized with relative offset on x,y axes at episode reset"
+  - "Ground plane at z=-1.05 (IsaacLab convention)"

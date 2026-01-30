@@ -1,0 +1,203 @@
+# Task Document: FrankaStack
+# Version: 1.1.0
+# Template: v2.0.0
+# Description: Franka robot stacks 3 colored cubes on a SeattleLabTable
+# Reference: IsaacLab stack_env_cfg.py, config/franka/stack_joint_pos_env_cfg.py
+
+task:
+  name: FrankaStack
+  description: "Franka Panda robot picks up colored cubes and stacks them in order: Cube_1/Blue (bottom) -> Cube_2/Red (middle) -> Cube_3/Green (top)"
+  version: "1.1.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01                     # 100 Hz simulation
+  decimation: 5                      # control at 20 Hz (every 5 sim steps)
+  episode_length: 30.0               # seconds
+  render_interval: 2
+  physx:
+    bounce_threshold: 0.01           # m/s
+    friction_correlation_distance: 0.00625  # m
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]          # IsaacLab convention
+
+assets:
+  # Franka Panda robot
+  - name: robot
+    type: articulation
+    source: usd
+    robot_type: franka
+    asset_path: "{ISAACLAB_NUCLEUS_DIR}/Robots/FrankaEmika/panda_instanceable.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    initial_joints:                       # Franka ready pose (gripper pointing down)
+      panda_joint1: 0.0
+      panda_joint2: -0.7854              # -pi/4
+      panda_joint3: 0.0
+      panda_joint4: -2.3562              # -3pi/4
+      panda_joint5: 0.0
+      panda_joint6: 1.5708               # pi/2
+      panda_joint7: 0.7854               # pi/4
+      panda_finger_joint: 0.04           # gripper open
+    actuators:
+      shoulder:
+        joint_names: ["panda_joint1", "panda_joint2", "panda_joint3", "panda_joint4"]
+        effort_limit: 87.0            # N*m
+        stiffness: 80.0               # N*m/rad
+        damping: 4.0                  # N*m*s/rad
+      forearm:
+        joint_names: ["panda_joint5", "panda_joint6", "panda_joint7"]
+        effort_limit: 12.0            # N*m
+        stiffness: 80.0
+        damping: 4.0
+      hand:
+        joint_names: ["panda_finger_joint.*"]
+        effort_limit: 200.0           # N
+        stiffness: 2000.0             # N/m
+        damping: 100.0                # N*s/m
+    ee_frame:
+      body: panda_hand
+      offset_position: [0, 0, 0.1034] # m, TCP above hand frame
+    physics:
+      self_collision: true
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+    randomize:
+      joint_position:
+        distribution: gaussian
+        mean: 0.0
+        std: 0.02                     # rad
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]   # wxyz: 90-degree Z rotation
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # Cube_1 (Blue block)
+  - name: cube_1
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/blue_block.usd"
+    prim_path: "/World/Cube_1"
+    position: [0.4, 0.0, 0.0203]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    semantic_tag: ["class", "cube_1"]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0    # rad/s
+      max_linear_velocity: 1000.0     # m/s
+      max_depenetration_velocity: 5.0 # m/s
+    randomize:
+      position:
+        type: absolute                # NOT relative offset
+        x: [0.4, 0.6]
+        y: [-0.1, 0.1]
+        z: 0.0203                     # fixed
+      orientation:
+        yaw: [-1.0, 1.0]             # rad, randomized each episode
+      min_separation: 0.1             # m, minimum distance between cubes
+
+  # Cube_2 (Red block)
+  - name: cube_2
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/red_block.usd"
+    prim_path: "/World/Cube_2"
+    position: [0.55, 0.05, 0.0203]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    semantic_tag: ["class", "cube_2"]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.4, 0.6]
+        y: [-0.1, 0.1]
+        z: 0.0203
+      orientation:
+        yaw: [-1.0, 1.0]             # rad, randomized each episode
+      min_separation: 0.1
+
+  # Cube_3 (Green block)
+  - name: cube_3
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/green_block.usd"
+    prim_path: "/World/Cube_3"
+    position: [0.60, -0.1, 0.0203]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    semantic_tag: ["class", "cube_3"]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.4, 0.6]
+        y: [-0.1, 0.1]
+        z: 0.0203
+      orientation:
+        yaw: [-1.0, 1.0]             # rad, randomized each episode
+      min_separation: 0.1
+
+goal:
+  description: "Stack cubes in order: Cube_1/Blue (bottom) -> Cube_2/Red (middle) -> Cube_3/Green (top)"
+  success_criteria:
+    xy_threshold: 0.04                # m, max x-y distance between stacked cubes
+    height_diff: 0.0468               # m, expected vertical distance between stacked cubes
+    height_threshold: 0.005           # m, tolerance on height difference
+    gripper_must_be_open: true        # gripper open at 0.04m when success checked
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.5, 1.2, 1.0]              # from GT metadata (franka_stack.jpg)
+  target: [0.25, 0, 0.3]               # from GT metadata
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "All values from IsaacLab stack_env_cfg.py and config/franka/stack_joint_pos_env_cfg.py"
+  - "Cubes are USD blocks (blue_block, red_block, green_block), NOT primitives"
+  - "Cube z=0.0203m is table surface + half cube height"
+  - "Cube positions randomized with absolute range, min 0.1m separation"
+  - "Robot joints randomized with Gaussian noise std=0.02 rad at episode reset"
+  - "Stack task uses task-specific initial joint pose, not standard Franka default"
+  - "Ground plane at z=-1.05 (IsaacLab convention)"
+  - "Control rate: 20Hz (decimation=5), episode: 30s"

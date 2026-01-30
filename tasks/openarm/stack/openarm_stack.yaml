@@ -1,0 +1,210 @@
+# Task Document: OpenArmStack
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: OpenArm robot stacks 3 colored cubes on a SeattleLabTable
+# Reference: IsaacLab stack_env_cfg.py, adapted from franka/stack for OpenArm (~0.6m reach)
+
+task:
+  name: OpenArmStack
+  description: "OpenArm unimanual robot picks up colored cubes and stacks them in order: Cube_1/Blue (bottom) -> Cube_2/Red (middle) -> Cube_3/Green (top)"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01                     # 100 Hz simulation
+  decimation: 5                      # control at 20 Hz (every 5 sim steps)
+  episode_length: 30.0               # seconds
+  render_interval: 2
+  physx:
+    bounce_threshold: 0.01           # m/s
+    friction_correlation_distance: 0.00625  # m
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]          # IsaacLab convention
+
+assets:
+  # OpenArm Unimanual robot
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/OpenArm/openarm_unimanual/openarm_unimanual.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    initial_joints:
+      openarm_joint1: 1.57               # pi/2
+      openarm_joint2: 0.0
+      openarm_joint3: -1.57              # -pi/2
+      openarm_joint4: 1.57               # pi/2
+      openarm_joint5: 0.0
+      openarm_joint6: 0.0
+      openarm_joint7: 0.0
+      openarm_finger_joint1: 0.0           # left finger closed
+      openarm_finger_joint2: 0.0           # right finger closed
+    actuators:
+      arm:
+        joint_names: ["openarm_joint1", "openarm_joint2", "openarm_joint3", "openarm_joint4", "openarm_joint5", "openarm_joint6", "openarm_joint7"]
+        stiffness: 80.0
+        damping: 4.0
+        effort_limit_per_joint:
+          openarm_joint1: 40.0
+          openarm_joint2: 40.0
+          openarm_joint3: 27.0
+          openarm_joint4: 27.0
+          openarm_joint5: 7.0
+          openarm_joint6: 7.0
+          openarm_joint7: 7.0
+      gripper:
+        joint_names: ["openarm_finger_joint1", "openarm_finger_joint2"]
+        effort_limit: 333.33          # N*m
+        stiffness: 2000.0
+        damping: 100.0
+        open_position: 0.044
+        close_position: 0.0
+    ee_frame:
+      body: openarm_hand
+      tcp_frame: openarm_ee_tcp
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+    randomize:
+      joint_position:
+        distribution: gaussian
+        mean: 0.0
+        std: 0.02                     # rad
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]   # wxyz: 90-degree Z rotation
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # Cube_1 (Blue block) — closer to robot for OpenArm's shorter reach
+  - name: cube_1
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/blue_block.usd"
+    prim_path: "/World/Cube_1"
+    position: [0.3, 0.0, 0.0203]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    semantic_tag: ["class", "cube_1"]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0    # rad/s
+      max_linear_velocity: 1000.0     # m/s
+      max_depenetration_velocity: 5.0 # m/s
+    randomize:
+      position:
+        type: absolute
+        x: [0.25, 0.45]              # narrower range for shorter reach (Franka: [0.4, 0.6])
+        y: [-0.1, 0.1]
+        z: 0.0203                     # fixed
+      orientation:
+        yaw: [-1.0, 1.0]             # rad, randomized each episode
+      min_separation: 0.1             # m, minimum distance between cubes
+
+  # Cube_2 (Red block)
+  - name: cube_2
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/red_block.usd"
+    prim_path: "/World/Cube_2"
+    position: [0.35, 0.05, 0.0203]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    semantic_tag: ["class", "cube_2"]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.25, 0.45]
+        y: [-0.1, 0.1]
+        z: 0.0203
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.1
+
+  # Cube_3 (Green block)
+  - name: cube_3
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/green_block.usd"
+    prim_path: "/World/Cube_3"
+    position: [0.40, -0.05, 0.0203]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    semantic_tag: ["class", "cube_3"]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.25, 0.45]
+        y: [-0.1, 0.1]
+        z: 0.0203
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.1
+
+goal:
+  description: "Stack cubes in order: Cube_1/Blue (bottom) -> Cube_2/Red (middle) -> Cube_3/Green (top)"
+  success_criteria:
+    xy_threshold: 0.04                # m, max x-y distance between stacked cubes
+    height_diff: 0.0468               # m, expected vertical distance between stacked cubes
+    height_threshold: 0.005           # m, tolerance on height difference
+    gripper_must_be_open: true        # gripper open at 0.044m when success checked
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.2, 1.0, 0.8]
+  target: [0.3, 0, 0.2]              # looking at table center (closer for OpenArm)
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Adapted from franka/stack for OpenArm (~0.6m reach vs Franka ~0.85m)"
+  - "Cube positions shifted closer: x range [0.25, 0.45] vs Franka [0.4, 0.6]"
+  - "Reach ratio: 0.6/0.85 ≈ 0.71 — positions scaled proportionally"
+  - "Cube z=0.0203m is table surface + half cube height (4cm blocks)"
+  - "Cubes are USD blocks (blue_block, red_block, green_block)"
+  - "Min separation 0.1m between cubes (same as Franka)"
+  - "Gripper open=0.044 > cube width 0.04m — gripper can grasp cubes"
+  - "Robot joints randomized with Gaussian noise std=0.02 rad"
+  - "Finger DOFs: openarm_finger_joint1 + openarm_finger_joint2"
+  - "Control rate: 20Hz (decimation=5), episode: 30s"
+  - "Ground plane at z=-1.05 (IsaacLab convention)"

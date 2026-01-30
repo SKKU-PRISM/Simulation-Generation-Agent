@@ -1,0 +1,80 @@
+# AutoEnvConstruction Pipeline Configuration
+
+pipeline:
+  # Score threshold to consider document as "good enough"
+  threshold: 80
+
+  # Maximum number of refinement iterations
+  max_iterations: 5
+
+  # Delay between iterations (seconds) for stability
+  iteration_delay: 2.0
+
+  # Whether to save intermediate documents
+  save_intermediate: true
+
+# Version management settings for document rollback
+version_management:
+  # Number of consecutive score declines before triggering rollback
+  # Set to a higher value (e.g., 3) for more tolerance of temporary dips
+  rollback_threshold: 2
+
+  # Rollback strategy:
+  # - "best": Roll back to the highest-scoring version
+  # - "previous": Roll back to the immediately previous version
+  rollback_strategy: "best"
+
+  # Whether to continue refinement after rollback
+  # true: Continue trying to improve from the rollback point
+  # false: Stop the pipeline after rollback
+  keep_trying_after_rollback: true
+
+mcp:
+  # Isaac Sim MCP server connection
+  host: localhost
+  port: 8766
+
+  # Socket timeout for long operations (seconds)
+  timeout: 300
+
+  # Retry settings
+  max_retries: 3
+  retry_delay: 1.0
+
+scene:
+  # Default physics settings
+  physics:
+    gravity: [0, 0, -9.81]  # m/s^2
+    timestep: 0.01          # 100 Hz
+
+  # Default lighting
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  # Wait time after scene creation for rendering (seconds)
+  render_settle_time: 1.0
+
+screenshot:
+  # Default resolution
+  resolution: [1280, 720]
+
+  # Output format
+  format: png
+
+  # Camera settings (if not specified in document)
+  default_camera:
+    position: [2.0, 2.0, 1.5]
+    target: [0, 0, 0.3]
+    fov: 60
+
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: INFO
+
+  # Save logs to file
+  save_to_file: true
+
+  # Log file rotation
+  max_log_files: 10

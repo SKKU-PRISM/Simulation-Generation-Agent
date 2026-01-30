@@ -1,0 +1,130 @@
+# Task Document: UR10Cabinet
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: UR10 robot opens the top drawer of a Sektion Cabinet
+# Reference: Based on Franka cabinet task (no IsaacLab UR10 cabinet exists)
+
+task:
+  name: UR10Cabinet
+  description: "UR10 robot approaches the top drawer handle and pulls to open the drawer"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01667                  # 1/60s, 60 Hz simulation
+  decimation: 1                      # control at 60 Hz (every sim step)
+  episode_length: 8.0                # seconds
+  render_interval: 1
+  physx:
+    solver_type: TGS                 # Temporal Gauss-Seidel
+    bounce_threshold: 0.01           # m/s
+    friction_correlation_distance: 0.00625  # m
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, 0]              # GroundPlaneCfg default
+
+assets:
+  # UR10 robot
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    prim_path: "/World/Robot"
+    position: [-0.2, 0, 0]           # further back (UR10 has longer reach than Franka)
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    variant_sets:
+      Gripper: Long_Suction           # activate suction gripper visual
+    initial_joints:                   # UR10_CFG default (arm folded, EE forward)
+      shoulder_pan_joint: 0.0
+      shoulder_lift_joint: -1.712
+      elbow_joint: 1.712
+      wrist_1_joint: 0.0
+      wrist_2_joint: 0.0
+      wrist_3_joint: 0.0
+    actuators:
+      arm:
+        joint_names: ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
+                      "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"]
+        effort_limit: 87.0            # N*m
+        stiffness: 800.0
+        damping: 40.0
+    ee_frame:
+      body: ee_link
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+    randomize:
+      joint_position:
+        distribution: uniform
+        range: [-0.1, 0.1]           # rad, at episode reset
+
+  # Sektion Cabinet (articulated: doors + drawers)
+  - name: cabinet
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Sektion_Cabinet/sektion_cabinet_instanceable.usd"
+    prim_path: "/World/Cabinet"
+    position: [0.8, 0.0, 0.4]
+    rotation: [0, 0, 0, 1]           # wxyz quaternion: 180 deg Z-rotation (front faces robot)
+    joints:
+      door_left_joint: 0.0
+      door_right_joint: 0.0
+      drawer_bottom_joint: 0.0
+      drawer_top_joint: 0.0           # target joint to open
+    actuators:
+      drawers:
+        joint_names: ["drawer_top_joint", "drawer_bottom_joint"]
+        effort_limit: 87.0
+        stiffness: 10.0
+        damping: 1.0
+      doors:
+        joint_names: ["door_left_joint", "door_right_joint"]
+        effort_limit: 87.0
+        stiffness: 10.0
+        damping: 2.5
+    handle:
+      name: drawer_handle_top
+      prim_path: "/World/Cabinet/drawer_handle_top"
+      offset_position: [0.305, 0.0, 0.01]
+      offset_rotation: [0.5, 0.5, -0.5, -0.5]
+
+goal:
+  description: "Open the top drawer of the cabinet by pulling the handle"
+  conditions:
+    - subject: drawer_top_joint
+      relation: position_above
+      value: 0.01                     # easy threshold (m)
+    - subject: drawer_top_joint
+      relation: position_above
+      value: 0.2                      # medium threshold (m)
+    - subject: drawer_top_joint
+      relation: position_above
+      value: 0.3                      # hard threshold (m)
+
+camera:
+  prim_path: "/World/Camera"
+  position: [-0.7, 1.0, 1.0]
+  target: [0.4, 0.0, 0.35]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Based on Franka cabinet task (no IsaacLab UR10 cabinet exists)"
+  - "Same cabinet asset and layout as Franka cabinet task"
+  - "UR10_CFG default joints (arm folded, EE forward)"
+  - "UR10 with Long_Suction gripper variant for handle grasping"
+  - "Robot at [-0.2, 0, 0] — 1.0m from cabinet (UR10 longer reach than Franka)"
+  - "Cabinet at [0.8, 0, 0.4] with 180 deg Z-rotation (front faces robot)"
+  - "Target: drawer_top_joint, handle offset [0.305, 0, 0.01]"
+  - "Control rate: 60Hz (decimation=1), episode: 8s, PhysX solver: TGS"
+  - "Ground plane at z=0 (cabinet task GroundPlaneCfg default)"

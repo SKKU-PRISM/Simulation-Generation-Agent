@@ -1,0 +1,49 @@
+# VLM Evaluator Configuration
+
+model:
+  # Anthropic model for vision evaluation
+  name: claude-sonnet-4-20250514
+
+  # Max tokens for response
+  max_tokens: 2000
+
+  # Temperature (0 = deterministic)
+  temperature: 0
+
+evaluation:
+  # Scoring weights (must sum to 100)
+  weights:
+    asset_presence: 30
+    position_layout: 30
+    visual_correctness: 20
+    scene_completeness: 20
+
+  # Detailed feedback settings
+  feedback:
+    # Include specific position error estimates
+    include_position_errors: true
+
+    # Include document improvement suggestions
+    include_doc_improvements: true
+
+    # Max suggestions per category
+    max_suggestions: 5
+
+  # Strict mode: fail on any missing asset
+  strict_asset_check: true
+
+image:
+  # Resize image before sending to VLM (for cost optimization)
+  resize_for_eval: true
+  max_dimension: 1280
+
+  # Image quality for JPEG (if used)
+  jpeg_quality: 85
+
+retry:
+  # Retry on API errors
+  max_retries: 3
+  retry_delay: 2.0
+
+  # Retry on parsing errors
+  retry_on_parse_error: true

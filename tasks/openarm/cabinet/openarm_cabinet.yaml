@@ -1,0 +1,166 @@
+# Task Document: OpenArmCabinet
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: OpenArm robot opens the bottom drawer of a scaled-down Sektion Cabinet
+# Reference: IsaacLab cabinet_openarm_env_cfg.py, config/openarm/joint_pos_env_cfg.py
+
+task:
+  name: OpenArmCabinet
+  description: "OpenArm unimanual robot approaches the bottom drawer handle, grasps it, and pulls to open the drawer"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01667                   # 1/60s, 60 Hz simulation
+  decimation: 1                       # control at 60 Hz (every sim step)
+  episode_length: 8.0                 # seconds
+  render_interval: 1
+  physx:
+    solver_type: TGS                  # Temporal Gauss-Seidel
+    bounce_threshold: 0.01            # m/s
+    friction_correlation_distance: 0.00625  # m
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, 0]              # cabinet task uses z=0 ground (no offset)
+
+assets:
+  # OpenArm Unimanual robot
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/OpenArm/openarm_unimanual/openarm_unimanual.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    initial_joints:
+      openarm_joint1: 1.57               # pi/2
+      openarm_joint2: 0.0
+      openarm_joint3: -1.57              # -pi/2
+      openarm_joint4: 1.57               # pi/2
+      openarm_joint5: 0.0
+      openarm_joint6: 0.0
+      openarm_joint7: 0.0
+      openarm_finger_joint1: 0.0            # left finger closed
+      openarm_finger_joint2: 0.0            # right finger closed
+    actuators:
+      arm:
+        joint_names: ["openarm_joint1", "openarm_joint2", "openarm_joint3", "openarm_joint4", "openarm_joint5", "openarm_joint6", "openarm_joint7"]
+        stiffness: 80.0
+        damping: 4.0
+        effort_limit_per_joint:
+          openarm_joint1: 40.0
+          openarm_joint2: 40.0
+          openarm_joint3: 27.0
+          openarm_joint4: 27.0
+          openarm_joint5: 7.0
+          openarm_joint6: 7.0
+          openarm_joint7: 7.0
+      gripper:
+        joint_names: ["openarm_finger_joint.*"]
+        effort_limit: 333.33          # N*m
+        stiffness: 2000.0
+        damping: 100.0
+        open_position: 0.044
+        close_position: 0.0
+    ee_frame:
+      body: openarm_hand
+      tcp_frame: openarm_ee_tcp
+      tool_frames:
+        - name: tool_leftfinger
+          body: openarm_left_finger
+          offset_position: [0.0, -0.005, 0.075]
+        - name: tool_rightfinger
+          body: openarm_right_finger
+          offset_position: [0.0, 0.005, 0.075]
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+    randomize:
+      joint_position:
+        distribution: uniform
+        range: [-0.1, 0.1]           # rad, at episode reset
+      physics_material:
+        body_names: ".*"
+        static_friction: [0.8, 1.25]
+        dynamic_friction: [0.8, 1.25]
+        restitution: [0.0, 0.0]
+        num_buckets: 16
+
+  # Sektion Cabinet (scaled to 0.75 for smaller robot)
+  - name: cabinet
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Sektion_Cabinet/sektion_cabinet_instanceable.usd"
+    prim_path: "/World/Cabinet"
+    position: [0.7, 0.0, 0.3]        # closer than Franka (0.8)
+    rotation: [0, 0, 0, 1]           # wxyz: 180 deg Z-rotation (front faces robot)
+    scale: [0.75, 0.75, 0.75]        # scaled down for smaller robot
+    joints:
+      door_left_joint: 0.0
+      door_right_joint: 0.0
+      drawer_bottom_joint: 0.0       # target joint to open
+      drawer_top_joint: 0.0
+    actuators:
+      drawers:
+        joint_names: ["drawer_top_joint", "drawer_bottom_joint"]
+        effort_limit: 87.0            # N*m
+        stiffness: 10.0
+        damping: 1.0
+      doors:
+        joint_names: ["door_left_joint", "door_right_joint"]
+        effort_limit: 87.0            # N*m
+        stiffness: 10.0
+        damping: 2.5
+    handle:
+      name: drawer_handle_bottom
+      prim_path: "/World/Cabinet/drawer_handle_bottom"
+      offset_position: [0.222, 0.0, 0.005]  # m, from handle frame (smaller offset than Franka)
+      offset_rotation: [0.5, 0.5, -0.5, -0.5]  # wxyz, aligned for EE grasping
+    randomize:
+      physics_material:
+        body_names: "drawer_handle_bottom"
+        static_friction: [2.25, 2.5]
+        dynamic_friction: [2.0, 2.25]
+        restitution: [0.0, 0.0]
+        num_buckets: 16
+
+goal:
+  description: "Open the bottom drawer of the cabinet by grasping the handle and pulling"
+  conditions:
+    - subject: drawer_bottom_joint
+      relation: position_above
+      value: 0.01                     # easy threshold (m)
+    - subject: drawer_bottom_joint
+      relation: position_above
+      value: 0.2                      # medium threshold (m)
+    - subject: drawer_bottom_joint
+      relation: position_above
+      value: 0.3                      # hard threshold (m)
+
+camera:
+  prim_path: "/World/Camera"
+  position: [-0.5, 1.0, 1.0]            # behind-robot view (consistent with franka/ur10 cabinet)
+  target: [0.35, 0.0, 0.25]            # cabinet front center (adjusted for 0.75x scale + closer position)
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Values from IsaacLab cabinet_openarm_env_cfg.py and config/openarm/joint_pos_env_cfg.py"
+  - "OpenArm is smaller — cabinet scaled to 0.75x and positioned at [0.7, 0, 0.3]"
+  - "Target: drawer_bottom_joint (not top like Franka), handle offset [0.222, 0, 0.005]"
+  - "Ground plane at z=0 (cabinet task convention, different from lift/reach z=-1.05)"
+  - "Control rate: 60Hz (decimation=1), episode: 8s, PhysX solver: TGS"
+  - "Robot and cabinet handle friction randomized at startup with 16 buckets each"
+  - "Robot joint positions randomized +-0.1 rad (uniform) at episode reset"
+  - "Cabinet rotation wxyz=[0,0,0,1] (180 deg Z), front faces robot"
+  - "Gripper open=0.044, close=0.0 (binary), approach offset=0.04"

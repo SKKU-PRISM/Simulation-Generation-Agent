@@ -1,0 +1,126 @@
+# Task Document: OpenArmReach
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: OpenArm robot tracks a commanded end-effector pose above the table
+# Reference: IsaacLab reach_openarm_uni_env_cfg.py, config/openarm/unimanual/joint_pos_env_cfg.py
+
+task:
+  name: OpenArmReach
+  description: "OpenArm unimanual robot tracks a commanded end-effector position and orientation target in workspace"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01667                   # 1/60s, 60 Hz simulation
+  decimation: 2                       # control at 30 Hz (every 2 sim steps)
+  episode_length: 12.0                # seconds
+  render_interval: 2
+
+scene:
+  lighting:
+    type: dome
+    intensity: 2500                   # slightly dimmer than lift/cabinet
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]          # IsaacLab convention
+
+assets:
+  # OpenArm Unimanual robot
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/OpenArm/openarm_unimanual/openarm_unimanual.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    initial_joints:
+      openarm_joint1: 1.57               # pi/2
+      openarm_joint2: 0.0
+      openarm_joint3: -1.57              # -pi/2
+      openarm_joint4: 1.57               # pi/2
+      openarm_joint5: 0.0
+      openarm_joint6: 0.0
+      openarm_joint7: 0.0
+      openarm_finger_joint1: 0.0          # left finger closed (reach task, no grasping)
+      openarm_finger_joint2: 0.0          # right finger closed
+    actuators:
+      arm:
+        joint_names: ["openarm_joint1", "openarm_joint2", "openarm_joint3", "openarm_joint4", "openarm_joint5", "openarm_joint6", "openarm_joint7"]
+        stiffness: 80.0
+        damping: 4.0
+        effort_limit_per_joint:
+          openarm_joint1: 40.0
+          openarm_joint2: 40.0
+          openarm_joint3: 27.0
+          openarm_joint4: 27.0
+          openarm_joint5: 7.0
+          openarm_joint6: 7.0
+          openarm_joint7: 7.0
+    ee_frame:
+      body: openarm_hand
+      tcp_frame: openarm_ee_tcp
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+    randomize:
+      joint_position:
+        distribution: scale           # scale factor from default (not offset)
+        range: [0.5, 1.5]
+
+  # SeattleLabTable (slightly further than lift)
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.55, 0.0, 0.0]       # 0.55 (vs 0.5 for lift)
+    rotation: [0.707, 0, 0, 0.707]   # wxyz: 90-degree Z rotation
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+goal:
+  description: "Track the commanded end-effector pose (position + orientation) in 6D workspace"
+  conditions:
+    - subject: end_effector
+      relation: at_position
+      target: command_pose
+      tolerance: 0.05                 # position tracking threshold (m)
+    - subject: end_effector
+      relation: at_orientation
+      target: command_pose
+      tolerance: 0.1                  # orientation tracking threshold (rad)
+  command_ranges:
+    position:
+      x: [0.25, 0.35]
+      y: [-0.2, 0.2]
+      z: [0.3, 0.4]
+    orientation:
+      roll: [-0.524, 0.524]           # +-pi/6
+      pitch: [1.5708, 1.5708]         # pi/2 (fixed, EE pointing down)
+      yaw: [-0.349, 0.349]            # +-pi/9
+  resampling_interval: 4.0            # seconds between new command
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.2, 1.0, 0.8]
+  target: [0.4, 0, 0.2]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Values from IsaacLab reach_openarm_uni_env_cfg.py and config/openarm/unimanual/joint_pos_env_cfg.py"
+  - "No manipulation object — pure end-effector pose tracking task"
+  - "Table at [0.55, 0, 0] (slightly further than lift [0.5, 0, 0])"
+  - "Command workspace: x=(0.25, 0.35), y=(-0.2, 0.2), z=(0.3, 0.4)"
+  - "Orientation command: roll +-30deg, pitch fixed 90deg, yaw +-20deg"
+  - "Joint reset uses scale factor (0.5, 1.5) from default, not additive offset"
+  - "Gripper closed (0.0) — no grasping in reach task"
+  - "Control rate: 30Hz (decimation=2 at 60Hz sim), episode: 12s"
+  - "Lighting intensity: 2500 (dimmer than other OpenArm tasks)"
+  - "Ground plane at z=-1.05 (IsaacLab convention)"

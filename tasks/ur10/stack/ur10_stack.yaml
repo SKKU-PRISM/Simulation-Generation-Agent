@@ -1,0 +1,191 @@
+# Task Document: UR10Stack
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: UR10 robot with suction gripper stacks three colored cubes
+# Reference: IsaacLab stack/config/ur10_gripper/stack_joint_pos_env_cfg.py
+
+task:
+  name: UR10Stack
+  description: "UR10 robot with suction gripper picks and stacks three colored cubes (blue, red, green) on the table"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01                     # 100 Hz simulation
+  decimation: 5                      # control at 20 Hz (every 5 sim steps)
+  episode_length: 30.0               # seconds (long for multi-cube stacking)
+  render_interval: 5
+  physx:
+    bounce_threshold: 0.01           # m/s
+    friction_correlation_distance: 0.00625  # m
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]          # IsaacLab convention
+
+assets:
+  # UR10 robot (UR10_CFG base, suction gripper variant in IsaacLab)
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    variant_sets:
+      Gripper: Long_Suction           # activate suction gripper visual
+    initial_joints:                   # stack task default pose (arm straight up, EE down)
+      shoulder_pan_joint: 0.0
+      shoulder_lift_joint: -1.5707    # -pi/2
+      elbow_joint: 1.5707            # pi/2
+      wrist_1_joint: -1.5707         # -pi/2
+      wrist_2_joint: -1.5707         # -pi/2
+      wrist_3_joint: 0.0
+    actuators:
+      arm:
+        joint_names: ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
+                      "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"]
+        effort_limit: 87.0            # N*m
+        stiffness: 800.0
+        damping: 40.0
+    ee_frame:
+      body: ee_link
+      offset_position: [0.22, 0, 0]  # long suction gripper TCP offset
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]   # wxyz: Z-axis 90-degree rotation
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # Blue cube
+  - name: cube_1
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/blue_block.usd"
+    prim_path: "/World/Cube_1"
+    position: [0.4, 0.0, 0.0203]     # on table surface
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]           # 4cm cube (native size)
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.4, 0.6]
+        y: [-0.1, 0.1]
+        z: 0.0203
+      orientation:
+        yaw: [-1.0, 1.0]             # rad
+      min_separation: 0.1
+
+  # Red cube
+  - name: cube_2
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/red_block.usd"
+    prim_path: "/World/Cube_2"
+    position: [0.55, 0.05, 0.0203]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.4, 0.6]
+        y: [-0.1, 0.1]
+        z: 0.0203
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.1
+
+  # Green cube
+  - name: cube_3
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/green_block.usd"
+    prim_path: "/World/Cube_3"
+    position: [0.60, -0.1, 0.0203]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.4, 0.6]
+        y: [-0.1, 0.1]
+        z: 0.0203
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.1
+
+goal:
+  description: "Stack the three cubes (blue on bottom, red in middle, green on top)"
+  conditions:
+    - subject: cube_2
+      relation: on_top_of
+      target: cube_1
+      tolerance: 0.02
+    - subject: cube_3
+      relation: on_top_of
+      target: cube_2
+      tolerance: 0.02
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.5, 1.2, 1.0]
+  target: [0.25, 0, 0.3]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Based on IsaacLab stack task (ur10_gripper/stack_joint_pos_env_cfg.py)"
+  - "UR10 with long suction gripper (SurfaceGripper at ee_link, TCP offset 0.22m)"
+  - "USD asset: /Isaac/Robots/UniversalRobots/ur10/ur10.usd with Gripper variant=Long_Suction"
+  - "Suction gripper activated via USD variant set (Long_Suction visual mesh + SurfaceGripperCfg API)"
+  - "Stack task joints: [0, -pi/2, pi/2, -pi/2, -pi/2, 0] (arm upright, EE pointing down)"
+  - "Same scene layout as Franka stack: table [0.5,0,0], 3 colored blocks"
+  - "Cubes: 4cm blocks (scale 1.0), z=0.0203 on table surface"
+  - "DR: x=[0.4,0.6], y=[-0.1,0.1], yaw=[-1.0,1.0], min_separation=0.1"
+  - "Episode 30s (vs Franka 5s), dt=0.01, decimation=5"
+  - "Ground plane at z=-1.05 (IsaacLab convention)"

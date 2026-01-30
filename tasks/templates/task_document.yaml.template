@@ -1,0 +1,136 @@
+# Task Document Template
+# Version: 2.0.0
+# Description: Template for defining robot simulation tasks
+#
+# Usage: Copy this template and fill in the values for your specific task.
+# Fields marked (optional) can be omitted. The "randomize" block on any asset
+# or scene property is optional — omit it for a fixed scene.
+
+task:
+  name: TaskName                    # Human-readable task name
+  description: "Task description"   # What the robot should accomplish
+  version: "1.0.0"                 # Document version (increment on changes)
+
+scene:
+  # Physics configuration
+  physics:
+    gravity: [0, 0, -9.81]         # m/s^2, Z-up coordinate system
+    timestep: 0.01                 # Simulation timestep (100 Hz default)
+
+  # Lighting configuration
+  lighting:
+    type: dome                     # dome, distant, or sphere
+    intensity: 3000                # Light intensity (default value)
+    color: [0.75, 0.75, 0.75]     # RGB normalized (0-1)
+    randomize:                     # (optional) per-episode randomization
+      intensity: [1500, 5000]      # [min, max] uniform sampling
+
+  # Ground plane
+  ground:
+    enabled: true
+    position: [0, 0, 0]
+    size: [10, 10]                 # (optional) ground plane size
+
+# Scene assets
+# Each asset has a "source" field indicating how it is loaded:
+#   - primitive : Simple shapes (cube, sphere, cylinder) created directly
+#   - usd       : Load from a USD file (URL or local path)
+#   - asset_db  : Fetch from an external asset database (e.g. Objaverse)
+assets:
+  # ── Robot ──────────────────────────────────────────────
+  - name: robot
+    type: articulation
+    source: usd
+    robot_type: franka              # (optional) shorthand for known robots
+    asset_path: "/Isaac/Robots/Franka/franka_alt_fingers.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]         # Quaternion (w, x, y, z)
+
+  # ── Static object (USD) ───────────────────────────────
+  - name: table
+    type: static
+    source: usd
+    asset_url: "https://example.com/Assets/table_instanceable.usd"  # remote URL
+    # asset_path: "/Isaac/Props/table.usd"                          # or local path
+    prim_path: "/World/Table"
+    position: [0.5, 0, 0]
+    rotation: [1, 0, 0, 0]
+    scale: [1, 1, 1]
+
+  # ── Rigid body (primitive) ────────────────────────────
+  - name: object_1
+    type: rigid
+    source: primitive
+    primitive: cube                # cube, sphere, cylinder
+    prim_path: "/World/Object_1"
+    position: [0.4, 0.0, 0.82]
+    scale: [0.04, 0.04, 0.04]
+    color: [1.0, 0.0, 0.0]        # RGB normalized
+    physics:
+      mass: 0.1                    # kg
+      collision: true
+      rigid_body: true
+      friction: 0.5                # (optional)
+    randomize:                     # (optional) per-episode randomization
+      color:
+        r: [0.7, 1.0]             # randomize red channel in range
+        # omitted channels keep their default value
+      position:
+        x: [0.3, 0.55]            # [min, max]
+        y: [-0.1, 0.1]
+        # omitted axes keep their default value (z stays on table)
+
+  # ── Rigid body (external asset DB) ────────────────────
+  # Use this when the object is too complex for a primitive and
+  # should be fetched from an external asset database.
+  - name: mug
+    type: rigid
+    source: asset_db
+    asset_db:
+      provider: objaverse          # Asset database provider
+      query: "ceramic coffee mug"  # Search query or category
+      uid: ""                      # (optional) pin a specific asset by ID
+      tags: ["mug", "ceramic"]     # (optional) filter tags
+      pool_size: 10                # (optional) number of candidates for randomization
+    prim_path: "/World/Mug"
+    position: [0.45, 0.1, 0.82]
+    scale: [0.08, 0.08, 0.08]
+    physics:
+      mass: 0.2
+      collision: true
+      rigid_body: true
+    randomize:
+      position:
+        x: [0.3, 0.55]
+        y: [-0.1, 0.1]
+
+# Task goal — describes the desired end state
+goal:
+  description: "Describe the goal state"
+
+# Camera configuration for observation / evaluation
+camera:
+  prim_path: "/World/Camera"
+  position: [1.5, 1.5, 1.0]
+  target: [0.5, 0, 0.3]           # Look-at target
+  fov: 60                         # Field of view in degrees
+  resolution: [1280, 720]
+
+# Optional notes
+notes:
+  - "Any special considerations for this task"
+
+# ─────────────────────────────────────────────────────────
+# Randomization reference
+# ─────────────────────────────────────────────────────────
+# The "randomize" block can appear on:
+#   - scene.lighting   → intensity, color
+#   - assets[]         → position, color
+#
+# Rules:
+#   - Values are [min, max], sampled uniformly per episode.
+#   - Only specified axes/channels are randomized; others keep defaults.
+#   - If "randomize" is omitted entirely, the asset uses fixed values.
+#   - For asset_db sources without a uid, a different asset is sampled
+#     from the query results each episode (up to pool_size candidates).

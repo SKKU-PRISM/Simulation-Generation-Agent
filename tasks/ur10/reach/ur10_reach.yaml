@@ -1,0 +1,119 @@
+# Task Document: UR10Reach
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: UR10 robot reaches to target positions on the table workspace
+# Reference: IsaacLab reach_env_cfg.py + ur_10/joint_pos_env_cfg.py
+
+task:
+  name: UR10Reach
+  description: "UR10 robot reaches its end-effector to randomized target positions in the workspace above the table"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.0167                   # ~60 Hz simulation (1/60)
+  decimation: 2                      # control at ~30 Hz
+  episode_length: 12.0               # seconds
+  render_interval: 2
+  physx:
+    bounce_threshold: 0.2            # m/s (reach task default)
+    friction_correlation_distance: 0.025  # m
+
+scene:
+  lighting:
+    type: dome
+    intensity: 2500
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]          # IsaacLab convention
+
+assets:
+  # UR10 robot (UR10_CFG)
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    initial_joints:                   # UR10_CFG default joint positions
+      shoulder_pan_joint: 0.0
+      shoulder_lift_joint: -1.712
+      elbow_joint: 1.712
+      wrist_1_joint: 0.0
+      wrist_2_joint: 0.0
+      wrist_3_joint: 0.0
+    actuators:
+      arm:
+        joint_names: ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
+                      "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"]
+        effort_limit: 87.0            # N*m
+        stiffness: 800.0              # N*m/rad
+        damping: 40.0                 # N*m*s/rad
+    ee_frame:
+      body: ee_link
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.55, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]   # wxyz: Z-axis 90-degree rotation
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # Target marker (sphere indicating reach target)
+  - name: target_marker
+    type: rigid
+    source: primitive
+    primitive: sphere
+    prim_path: "/World/TargetMarker"
+    position: [0.5, 0.0, 0.35]       # workspace center above table
+    scale: [0.05, 0.05, 0.05]        # 5cm diameter
+    color: [1.0, 0.0, 0.0]           # red
+    physics:
+      rigid_body: false               # static visual marker
+      collision: false
+    randomize:
+      position:
+        type: absolute
+        x: [0.35, 0.65]              # reach workspace x range
+        y: [-0.2, 0.2]               # reach workspace y range
+        z: [0.15, 0.5]               # reach workspace z range
+
+goal:
+  description: "Move the UR10 end-effector to the red target marker position"
+  conditions:
+    - subject: robot_ee
+      relation: at_position
+      target: target_marker
+      tolerance: 0.02                 # 2cm position tolerance
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.5, 1.2, 1.0]
+  target: [0.3, 0, 0.3]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Based on IsaacLab reach task (ur_10/joint_pos_env_cfg.py)"
+  - "UR10_CFG: 6-DOF arm, no gripper, ee_link end-effector"
+  - "USD asset: /Isaac/Robots/UniversalRobots/ur10/ur10.usd (non-instanceable)"
+  - "Table at [0.55, 0, 0] (reach cfg, slightly different from Franka tasks [0.5, 0, 0])"
+  - "Reach workspace: x=[0.35,0.65], y=[-0.2,0.2], z=[0.15,0.5]"
+  - "Default joints: shoulder_lift=-1.712, elbow=1.712 (arm folded, EE forward)"
+  - "Actuator stiffness/damping: 800/40 (single group for all 6 joints)"
+  - "Episode 12s, simulation ~60Hz, control ~30Hz"
+  - "Ground plane at z=-1.05 (IsaacLab convention)"

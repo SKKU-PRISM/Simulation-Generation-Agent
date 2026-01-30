@@ -1,0 +1,21 @@
+# AutoEnvConstruction Dependencies
+
+# Core
+pyyaml>=6.0
+anthropic>=0.40.0
+pydantic>=2.0
+
+# Image processing
+pillow>=10.0
+numpy>=1.24
+
+# Async support
+aiofiles>=23.0
+asyncio-throttle>=1.0
+
+# Logging and utilities
+rich>=13.0
+python-dotenv>=1.0
+
+# Gemini VLM backend
+google-generativeai>=0.8.0

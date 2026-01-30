@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Runtime outputs
+outputs/
+
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+CLAUDE.md
+.claude
+
+.mcp.json

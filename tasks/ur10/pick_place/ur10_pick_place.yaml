@@ -1,0 +1,150 @@
+# Task Document: UR10PickPlace
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: UR10 robot with suction gripper picks a DexCube and places it at a target
+# Reference: Based on Franka PnP (custom) + UR10 stack cfg for robot config
+
+task:
+  name: UR10PickPlace
+  description: "UR10 robot with suction gripper picks up a DexCube from one position on the table and places it at a target position marked by a green pad"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01                     # 100 Hz simulation
+  decimation: 5                      # control at 20 Hz (matching UR10 stack decimation)
+  episode_length: 15.0               # seconds (longer for pick + transport + place with UR10)
+  render_interval: 5
+  physx:
+    bounce_threshold: 0.01           # m/s
+    friction_correlation_distance: 0.00625  # m
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]          # IsaacLab convention
+
+assets:
+  # UR10 robot (suction gripper variant for pick-and-place)
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    variant_sets:
+      Gripper: Long_Suction           # activate suction gripper visual
+    initial_joints:                   # stack task default (EE pointing down)
+      shoulder_pan_joint: 0.0
+      shoulder_lift_joint: -1.5707    # -pi/2
+      elbow_joint: 1.5707            # pi/2
+      wrist_1_joint: -1.5707         # -pi/2
+      wrist_2_joint: -1.5707         # -pi/2
+      wrist_3_joint: 0.0
+    actuators:
+      arm:
+        joint_names: ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
+                      "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"]
+        effort_limit: 87.0            # N*m
+        stiffness: 800.0
+        damping: 40.0
+    ee_frame:
+      body: ee_link
+      offset_position: [0.22, 0, 0]  # long suction gripper TCP offset
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]   # wxyz: Z-axis 90-degree rotation
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # DexCube to pick up (0.8x scaled)
+  - name: cube
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd"
+    prim_path: "/World/Object"
+    position: [0.4, -0.15, 0.055]    # on table surface, left side
+    rotation: [1, 0, 0, 0]
+    scale: [0.8, 0.8, 0.8]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.35, 0.50]              # left half of table
+        y: [-0.25, -0.05]
+        z: 0.055
+
+  # Target placement marker (flat green pad)
+  - name: target_marker
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/TargetMarker"
+    position: [0.5, 0.15, 0.02]      # on table surface, right side
+    scale: [0.06, 0.06, 0.003]       # flat pad (6cm x 6cm x 3mm)
+    color: [0.0, 0.8, 0.0]           # green
+    physics:
+      rigid_body: false
+      collision: false
+    randomize:
+      position:
+        type: absolute
+        x: [0.40, 0.60]              # right half of table
+        y: [0.05, 0.25]
+        z: 0.02
+
+goal:
+  description: "Pick the DexCube with suction gripper and place it on the green target marker"
+  conditions:
+    - subject: cube
+      relation: at_position
+      target: target_marker
+      tolerance: 0.03                 # 3cm
+    - subject: cube
+      relation: on_surface
+      target: table
+      description: "Cube must be placed on the table (not dropped)"
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.5, 1.2, 1.0]
+  target: [0.5, 0, 0.3]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Based on Franka PnP task but with UR10 robot (no IsaacLab UR10 PnP exists)"
+  - "UR10 with Gripper variant=Long_Suction (SurfaceGripper at ee_link, TCP offset 0.22m)"
+  - "Same scene layout as Franka PnP: table [0.5,0,0], DexCube left, marker right"
+  - "DexCube at 0.8x scale, z=0.055 on table surface"
+  - "Pick zone: left side (y<0), place zone: right side (y>0)"
+  - "Episode 15s (UR10 slower than Franka for transport), dt=0.01, decimation=5"
+  - "Ground plane at z=-1.05 (IsaacLab convention)"
