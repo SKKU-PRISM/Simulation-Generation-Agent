@@ -401,14 +401,24 @@ print("SUCCESS: Lighting created")
         be converted to relative paths that can be appended to
         get_assets_root_path().
 
+        Paths starting with 'assets/' are treated as project-local and
+        converted to absolute paths.
+
         Examples:
             "{ISAAC_NUCLEUS_DIR}/Props/Blocks/blue_block.usd"
                 -> "/Isaac/Props/Blocks/blue_block.usd"
             "{ISAACLAB_NUCLEUS_DIR}/Robots/FrankaEmika/panda_instanceable.usd"
                 -> "/IsaacLab/Robots/FrankaEmika/panda_instanceable.usd"
+            "assets/robots/so101/so101.usd"
+                -> "/home/.../AutoEnvConstruction/assets/robots/so101/so101.usd"
         """
         asset_path = asset_path.replace("{ISAAC_NUCLEUS_DIR}", "/Isaac")
-        asset_path = asset_path.replace("{ISAACLAB_NUCLEUS_DIR}", "/IsaacLab")
+        asset_path = asset_path.replace("{ISAACLAB_NUCLEUS_DIR}", "/Isaac/IsaacLab")
+        # Local assets/ paths -> project absolute paths
+        if asset_path.startswith("assets/"):
+            import os
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            asset_path = os.path.join(project_root, asset_path)
         return asset_path
 
     def _load_usd_asset(self, asset: dict, is_static: bool = True) -> dict:
@@ -447,13 +457,21 @@ print("SUCCESS: Lighting created")
 full_path = "{asset_url}"
 '''
         else:
-            # Construct path from assets_root + asset_path
-            path_code = f'''
+            # Determine path construction: local absolute vs Nucleus relative
+            is_nucleus_path = asset_path.startswith("/Isaac") or asset_path.startswith("/IsaacLab")
+            if is_nucleus_path:
+                path_code = f'''
 # Get the nucleus path
 from omni.isaac.core.utils.nucleus import get_assets_root_path
 assets_root = get_assets_root_path()
 asset_path = "{asset_path}"
 full_path = assets_root + asset_path
+'''
+            else:
+                # Local absolute path (e.g., project-local assets/)
+                path_code = f'''
+# Local asset path
+full_path = "{asset_path}"
 '''
 
         code = f'''
@@ -475,20 +493,18 @@ prim.GetReferences().AddReference(full_path)
 if not prim.IsValid():
     print(f"ERROR: Failed to load asset from {{full_path}}")
 else:
-    # Set transform with explicit precision to avoid type mismatches
+    # Set transform — clear pre-existing xform ops to prevent compound rotation.
+    # USD assets may have ops like xformOp:rotateXYZ that don't match "orient",
+    # causing a second orient op to be added on top → double rotation.
+    # Use opSuffix to avoid precision conflicts with pre-existing float3 ops
+    # (e.g. YCB Physics assets have xformOp:translate as float3).
     xformable = UsdGeom.Xformable(prim)
     xformable.ClearXformOpOrder()
-
-    # Use explicit precision for translate, orient, and scale
-    translateOp = xformable.AddTranslateOp(UsdGeom.XformOp.PrecisionDouble)
-    translateOp.Set(Gf.Vec3d({position[0]}, {position[1]}, {position[2]}))
-
-    # Set rotation (quaternion wxyz) - use Quatd with PrecisionDouble to match USD assets
-    orientOp = xformable.AddOrientOp(UsdGeom.XformOp.PrecisionDouble)
+    xformable.AddTranslateOp(UsdGeom.XformOp.PrecisionDouble, opSuffix="yaml").Set(
+        Gf.Vec3d({position[0]}, {position[1]}, {position[2]}))
+    orientOp = xformable.AddOrientOp(UsdGeom.XformOp.PrecisionDouble, opSuffix="yaml")
     orientOp.Set(Gf.Quatd({rotation[0]}, {rotation[1]}, {rotation[2]}, {rotation[3]}))
-
-    # Set scale with PrecisionDouble
-    scaleOp = xformable.AddScaleOp(UsdGeom.XformOp.PrecisionDouble)
+    scaleOp = xformable.AddScaleOp(UsdGeom.XformOp.PrecisionDouble, opSuffix="yaml")
     scaleOp.Set(Gf.Vec3d({scale[0]}, {scale[1]}, {scale[2]}))
 
     # Add physics
@@ -504,8 +520,8 @@ else:
     def _create_articulation(self, asset: dict) -> dict:
         """Create an articulation (robot).
 
-        Uses MCP create_robot for known robot types.
-        Falls back to direct USD loading for custom articulations (e.g. cabinet).
+        Prefers direct USD loading when asset_path is provided.
+        Falls back to MCP create_robot for known robot types without asset_path.
         """
         asset_path = self._resolve_asset_path(asset.get("asset_path", ""))
         prim_path = asset.get("prim_path", "/World/Robot")
@@ -515,9 +531,13 @@ else:
 
         known_robots = ["franka", "jetbot", "carter", "g1", "go1"]
 
-        # Use MCP create_robot for known robot types
-        if robot_type and robot_type.lower() in known_robots:
-            logger.info(f"Using create_robot for {robot_type}")
+        # Prefer direct USD loading when asset_path is available
+        if asset_path:
+            logger.info(f"Direct USD loading for articulation: {asset_path}")
+            # Fall through to direct USD loading code below
+        elif robot_type and robot_type.lower() in known_robots:
+            # Fallback: MCP create_robot only when no asset_path
+            logger.info(f"Using create_robot fallback for {robot_type} (no asset_path)")
             result = self.mcp.create_robot(robot_type.lower(), position)
             if result.get("status") != "success":
                 return {"success": False, "error": result.get("message", "create_robot failed")}
@@ -529,10 +549,8 @@ else:
                 self._set_franka_initial_joints(joint_values, "/Franka")
 
             return {"success": True}
-
-        # Direct USD loading for non-robot articulations (cabinet, UR10, etc.)
-        if not asset_path:
-            return {"success": False, "error": "No robot_type and no asset_path"}
+        else:
+            return {"success": False, "error": "No asset_path and no known robot_type"}
 
         # Build variant selection code if variant_sets specified in YAML
         variant_sets = asset.get("variant_sets", {})
@@ -548,15 +566,24 @@ else:
 
         scale = asset.get("scale", [1, 1, 1])
 
+        # Determine path construction: local absolute vs Nucleus relative
+        is_nucleus_path = asset_path.startswith("/Isaac") or asset_path.startswith("/IsaacLab")
+        if is_nucleus_path:
+            path_code = f'''from omni.isaac.core.utils.nucleus import get_assets_root_path
+assets_root = get_assets_root_path()
+full_path = assets_root + "{asset_path}"'''
+        else:
+            # Local absolute path (e.g., /home/.../assets/robots/so101/so101.usd)
+            path_code = f'full_path = "{asset_path}"'
+
         code = f'''
 from pxr import Usd, UsdGeom, Gf
 import omni.usd
 
 stage = omni.usd.get_context().get_stage()
-from omni.isaac.core.utils.nucleus import get_assets_root_path
-assets_root = get_assets_root_path()
-full_path = assets_root + "{asset_path}"
+{path_code}
 
+print(f"Loading articulation from: {{full_path}}")
 prim_path = "{prim_path}"
 prim = stage.DefinePrim(prim_path)
 prim.GetReferences().AddReference(full_path)
@@ -827,7 +854,7 @@ stage = omni.usd.get_context().get_stage()
 prim_path = "{prim_path}"
 cylinder = UsdGeom.Cylinder.Define(stage, prim_path)
 cylinder.GetRadiusAttr().Set({scale[0] / 2})
-cylinder.GetHeightAttr().Set({scale[2]})
+cylinder.GetHeightAttr().Set({scale[1]})
 
 # Set transform
 xformable = UsdGeom.Xformable(cylinder.GetPrim())

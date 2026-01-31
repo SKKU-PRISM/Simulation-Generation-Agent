@@ -1,0 +1,148 @@
+# Task Document: UR10PickPlaceTuna
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: UR10 robot with suction gripper picks a YCB tuna fish can and places it at a target
+# Reference: Based on ur10_pick_place_can.yaml with YCB tuna fish can
+
+task:
+  name: UR10PickPlaceTuna
+  description: "UR10 robot with suction gripper picks up a flat YCB tuna fish can from one position on the table and places it at a target position marked by a green pad"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01                     # 100 Hz simulation
+  decimation: 5                      # control at 20 Hz
+  episode_length: 15.0               # seconds
+  render_interval: 5
+  physx:
+    bounce_threshold: 0.01           # m/s
+    friction_correlation_distance: 0.00625  # m
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]          # IsaacLab convention
+
+assets:
+  # UR10 robot (suction gripper variant)
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]
+    variant_sets:
+      Gripper: Long_Suction
+    initial_joints:
+      shoulder_pan_joint: 0.0
+      shoulder_lift_joint: -1.5707
+      elbow_joint: 1.5707
+      wrist_1_joint: -1.5707
+      wrist_2_joint: -1.5707
+      wrist_3_joint: 0.0
+    actuators:
+      arm:
+        joint_names: ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
+                      "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"]
+        effort_limit: 87.0
+        stiffness: 800.0
+        damping: 40.0
+    ee_frame:
+      body: ee_link
+      offset_position: [0.22, 0, 0]
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # YCB Tuna Fish Can (8.6 x 3.4 x 8.6 cm, flat cylindrical)
+  - name: can
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/007_tuna_fish_can.usd"
+    prim_path: "/World/Object"
+    position: [0.4, -0.15, 0.017]    # on table surface (half height = 1.7cm)
+    rotation: [0.7071, 0.7071, 0, 0] # wxyz: 90 X-rotation to stand upright
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.35, 0.50]
+        y: [-0.25, -0.05]
+        z: 0.017
+
+  # Target placement marker (flat green pad on table)
+  - name: target_marker
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/TargetMarker"
+    position: [0.5, 0.15, 0.02]
+    scale: [0.06, 0.06, 0.003]       # flat pad (6cm x 6cm x 3mm)
+    color: [0.0, 0.8, 0.0]
+    physics:
+      rigid_body: false
+      collision: false
+    randomize:
+      position:
+        type: absolute
+        x: [0.40, 0.60]
+        y: [0.05, 0.25]
+        z: 0.02
+
+goal:
+  description: "Pick the tuna fish can with suction gripper and place it on the green target marker"
+  conditions:
+    - subject: can
+      relation: at_position
+      target: target_marker
+      tolerance: 0.03
+    - subject: can
+      relation: on_surface
+      target: table
+      description: "Can must be placed on the table (not dropped)"
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.5, 1.2, 1.0]
+  target: [0.5, 0, 0.3]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Based on ur10_pick_place_can with YCB tuna fish can"
+  - "YCB 007_tuna_fish_can (Axis_Aligned, no built-in physics): 8.6 x 3.4 x 8.6 cm"
+  - "UR10 suction gripper — flat can top is ideal for suction grip"
+  - "Very flat can (3.4cm tall) — suction grip is better suited than parallel jaw"
+  - "Can initial z=0.017m (half of 3.4cm height)"
+  - "Episode 15s, decimation=5, control at 20Hz"

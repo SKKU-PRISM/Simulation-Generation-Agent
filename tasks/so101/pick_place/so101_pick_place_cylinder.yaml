@@ -1,0 +1,153 @@
+# Task Document: SO101PickPlaceCylinder
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: SO-101 robot picks a small cylinder and places it at a target position on the desktop
+# Reference: Based on so101_pick_place.yaml with cylinder instead of cube
+
+task:
+  name: SO101PickPlaceCylinder
+  description: "SO-101 follower arm picks up a small cylinder from one position on the desktop and places it at a target position marked by a green pad"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01                     # 100 Hz simulation
+  decimation: 2                      # control at 50 Hz (every 2 sim steps)
+  episode_length: 10.0               # seconds
+  render_interval: 2
+  physx:
+    bounce_threshold: 0.01           # m/s
+    friction_correlation_distance: 0.00625  # m
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]          # IsaacLab convention
+
+assets:
+  # SO-101 Follower Arm (LeRobot)
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "assets/robots/so101/so101.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    initial_joints:
+      shoulder_pan: 0.0
+      shoulder_lift: -1.57            # -pi/2
+      elbow_flex: 1.57                # pi/2
+      wrist_flex: 0.0
+      wrist_roll: 0.0
+      gripper: 1.0                    # open
+    actuators:
+      arm:
+        joint_names: ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"]
+        effort_limit: 10.0            # N*m (STS3215 servo)
+        stiffness: 17.8
+        damping: 0.60
+      hand:
+        joint_names: ["gripper"]
+        effort_limit: 10.0
+        stiffness: 200.0
+        damping: 10.0
+    ee_frame:
+      body: gripper_frame_link
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # Small desktop table (primitive box)
+  - name: table
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Table"
+    position: [0.15, 0.0, -0.015]
+    scale: [0.30, 0.30, 0.03]        # 30cm x 30cm x 3cm
+    color: [0.6, 0.5, 0.4]
+    physics:
+      rigid_body: false
+      collision: true
+
+  # Small cylinder to pick (1.5cm diameter x 2cm tall)
+  - name: cylinder
+    type: rigid
+    source: primitive
+    primitive: cylinder
+    prim_path: "/World/Object"
+    position: [0.12, -0.04, 0.01]    # left side of workspace
+    scale: [0.015, 0.02, 0.015]      # 1.5cm D x 2cm H
+    color: [0.2, 0.5, 0.9]           # blue
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.02                      # 20g
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.10, 0.18]              # safe spawn range (away from robot)
+        y: [-0.07, -0.02]
+        z: 0.01                       # fixed on table surface
+
+  # Target placement marker (flat green pad on desktop)
+  - name: target_marker
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/TargetMarker"
+    position: [0.15, 0.04, 0.002]    # right side of workspace
+    scale: [0.04, 0.04, 0.003]       # flat pad (4cm x 4cm x 3mm)
+    color: [0.0, 0.8, 0.0]           # green
+    physics:
+      rigid_body: false
+      collision: false
+    randomize:
+      position:
+        type: absolute
+        x: [0.12, 0.20]
+        y: [0.02, 0.07]
+        z: 0.002
+
+goal:
+  description: "Pick the cylinder and place it on the green target marker"
+  conditions:
+    - subject: cylinder
+      relation: at_position
+      target: target_marker
+      tolerance: 0.02                 # 2cm
+    - subject: cylinder
+      relation: on_surface
+      target: table
+      description: "Cylinder must be placed on the table (not dropped)"
+
+camera:
+  prim_path: "/World/Camera"
+  position: [0.5, 0.4, 0.35]         # close desktop view
+  target: [0.15, 0, 0.1]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "SO-101 follower arm (LeRobot), 5 arm DOF + 1 gripper DOF"
+  - "Primitive cylinder (1.5cm diameter x 2cm tall) — different grip strategy than cube"
+  - "Cylindrical shape requires careful gripper alignment"
+  - "SO-101 gripper max 5cm > cylinder 1.5cm diameter (grippable)"
+  - "Desktop workspace ~30cm x 30cm, reach 0.25m"
+  - "Spawn x=[0.10, 0.18] keeps objects away from robot base at origin"
+  - "Episode 10s, control at 50Hz (decimation=2)"

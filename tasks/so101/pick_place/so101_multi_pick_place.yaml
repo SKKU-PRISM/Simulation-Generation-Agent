@@ -1,0 +1,220 @@
+# Task Document: SO101MultiPickPlace
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: SO-101 robot collects 3 scattered cubes onto a single collection zone
+# Reference: Adapted from franka_multi_pick_place.yaml for SO-101 small workspace
+
+task:
+  name: SO101MultiPickPlace
+  description: "SO-101 follower arm picks up 3 scattered small cubes and places them all onto a gold collection zone"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01                     # 100 Hz simulation
+  decimation: 2                      # control at 50 Hz
+  episode_length: 30.0               # seconds (3 objects, small arm)
+  render_interval: 2
+  physx:
+    bounce_threshold: 0.01           # m/s
+    friction_correlation_distance: 0.00625  # m
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]          # IsaacLab convention
+
+assets:
+  # SO-101 Follower Arm (LeRobot)
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "assets/robots/so101/so101.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    initial_joints:
+      shoulder_pan: 0.0
+      shoulder_lift: -1.57
+      elbow_flex: 1.57
+      wrist_flex: 0.0
+      wrist_roll: 0.0
+      gripper: 1.0                    # open
+    actuators:
+      arm:
+        joint_names: ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"]
+        effort_limit: 10.0
+        stiffness: 17.8
+        damping: 0.60
+      hand:
+        joint_names: ["gripper"]
+        effort_limit: 10.0
+        stiffness: 200.0
+        damping: 10.0
+    ee_frame:
+      body: gripper_frame_link
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # Small desktop table (primitive box)
+  - name: table
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Table"
+    position: [0.15, 0.0, -0.015]
+    scale: [0.30, 0.30, 0.03]        # 30cm x 30cm x 3cm
+    color: [0.6, 0.5, 0.4]
+    physics:
+      rigid_body: false
+      collision: true
+
+  # Blue cube (left)
+  - name: cube_1
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Cube_1"
+    position: [0.12, -0.05, 0.0075]
+    scale: [0.015, 0.015, 0.015]     # 1.5cm cube
+    color: [0.2, 0.4, 0.9]           # blue
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.012
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.10, 0.16]
+        y: [-0.07, -0.03]
+        z: 0.0075
+      orientation:
+        yaw: [-0.5, 0.5]
+      min_separation: 0.03
+
+  # Red cube (center-right)
+  - name: cube_2
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Cube_2"
+    position: [0.16, 0.02, 0.0075]
+    scale: [0.015, 0.015, 0.015]     # 1.5cm cube
+    color: [0.9, 0.2, 0.2]           # red
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.012
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.14, 0.20]
+        y: [0.0, 0.05]
+        z: 0.0075
+      orientation:
+        yaw: [-0.5, 0.5]
+      min_separation: 0.03
+
+  # Green cube (front)
+  - name: cube_3
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Cube_3"
+    position: [0.10, 0.0, 0.0075]
+    scale: [0.015, 0.015, 0.015]     # 1.5cm cube
+    color: [0.2, 0.8, 0.2]           # green
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.012
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.10, 0.16]
+        y: [-0.03, 0.03]
+        z: 0.0075
+      orientation:
+        yaw: [-0.5, 0.5]
+      min_separation: 0.03
+
+  # Collection zone (flat gold marker)
+  - name: collection_zone
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/CollectionZone"
+    position: [0.17, 0.0, 0.002]
+    scale: [0.05, 0.05, 0.003]       # 5cm x 5cm flat pad
+    color: [0.9, 0.7, 0.0]           # gold
+    physics:
+      rigid_body: false
+      collision: false
+
+goal:
+  description: "Collect all three colored cubes onto the gold collection zone"
+  conditions:
+    - subject: cube_1
+      relation: at_position
+      target: collection_zone
+      tolerance: 0.025
+    - subject: cube_2
+      relation: at_position
+      target: collection_zone
+      tolerance: 0.025
+    - subject: cube_3
+      relation: at_position
+      target: collection_zone
+      tolerance: 0.025
+    - subject: cube_1
+      relation: on_surface
+      target: table
+    - subject: cube_2
+      relation: on_surface
+      target: table
+    - subject: cube_3
+      relation: on_surface
+      target: table
+
+camera:
+  prim_path: "/World/Camera"
+  position: [0.5, 0.4, 0.35]         # close desktop view
+  target: [0.15, 0, 0.1]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "SO-101 follower arm (LeRobot), 5 arm DOF + 1 gripper DOF"
+  - "3 small cubes (1.5cm) scattered across workspace — collect onto gold zone"
+  - "Adapted from franka_multi_pick_place with SO-101 workspace scaling (0.33x)"
+  - "Each cube randomized in a different region to ensure scatter"
+  - "Collection zone is 5cm x 5cm flat gold marker (no physics)"
+  - "Spawn x min=0.10 keeps objects away from robot base at origin"
+  - "Episode 30s (3 pick-place cycles for small arm)"
+  - "min_separation=0.03m prevents cube overlap"
