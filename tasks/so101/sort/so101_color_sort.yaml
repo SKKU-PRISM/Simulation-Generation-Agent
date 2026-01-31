@@ -1,0 +1,245 @@
+# Task Document: SO101ColorSort
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: SO-101 robot sorts 3 colored cubes onto matching colored target zones
+# Reference: Adapted from franka/color_sort for SO-101 (LeRobot) small desktop arm
+
+task:
+  name: SO101ColorSort
+  description: "SO-101 follower arm sorts colored cubes onto matching colored target zones: blue cube -> blue zone, red cube -> red zone, green cube -> green zone"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01                     # 100 Hz simulation
+  decimation: 5                      # control at 20 Hz
+  episode_length: 30.0               # seconds
+  render_interval: 2
+  physx:
+    bounce_threshold: 0.01
+    friction_correlation_distance: 0.00625
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]
+
+assets:
+  # SO-101 Follower Arm (LeRobot)
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "assets/robots/so101/so101.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]
+    initial_joints:
+      shoulder_pan: 0.0
+      shoulder_lift: -1.57
+      elbow_flex: 1.57
+      wrist_flex: 0.0
+      wrist_roll: 0.0
+      gripper: 1.0
+    actuators:
+      arm:
+        joint_names: ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"]
+        effort_limit: 10.0
+        stiffness: 17.8
+        damping: 0.60
+      hand:
+        joint_names: ["gripper"]
+        effort_limit: 10.0
+        stiffness: 200.0
+        damping: 10.0
+    ee_frame:
+      body: gripper_frame_link
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+    randomize:
+      joint_position:
+        distribution: gaussian
+        mean: 0.0
+        std: 0.02
+
+  # Small desktop table
+  - name: table
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Table"
+    position: [0.15, 0.0, -0.015]
+    scale: [0.30, 0.30, 0.03]
+    color: [0.6, 0.5, 0.4]
+    physics:
+      rigid_body: false
+      collision: true
+
+  # Blue cube
+  - name: blue_cube
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BlueCube"
+    position: [0.10, -0.04, 0.01]
+    scale: [0.02, 0.02, 0.02]
+    color: [0.2, 0.3, 0.9]
+    semantic_tag: ["class", "blue_cube"]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.02
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.10, 0.18]
+        y: [-0.06, 0.06]
+        z: 0.01
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.04
+
+  # Red cube
+  - name: red_cube
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/RedCube"
+    position: [0.13, 0.03, 0.01]
+    scale: [0.02, 0.02, 0.02]
+    color: [0.9, 0.2, 0.2]
+    semantic_tag: ["class", "red_cube"]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.02
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.10, 0.18]
+        y: [-0.06, 0.06]
+        z: 0.01
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.04
+
+  # Green cube
+  - name: green_cube
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/GreenCube"
+    position: [0.16, 0.0, 0.01]
+    scale: [0.02, 0.02, 0.02]
+    color: [0.2, 0.9, 0.3]
+    semantic_tag: ["class", "green_cube"]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.02
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.10, 0.18]
+        y: [-0.06, 0.06]
+        z: 0.01
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.04
+
+  # Blue target zone
+  - name: blue_zone
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BlueZone"
+    position: [0.20, -0.06, 0.002]
+    scale: [0.03, 0.03, 0.003]
+    color: [0.0, 0.0, 0.8]
+    physics:
+      rigid_body: false
+      collision: false
+
+  # Red target zone
+  - name: red_zone
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/RedZone"
+    position: [0.20, 0.0, 0.002]
+    scale: [0.03, 0.03, 0.003]
+    color: [0.8, 0.0, 0.0]
+    physics:
+      rigid_body: false
+      collision: false
+
+  # Green target zone
+  - name: green_zone
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/GreenZone"
+    position: [0.20, 0.06, 0.002]
+    scale: [0.03, 0.03, 0.003]
+    color: [0.0, 0.8, 0.0]
+    physics:
+      rigid_body: false
+      collision: false
+
+goal:
+  description: "Sort each colored cube onto its matching colored zone: blue -> blue zone, red -> red zone, green -> green zone"
+  conditions:
+    - subject: blue_cube
+      relation: at_position
+      target: blue_zone
+      tolerance: 0.02
+    - subject: red_cube
+      relation: at_position
+      target: red_zone
+      tolerance: 0.02
+    - subject: green_cube
+      relation: at_position
+      target: green_zone
+      tolerance: 0.02
+
+camera:
+  prim_path: "/World/Camera"
+  position: [0.5, 0.4, 0.35]
+  target: [0.15, 0, 0.1]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "SO-101 follower arm (LeRobot/HuggingFace), 5 arm DOF + 1 gripper DOF"
+  - "Small 2cm primitive cubes to fit SO-101 claw gripper (max 5cm opening)"
+  - "Desktop workspace ~30cm x 30cm, reach_ratio 0.33 vs Franka"
+  - "Cube spawn range: x=[0.10, 0.18], y=[-0.06, 0.06], min 4cm separation"
+  - "Target zones: 3x3cm color-matched pads at x=0.20"
+  - "Table is a primitive box (30cm x 30cm)"
+  - "Control rate: 20Hz (decimation=5), episode: 30s"
+  - "Ground plane at z=-1.05 (IsaacLab convention)"

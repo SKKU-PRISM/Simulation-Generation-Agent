@@ -1,0 +1,230 @@
+# Task Document: FrankaMultiPickPlace
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: Franka robot collects 3 scattered DexCubes onto a single collection zone
+
+task:
+  name: FrankaMultiPickPlace
+  description: "Franka Panda robot picks up 3 scattered colored blocks and places them all onto a gold collection zone"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01                     # 100 Hz simulation
+  decimation: 2                      # control at 50 Hz
+  episode_length: 25.0               # seconds
+  render_interval: 2
+  physx:
+    bounce_threshold: 0.01           # m/s
+    friction_correlation_distance: 0.00625  # m
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]          # IsaacLab convention
+
+assets:
+  # Franka Panda robot
+  - name: robot
+    type: articulation
+    source: usd
+    robot_type: franka
+    asset_path: "{ISAACLAB_NUCLEUS_DIR}/Robots/FrankaEmika/panda_instanceable.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    initial_joints:
+      panda_joint1: 0.0
+      panda_joint2: -0.7854
+      panda_joint3: 0.0
+      panda_joint4: -2.3562
+      panda_joint5: 0.0
+      panda_joint6: 1.5708
+      panda_joint7: 0.7854
+      panda_finger_joint: 0.04
+    actuators:
+      shoulder:
+        joint_names: ["panda_joint1", "panda_joint2", "panda_joint3", "panda_joint4"]
+        effort_limit: 87.0
+        stiffness: 80.0
+        damping: 4.0
+      forearm:
+        joint_names: ["panda_joint5", "panda_joint6", "panda_joint7"]
+        effort_limit: 12.0
+        stiffness: 80.0
+        damping: 4.0
+      hand:
+        joint_names: ["panda_finger_joint.*"]
+        effort_limit: 200.0
+        stiffness: 2000.0
+        damping: 100.0
+    ee_frame:
+      body: panda_hand
+      offset_position: [0, 0, 0.1034]
+    physics:
+      self_collision: true
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+    randomize:
+      joint_position:
+        distribution: gaussian
+        mean: 0.0
+        std: 0.02
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # Blue block (front-left)
+  - name: cube_1
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/blue_block.usd"
+    prim_path: "/World/Cube_1"
+    position: [0.35, -0.15, 0.0203]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    semantic_tag: ["class", "cube_1"]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.35, 0.50]
+        y: [-0.15, -0.05]
+        z: 0.0203
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.08
+
+  # Red block (back-right)
+  - name: cube_2
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/red_block.usd"
+    prim_path: "/World/Cube_2"
+    position: [0.55, 0.10, 0.0203]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    semantic_tag: ["class", "cube_2"]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.50, 0.65]
+        y: [0.05, 0.15]
+        z: 0.0203
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.08
+
+  # Green block (center)
+  - name: cube_3
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/green_block.usd"
+    prim_path: "/World/Cube_3"
+    position: [0.40, 0.05, 0.0203]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    semantic_tag: ["class", "cube_3"]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.38, 0.55]
+        y: [-0.05, 0.10]
+        z: 0.0203
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.08
+
+  # Collection zone (large flat marker)
+  - name: collection_zone
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/CollectionZone"
+    position: [0.55, 0.0, 0.002]
+    scale: [0.12, 0.12, 0.003]       # 12cm x 12cm flat pad
+    color: [0.9, 0.7, 0.0]           # gold
+    physics:
+      rigid_body: false
+      collision: false
+
+goal:
+  description: "Collect all three colored blocks onto the gold collection zone"
+  conditions:
+    - subject: cube_1
+      relation: at_position
+      target: collection_zone
+      tolerance: 0.06
+    - subject: cube_2
+      relation: at_position
+      target: collection_zone
+      tolerance: 0.06
+    - subject: cube_3
+      relation: at_position
+      target: collection_zone
+      tolerance: 0.06
+    - subject: cube_1
+      relation: on_surface
+      target: table
+    - subject: cube_2
+      relation: on_surface
+      target: table
+    - subject: cube_3
+      relation: on_surface
+      target: table
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.5, 1.2, 1.0]
+  target: [0.45, 0, 0.3]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "3 colored blocks (blue, red, green) scattered across the table must be collected onto 1 gold zone"
+  - "Block z=0.0203m (table surface + half block height)"
+  - "Each block randomized in a different quadrant to ensure scatter"
+  - "Collection zone is a flat visual marker (no physics, no collision)"
+  - "Ground plane at z=-1.05 (IsaacLab convention)"
+  - "Control rate: 50Hz (decimation=2), episode: 25s"

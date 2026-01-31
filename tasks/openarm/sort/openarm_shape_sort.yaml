@@ -1,0 +1,269 @@
+# Task Document: OpenArmShapeSort
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: OpenArm robot sorts primitive objects by shape (cubes vs spheres) into matching bins
+# Reference: Adapted from franka/shape_sort for OpenArm (~0.6m reach)
+
+task:
+  name: OpenArmShapeSort
+  description: "OpenArm unimanual robot sorts objects by shape: place cubes on the purple bin, spheres on the rose bin"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]
+  timestep: 0.01
+  decimation: 5                      # control at 20 Hz
+  episode_length: 30.0
+  render_interval: 2
+  physx:
+    bounce_threshold: 0.01
+    friction_correlation_distance: 0.00625
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]
+
+assets:
+  # OpenArm Unimanual robot
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/OpenArm/openarm_unimanual/openarm_unimanual.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]
+    initial_joints:
+      openarm_joint1: 1.57
+      openarm_joint2: 0.0
+      openarm_joint3: -1.57
+      openarm_joint4: 1.57
+      openarm_joint5: 0.0
+      openarm_joint6: 0.0
+      openarm_joint7: 0.0
+      openarm_finger_joint1: 0.0
+      openarm_finger_joint2: 0.0
+    actuators:
+      arm:
+        joint_names: ["openarm_joint1", "openarm_joint2", "openarm_joint3", "openarm_joint4", "openarm_joint5", "openarm_joint6", "openarm_joint7"]
+        stiffness: 80.0
+        damping: 4.0
+        effort_limit_per_joint:
+          openarm_joint1: 40.0
+          openarm_joint2: 40.0
+          openarm_joint3: 27.0
+          openarm_joint4: 27.0
+          openarm_joint5: 7.0
+          openarm_joint6: 7.0
+          openarm_joint7: 7.0
+      gripper:
+        joint_names: ["openarm_finger_joint1", "openarm_finger_joint2"]
+        effort_limit: 333.33
+        stiffness: 2000.0
+        damping: 100.0
+        open_position: 0.044
+        close_position: 0.0
+    ee_frame:
+      body: openarm_hand
+      tcp_frame: openarm_ee_tcp
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+    randomize:
+      joint_position:
+        distribution: gaussian
+        mean: 0.0
+        std: 0.02
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # Small cube 1 (light blue)
+  - name: small_cube_1
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/SmallCube1"
+    position: [0.30, -0.05, 0.0175]
+    scale: [0.035, 0.035, 0.035]
+    color: [0.2, 0.6, 0.9]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.05
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.25, 0.40]
+        y: [-0.10, 0.10]
+        z: 0.0175
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.08
+
+  # Small cube 2 (orange)
+  - name: small_cube_2
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/SmallCube2"
+    position: [0.36, 0.06, 0.0175]
+    scale: [0.035, 0.035, 0.035]
+    color: [0.9, 0.5, 0.2]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.05
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.25, 0.40]
+        y: [-0.10, 0.10]
+        z: 0.0175
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.08
+
+  # Sphere 1 (pink)
+  - name: sphere_1
+    type: rigid
+    source: primitive
+    primitive: sphere
+    prim_path: "/World/Sphere1"
+    position: [0.33, 0.02, 0.02]
+    scale: [0.04, 0.04, 0.04]
+    color: [0.9, 0.2, 0.5]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.04
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.25, 0.40]
+        y: [-0.10, 0.10]
+        z: 0.02
+      min_separation: 0.08
+
+  # Sphere 2 (lime green)
+  - name: sphere_2
+    type: rigid
+    source: primitive
+    primitive: sphere
+    prim_path: "/World/Sphere2"
+    position: [0.38, -0.08, 0.02]
+    scale: [0.04, 0.04, 0.04]
+    color: [0.5, 0.9, 0.3]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.04
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.25, 0.40]
+        y: [-0.10, 0.10]
+        z: 0.02
+      min_separation: 0.08
+
+  # Cube bin (purple target zone)
+  - name: cube_bin
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/CubeBin"
+    position: [0.47, -0.10, 0.002]
+    scale: [0.08, 0.08, 0.003]
+    color: [0.4, 0.4, 0.7]
+    physics:
+      rigid_body: false
+      collision: false
+
+  # Sphere bin (rose target zone)
+  - name: sphere_bin
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/SphereBin"
+    position: [0.47, 0.10, 0.002]
+    scale: [0.08, 0.08, 0.003]
+    color: [0.7, 0.4, 0.4]
+    physics:
+      rigid_body: false
+      collision: false
+
+goal:
+  description: "Sort objects by shape: place cubes on the purple bin, spheres on the rose bin"
+  conditions:
+    - subject: small_cube_1
+      relation: at_position
+      target: cube_bin
+      tolerance: 0.04
+    - subject: small_cube_2
+      relation: at_position
+      target: cube_bin
+      tolerance: 0.04
+    - subject: sphere_1
+      relation: at_position
+      target: sphere_bin
+      tolerance: 0.04
+    - subject: sphere_2
+      relation: at_position
+      target: sphere_bin
+      tolerance: 0.04
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.2, 1.0, 0.8]
+  target: [0.35, 0, 0.2]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Adapted from franka/shape_sort for OpenArm (~0.6m reach)"
+  - "Primitive objects: 2 cubes (3.5cm) + 2 spheres (4cm diameter)"
+  - "Cube z=0.0175m (half height), sphere z=0.02m (radius)"
+  - "Object x range [0.25, 0.40] vs Franka [0.38, 0.52]"
+  - "Bins at x=0.47 vs Franka x=0.60"
+  - "Gripper open=0.044 > cube/sphere size — graspable"
+  - "Ground plane at z=-1.05 (IsaacLab convention)"
+  - "Control rate: 20Hz (decimation=5), episode: 30s"
