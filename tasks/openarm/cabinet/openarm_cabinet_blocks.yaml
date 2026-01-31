@@ -1,0 +1,149 @@
+# Task Document: OpenArmCabinetBlocks
+# Version: 1.0.0
+# Description: OpenArm robot with scaled Sektion Cabinet and 3 colored blocks on cabinet top
+
+task:
+  name: OpenArmCabinetBlocks
+  description: "Scaled Sektion Cabinet with 3 different-colored blocks placed on top (OpenArm)"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]
+  timestep: 0.01667
+  decimation: 1
+  episode_length: 8.0
+  render_interval: 1
+  physx:
+    solver_type: TGS
+    bounce_threshold: 0.01
+    friction_correlation_distance: 0.00625
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, 0]
+
+assets:
+  # OpenArm Unimanual robot
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/OpenArm/openarm_unimanual/openarm_unimanual.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]
+    initial_joints:
+      openarm_joint1: 1.57
+      openarm_joint2: 0.0
+      openarm_joint3: -1.57
+      openarm_joint4: 1.57
+      openarm_joint5: 0.0
+      openarm_joint6: 0.0
+      openarm_joint7: 0.0
+      openarm_finger_joint1: 0.0
+      openarm_finger_joint2: 0.0
+
+  # Sektion Cabinet (0.75x scale for OpenArm)
+  - name: cabinet
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Sektion_Cabinet/sektion_cabinet_instanceable.usd"
+    prim_path: "/World/Cabinet"
+    position: [0.7, 0.0, 0.3]
+    rotation: [0, 0, 0, 1]
+    scale: [0.75, 0.75, 0.75]
+    joints:
+      door_left_joint: 0.0
+      door_right_joint: 0.0
+      drawer_bottom_joint: 0.0
+      drawer_top_joint: 0.0
+
+  # Blue block on cabinet top (static visual)
+  - name: blue_block
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BlueBlock"
+    position: [0.7, -0.12, 0.626]
+    rotation: [1, 0, 0, 0]
+    scale: [0.05, 0.05, 0.05]
+    color: [0.1, 0.2, 1.0]
+    physics:
+      rigid_body: false
+      collision: false
+    randomize:
+      position:
+        type: absolute
+        x: [0.5, 0.9]
+        y: [-0.18, 0.18]
+        z: 0.626
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.08
+
+  # Red block on cabinet top (static visual)
+  - name: red_block
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/RedBlock"
+    position: [0.7, 0.0, 0.626]
+    rotation: [1, 0, 0, 0]
+    scale: [0.05, 0.05, 0.05]
+    color: [1.0, 0.15, 0.1]
+    physics:
+      rigid_body: false
+      collision: false
+    randomize:
+      position:
+        type: absolute
+        x: [0.5, 0.9]
+        y: [-0.18, 0.18]
+        z: 0.626
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.08
+
+  # Green block on cabinet top (static visual)
+  - name: green_block
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/GreenBlock"
+    position: [0.7, 0.12, 0.626]
+    rotation: [1, 0, 0, 0]
+    scale: [0.05, 0.05, 0.05]
+    color: [0.1, 0.9, 0.2]
+    randomize:
+      position:
+        type: absolute
+        x: [0.5, 0.9]
+        y: [-0.18, 0.18]
+        z: 0.626
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.08
+    physics:
+      rigid_body: false
+      collision: false
+
+goal:
+  description: "Environment with 3 colored blocks on top of the scaled Sektion Cabinet"
+
+camera:
+  prim_path: "/World/Camera"
+  position: [0.7, 1.0, 1.2]
+  target: [0.7, 0.0, 0.4]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Cabinet at [0.7, 0, 0.3] 0.75x scale, rotation [0,0,0,1] (180 deg Z)"
+  - "Block z estimated, will correct after bbox query"
+  - "Ground plane at z=0 (cabinet task convention)"

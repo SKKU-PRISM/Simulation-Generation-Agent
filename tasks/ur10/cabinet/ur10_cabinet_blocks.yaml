@@ -1,0 +1,147 @@
+# Task Document: UR10CabinetBlocks
+# Version: 1.0.0
+# Description: UR10 robot with Sektion Cabinet and 3 colored blocks on cabinet top
+
+task:
+  name: UR10CabinetBlocks
+  description: "Sektion Cabinet with 3 different-colored blocks placed on top (UR10)"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]
+  timestep: 0.01667
+  decimation: 1
+  episode_length: 8.0
+  render_interval: 1
+  physx:
+    solver_type: TGS
+    bounce_threshold: 0.01
+    friction_correlation_distance: 0.00625
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, 0]
+
+assets:
+  # UR10 robot
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    prim_path: "/World/Robot"
+    position: [-0.2, 0, 0]
+    rotation: [1, 0, 0, 0]
+    variant_sets:
+      Gripper: Long_Suction
+    initial_joints:
+      shoulder_pan_joint: 0.0
+      shoulder_lift_joint: -1.712
+      elbow_joint: 1.712
+      wrist_1_joint: 0.0
+      wrist_2_joint: 0.0
+      wrist_3_joint: 0.0
+
+  # Sektion Cabinet (full size, same as Franka)
+  - name: cabinet
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Sektion_Cabinet/sektion_cabinet_instanceable.usd"
+    prim_path: "/World/Cabinet"
+    position: [0.8, 0.0, 0.4]
+    rotation: [0, 0, 0, 1]
+    joints:
+      door_left_joint: 0.0
+      door_right_joint: 0.0
+      drawer_bottom_joint: 0.0
+      drawer_top_joint: 0.0
+
+  # Blue block on cabinet top (static visual)
+  - name: blue_block
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BlueBlock"
+    position: [0.8, -0.15, 0.832]
+    rotation: [1, 0, 0, 0]
+    scale: [0.06, 0.06, 0.06]
+    color: [0.1, 0.2, 1.0]
+    physics:
+      rigid_body: false
+      collision: false
+    randomize:
+      position:
+        type: absolute
+        x: [0.6, 1.0]
+        y: [-0.25, 0.25]
+        z: 0.832
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.1
+
+  # Red block on cabinet top (static visual)
+  - name: red_block
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/RedBlock"
+    position: [0.8, 0.0, 0.832]
+    rotation: [1, 0, 0, 0]
+    scale: [0.06, 0.06, 0.06]
+    color: [1.0, 0.15, 0.1]
+    physics:
+      rigid_body: false
+      collision: false
+    randomize:
+      position:
+        type: absolute
+        x: [0.6, 1.0]
+        y: [-0.25, 0.25]
+        z: 0.832
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.1
+
+  # Green block on cabinet top (static visual)
+  - name: green_block
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/GreenBlock"
+    position: [0.8, 0.15, 0.832]
+    rotation: [1, 0, 0, 0]
+    scale: [0.06, 0.06, 0.06]
+    color: [0.1, 0.9, 0.2]
+    physics:
+      rigid_body: false
+      collision: false
+    randomize:
+      position:
+        type: absolute
+        x: [0.6, 1.0]
+        y: [-0.25, 0.25]
+        z: 0.832
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.1
+
+goal:
+  description: "Environment with 3 colored blocks on top of the Sektion Cabinet"
+
+camera:
+  prim_path: "/World/Camera"
+  position: [0.8, 1.3, 1.6]
+  target: [0.8, 0.0, 0.5]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Cabinet same as Franka (full-size at [0.8, 0, 0.4]), top z=0.802, blocks z=0.832"
+  - "UR10 at [-0.2, 0, 0] with Long_Suction gripper variant"
+  - "Ground plane at z=0 (cabinet task convention)"
