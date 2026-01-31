@@ -1,0 +1,222 @@
+# Task Document: FrankaPickPlaceGears
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: Franka robot picks scattered gears and a nut from the table and places them into a tray
+
+task:
+  name: FrankaPickPlaceGears
+  description: "Franka Panda robot picks 2 gears and 1 nut scattered on the table and places them into a sorting tray"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01                     # 100 Hz simulation
+  decimation: 5                      # control at 20 Hz
+  episode_length: 25.0               # seconds (3 objects)
+  render_interval: 2
+  physx:
+    bounce_threshold: 0.01           # m/s
+    friction_correlation_distance: 0.00625  # m
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]          # IsaacLab convention
+
+assets:
+  # Franka Panda robot
+  - name: robot
+    type: articulation
+    source: usd
+    robot_type: franka
+    asset_path: "{ISAACLAB_NUCLEUS_DIR}/Robots/FrankaEmika/panda_instanceable.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    initial_joints:
+      panda_joint1: 0.0
+      panda_joint2: -0.7854
+      panda_joint3: 0.0
+      panda_joint4: -2.3562
+      panda_joint5: 0.0
+      panda_joint6: 1.5708
+      panda_joint7: 0.7854
+      panda_finger_joint: 0.04
+    actuators:
+      shoulder:
+        joint_names: ["panda_joint1", "panda_joint2", "panda_joint3", "panda_joint4"]
+        effort_limit: 87.0
+        stiffness: 80.0
+        damping: 4.0
+      forearm:
+        joint_names: ["panda_joint5", "panda_joint6", "panda_joint7"]
+        effort_limit: 12.0
+        stiffness: 80.0
+        damping: 4.0
+      hand:
+        joint_names: ["panda_finger_joint.*"]
+        effort_limit: 200.0
+        stiffness: 2000.0
+        damping: 100.0
+    ee_frame:
+      body: panda_hand
+      offset_position: [0, 0, 0.1034]
+    physics:
+      self_collision: true
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+    randomize:
+      joint_position:
+        distribution: gaussian
+        mean: 0.0
+        std: 0.02
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # --- Pick Objects (2 gears + 1 nut) ---
+
+  # Small gear
+  - name: gear_small
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Factory/gear_assets/factory_gear_small/factory_gear_small.usd"
+    prim_path: "/World/GearSmall"
+    position: [0.40, -0.10, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.35, 0.55]
+        y: [-0.15, 0.05]
+        z: 0.05
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.10
+
+  # Medium gear
+  - name: gear_medium
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Factory/gear_assets/factory_gear_medium/factory_gear_medium.usd"
+    prim_path: "/World/GearMedium"
+    position: [0.50, 0.05, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.35, 0.55]
+        y: [-0.15, 0.05]
+        z: 0.05
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.10
+
+  # M16 nut (green)
+  - name: m16_nut
+    type: rigid
+    source: usd
+    asset_path: "{ISAACLAB_NUCLEUS_DIR}/Mimic/nut_pour_task/nut_pour_assets/factory_m16_nut_green.usd"
+    prim_path: "/World/M16Nut"
+    position: [0.45, -0.02, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.35, 0.55]
+        y: [-0.15, 0.05]
+        z: 0.05
+      orientation:
+        yaw: [-1.0, 1.0]
+      min_separation: 0.10
+
+  # --- Place Target (sorting bin) ---
+
+  # Blue sorting bin
+  - name: tray
+    type: static
+    source: usd
+    asset_path: "{ISAACLAB_NUCLEUS_DIR}/Mimic/exhaust_pipe_task/exhaust_pipe_assets/blue_sorting_bin.usd"
+    prim_path: "/World/Tray"
+    position: [0.55, 0.18, 0.0]
+    rotation: [1, 0, 0, 0]
+    scale: [1.0, 1.0, 0.5]
+    physics:
+      collision: true
+
+goal:
+  description: "Pick all gears and the nut from the table and place them into the tray"
+  conditions:
+    - subject: gear_small
+      relation: at_position
+      target: tray
+      tolerance: 0.06
+    - subject: gear_medium
+      relation: at_position
+      target: tray
+      tolerance: 0.06
+    - subject: m16_nut
+      relation: at_position
+      target: tray
+      tolerance: 0.06
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.5, 1.2, 1.0]
+  target: [0.45, 0, 0.25]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "3 factory parts (2 gears + 1 nut) scattered on table, collected into 1 tray"
+  - "Gear assets from Isaac Sim Factory props (confirmed on S3)"
+  - "M16 nut from IsaacLab Mimic task assets (confirmed on S3)"
+  - "Blue sorting bin from IsaacLab Mimic assets (static with collision)"
+  - "Object z=0.05m (approximate, needs verification after first build)"
+  - "Ground plane at z=-1.05 (IsaacLab convention)"
+  - "Control rate: 20Hz (decimation=5), episode: 25s (3 objects)"
