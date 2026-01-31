@@ -1,10 +1,10 @@
-# Task Document: OpenArmCabinetBlocks
+# Task Document: OpenArmCabinetYCB
 # Version: 1.0.0
-# Description: OpenArm robot with scaled Sektion Cabinet and 3 colored blocks on cabinet top
+# Description: OpenArm robot with scaled Sektion Cabinet and 3 YCB objects
 
 task:
-  name: OpenArmCabinetBlocks
-  description: "Scaled Sektion Cabinet with 3 different-colored blocks placed on top (OpenArm)"
+  name: OpenArmCabinetYCB
+  description: "Scaled Sektion Cabinet with YCB mug, tomato soup can, and mustard bottle on top (OpenArm)"
   version: "1.0.0"
 
 simulation:
@@ -64,16 +64,15 @@ assets:
       drawer_bottom_joint: 0.0
       drawer_top_joint: 0.0
 
-  # Blue block on cabinet top (static visual)
-  - name: blue_block
+  # YCB Mug on cabinet top (0.6x scale, -90X to stand up)
+  - name: mug
     type: static
-    source: primitive
-    primitive: cube
-    prim_path: "/World/BlueBlock"
-    position: [0.7, -0.12, 0.626]
-    rotation: [1, 0, 0, 0]
-    scale: [0.05, 0.05, 0.05]
-    color: [0.1, 0.2, 1.0]
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/025_mug.usd"
+    prim_path: "/World/Mug"
+    position: [0.6, -0.1, 0.625]
+    rotation: [0.7071, -0.7071, 0, 0]
+    scale: [0.6, 0.6, 0.6]
     physics:
       rigid_body: false
       collision: false
@@ -82,21 +81,20 @@ assets:
         type: absolute
         x: [0.48, 0.62]
         y: [-0.15, 0.15]
-        z: 0.626
+        z: 0.625
       orientation:
         yaw: [-1.0, 1.0]
       min_separation: 0.06
 
-  # Red block on cabinet top (static visual)
-  - name: red_block
+  # YCB Tomato Soup Can on cabinet top (0.6x scale, -90X to stand up)
+  - name: tomato_soup_can
     type: static
-    source: primitive
-    primitive: cube
-    prim_path: "/World/RedBlock"
-    position: [0.7, 0.0, 0.626]
-    rotation: [1, 0, 0, 0]
-    scale: [0.05, 0.05, 0.05]
-    color: [1.0, 0.15, 0.1]
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/005_tomato_soup_can.usd"
+    prim_path: "/World/TomatoSoupCan"
+    position: [0.7, 0.0, 0.632]
+    rotation: [0.7071, -0.7071, 0, 0]
+    scale: [0.6, 0.6, 0.6]
     physics:
       rigid_body: false
       collision: false
@@ -105,36 +103,35 @@ assets:
         type: absolute
         x: [0.48, 0.62]
         y: [-0.15, 0.15]
-        z: 0.626
+        z: 0.632
       orientation:
         yaw: [-1.0, 1.0]
       min_separation: 0.06
 
-  # Green block on cabinet top (static visual)
-  - name: green_block
+  # YCB Mustard Bottle on cabinet top (0.6x scale, -90X to stand up)
+  - name: mustard_bottle
     type: static
-    source: primitive
-    primitive: cube
-    prim_path: "/World/GreenBlock"
-    position: [0.7, 0.12, 0.626]
-    rotation: [1, 0, 0, 0]
-    scale: [0.05, 0.05, 0.05]
-    color: [0.1, 0.9, 0.2]
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/006_mustard_bottle.usd"
+    prim_path: "/World/MustardBottle"
+    position: [0.8, 0.1, 0.659]
+    rotation: [0.7071, -0.7071, 0, 0]
+    scale: [0.6, 0.6, 0.6]
+    physics:
+      rigid_body: false
+      collision: false
     randomize:
       position:
         type: absolute
         x: [0.48, 0.62]
         y: [-0.15, 0.15]
-        z: 0.626
+        z: 0.659
       orientation:
         yaw: [-1.0, 1.0]
       min_separation: 0.06
-    physics:
-      rigid_body: false
-      collision: false
 
 goal:
-  description: "Environment with 3 colored blocks on top of the scaled Sektion Cabinet"
+  description: "Environment with 3 graspable YCB objects on top of the scaled Sektion Cabinet"
 
 camera:
   prim_path: "/World/Camera"
@@ -144,6 +141,7 @@ camera:
   resolution: [1280, 720]
 
 notes:
-  - "Cabinet at [0.7, 0, 0.3] 0.75x scale, rotation [0,0,0,1] (180 deg Z)"
-  - "Block z estimated, will correct after bbox query"
-  - "Ground plane at z=0 (cabinet task convention)"
+  - "Cabinet at [0.7, 0, 0.3] 0.75x scale, top z=0.601"
+  - "Objects at z=top+half_height, soup can/mustard rotated -90 X (Y-up→Z-up)"
+  - "Randomization x=[0.48,0.62] constrained by OpenArm workspace x_max=0.60"
+  - "min_separation 0.06 (tight range, 0.6x scale objects are small)"

@@ -1,10 +1,10 @@
-# Task Document: UR10CabinetBlocks
+# Task Document: UR10CabinetYCB
 # Version: 1.0.0
-# Description: UR10 robot with Sektion Cabinet and 3 colored blocks on cabinet top
+# Description: UR10 robot with Sektion Cabinet and 3 YCB objects (mug, soup can, mustard bottle)
 
 task:
-  name: UR10CabinetBlocks
-  description: "Sektion Cabinet with 3 different-colored blocks placed on top (UR10)"
+  name: UR10CabinetYCB
+  description: "Sektion Cabinet with YCB mug, tomato soup can, and mustard bottle on top (UR10)"
   version: "1.0.0"
 
 simulation:
@@ -62,16 +62,15 @@ assets:
       drawer_bottom_joint: 0.0
       drawer_top_joint: 0.0
 
-  # Blue block on cabinet top (static visual)
-  - name: blue_block
+  # YCB Mug on cabinet top (0.6x scale, -90X to stand up)
+  - name: mug
     type: static
-    source: primitive
-    primitive: cube
-    prim_path: "/World/BlueBlock"
-    position: [0.8, -0.15, 0.832]
-    rotation: [1, 0, 0, 0]
-    scale: [0.06, 0.06, 0.06]
-    color: [0.1, 0.2, 1.0]
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/025_mug.usd"
+    prim_path: "/World/Mug"
+    position: [0.7, -0.15, 0.826]
+    rotation: [0.7071, -0.7071, 0, 0]
+    scale: [0.6, 0.6, 0.6]
     physics:
       rigid_body: false
       collision: false
@@ -80,21 +79,20 @@ assets:
         type: absolute
         x: [0.60, 0.95]
         y: [-0.25, 0.25]
-        z: 0.832
+        z: 0.826
       orientation:
         yaw: [-1.0, 1.0]
-      min_separation: 0.1
+      min_separation: 0.10
 
-  # Red block on cabinet top (static visual)
-  - name: red_block
+  # YCB Tomato Soup Can on cabinet top (0.6x scale, -90X to stand up)
+  - name: tomato_soup_can
     type: static
-    source: primitive
-    primitive: cube
-    prim_path: "/World/RedBlock"
-    position: [0.8, 0.0, 0.832]
-    rotation: [1, 0, 0, 0]
-    scale: [0.06, 0.06, 0.06]
-    color: [1.0, 0.15, 0.1]
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/005_tomato_soup_can.usd"
+    prim_path: "/World/TomatoSoupCan"
+    position: [0.8, 0.0, 0.833]
+    rotation: [0.7071, -0.7071, 0, 0]
+    scale: [0.6, 0.6, 0.6]
     physics:
       rigid_body: false
       collision: false
@@ -103,21 +101,20 @@ assets:
         type: absolute
         x: [0.60, 0.95]
         y: [-0.25, 0.25]
-        z: 0.832
+        z: 0.833
       orientation:
         yaw: [-1.0, 1.0]
-      min_separation: 0.1
+      min_separation: 0.10
 
-  # Green block on cabinet top (static visual)
-  - name: green_block
+  # YCB Mustard Bottle on cabinet top (0.6x scale, -90X to stand up)
+  - name: mustard_bottle
     type: static
-    source: primitive
-    primitive: cube
-    prim_path: "/World/GreenBlock"
-    position: [0.8, 0.15, 0.832]
-    rotation: [1, 0, 0, 0]
-    scale: [0.06, 0.06, 0.06]
-    color: [0.1, 0.9, 0.2]
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/006_mustard_bottle.usd"
+    prim_path: "/World/MustardBottle"
+    position: [0.9, 0.15, 0.860]
+    rotation: [0.7071, -0.7071, 0, 0]
+    scale: [0.6, 0.6, 0.6]
     physics:
       rigid_body: false
       collision: false
@@ -126,13 +123,13 @@ assets:
         type: absolute
         x: [0.60, 0.95]
         y: [-0.25, 0.25]
-        z: 0.832
+        z: 0.860
       orientation:
         yaw: [-1.0, 1.0]
-      min_separation: 0.1
+      min_separation: 0.10
 
 goal:
-  description: "Environment with 3 colored blocks on top of the Sektion Cabinet"
+  description: "Environment with 3 graspable YCB objects on top of the Sektion Cabinet"
 
 camera:
   prim_path: "/World/Camera"
@@ -142,6 +139,7 @@ camera:
   resolution: [1280, 720]
 
 notes:
-  - "Cabinet same as Franka (full-size at [0.8, 0, 0.4]), top z=0.802, blocks z=0.832"
+  - "Cabinet same as Franka (full-size at [0.8, 0, 0.4]), top z=0.802"
   - "UR10 at [-0.2, 0, 0] with Long_Suction gripper variant"
-  - "Ground plane at z=0 (cabinet task convention)"
+  - "All objects rotated -90 X (Y-up→Z-up) to stand upright"
+  - "Randomization x=[0.60,0.95] constrained by UR10 reach (1.30m from base at x=-0.2)"
