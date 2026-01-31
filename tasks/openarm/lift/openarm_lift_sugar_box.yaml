@@ -1,0 +1,148 @@
+# Task Document: OpenArmLiftSugarBox
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: OpenArm robot lifts a YCB sugar box from the table to a target height
+# Reference: Based on openarm_lift.yaml with DexCube replaced by YCB sugar box
+
+task:
+  name: OpenArmLiftSugarBox
+  description: "OpenArm unimanual robot grasps a YCB sugar box on the table and lifts it to a commanded target pose above the table"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01                     # 100 Hz simulation
+  decimation: 2                      # control at 50 Hz (every 2 sim steps)
+  episode_length: 5.0                # seconds
+  render_interval: 2
+  physx:
+    bounce_threshold: 0.01           # m/s
+    friction_correlation_distance: 0.00625  # m
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]          # IsaacLab convention
+
+assets:
+  # OpenArm Unimanual robot
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/OpenArm/openarm_unimanual/openarm_unimanual.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    initial_joints:
+      openarm_joint1: 1.57               # pi/2
+      openarm_joint2: 0.0
+      openarm_joint3: -1.57              # -pi/2
+      openarm_joint4: 1.57               # pi/2
+      openarm_joint5: 0.0
+      openarm_joint6: 0.0
+      openarm_joint7: 0.0
+      openarm_finger_joint1: 0.0            # left finger closed
+      openarm_finger_joint2: 0.0            # right finger closed
+    actuators:
+      arm:
+        joint_names: ["openarm_joint1", "openarm_joint2", "openarm_joint3", "openarm_joint4", "openarm_joint5", "openarm_joint6", "openarm_joint7"]
+        stiffness: 80.0
+        damping: 4.0
+        effort_limit_per_joint:
+          openarm_joint1: 40.0
+          openarm_joint2: 40.0
+          openarm_joint3: 27.0
+          openarm_joint4: 27.0
+          openarm_joint5: 7.0
+          openarm_joint6: 7.0
+          openarm_joint7: 7.0
+      gripper:
+        joint_names: ["openarm_finger_joint.*"]
+        effort_limit: 333.33          # N*m
+        stiffness: 2000.0
+        damping: 100.0
+        open_position: 0.044
+        close_position: 0.0
+    ee_frame:
+      body: openarm_hand
+      tcp_frame: openarm_ee_tcp
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]   # wxyz: 90-degree Z rotation
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # YCB Sugar Box (004_sugar_box, ~3.9 x 8.9 x 17.5 cm) — positioned closer for OpenArm
+  - name: sugar_box
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned_Physics/004_sugar_box.usd"
+    prim_path: "/World/Object"
+    position: [0.4, 0.0, 0.088]      # closer to robot (OpenArm shorter reach), upright
+    rotation: [0.7071, 0.7071, 0, 0] # wxyz: 90° X-rotation to stand upright (USD default height axis is Y)
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0    # rad/s
+      max_linear_velocity: 1000.0     # m/s
+      max_depenetration_velocity: 5.0 # m/s
+    randomize:
+      position:
+        type: relative                # offset from initial position
+        x: [-0.1, 0.1]
+        y: [-0.25, 0.25]
+        z: 0.0                        # fixed on table
+
+goal:
+  description: "Lift the sugar box to the commanded target pose above the table"
+  conditions:
+    - subject: sugar_box
+      relation: height_above
+      value: 0.04                     # minimum lift threshold (m)
+    - subject: sugar_box
+      relation: at_position
+      target: command_pose
+      tolerance: 0.05                 # coarse tracking (m)
+  command_ranges:
+    position:
+      x: [0.2, 0.4]                  # closer range for smaller robot
+      y: [-0.2, 0.2]
+      z: [0.15, 0.4]                 # target height range
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.2, 1.0, 0.8]
+  target: [0.4, 0, 0.2]              # looking at table center (cube area)
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Based on openarm_lift.yaml with DexCube replaced by YCB 004_sugar_box"
+  - "YCB sugar box: ~3.9 x 8.9 x 17.5 cm (Domino sugar box)"
+  - "Standing upright: grippable thin side 3.9cm < OpenArm gripper 8.8cm"
+  - "Initial z=0.088m (half of 17.5cm height, upright on table)"
+  - "Object positioned closer [0.4, 0, z] for OpenArm's shorter reach"
+  - "Same randomization, episode length, control rate as DexCube lift"
+  - "Ground plane at z=-1.05 (IsaacLab convention)"
