@@ -4,14 +4,14 @@
 
 task:
   name: FrankaCabinetYCB
-  description: "Sektion Cabinet with YCB mug, tomato soup can, and mustard bottle on top"
-  version: "1.0.0"
+  description: "Franka picks 3 YCB objects (mug, soup can, mustard bottle) from cabinet top and places them on a target zone"
+  version: "1.1.0"
 
 simulation:
   gravity: [0, 0, -9.81]
   timestep: 0.01667
   decimation: 1
-  episode_length: 8.0
+  episode_length: 30.0
   render_interval: 1
   physx:
     solver_type: TGS
@@ -65,7 +65,7 @@ assets:
 
   # YCB Mug on cabinet top (0.6x scale, -90X to stand up)
   - name: mug
-    type: static
+    type: rigid
     source: usd
     asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/025_mug.usd"
     prim_path: "/World/Mug"
@@ -73,8 +73,8 @@ assets:
     rotation: [0.7071, -0.7071, 0, 0]
     scale: [0.6, 0.6, 0.6]
     physics:
-      rigid_body: false
-      collision: false
+      rigid_body: true
+      collision: true
     randomize:
       position:
         type: absolute
@@ -87,7 +87,7 @@ assets:
 
   # YCB Tomato Soup Can on cabinet top (0.6x scale, -90X to stand up)
   - name: tomato_soup_can
-    type: static
+    type: rigid
     source: usd
     asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/005_tomato_soup_can.usd"
     prim_path: "/World/TomatoSoupCan"
@@ -95,8 +95,8 @@ assets:
     rotation: [0.7071, -0.7071, 0, 0]
     scale: [0.6, 0.6, 0.6]
     physics:
-      rigid_body: false
-      collision: false
+      rigid_body: true
+      collision: true
     randomize:
       position:
         type: absolute
@@ -109,7 +109,7 @@ assets:
 
   # YCB Mustard Bottle on cabinet top (0.6x scale, -90X to stand up)
   - name: mustard_bottle
-    type: static
+    type: rigid
     source: usd
     asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/006_mustard_bottle.usd"
     prim_path: "/World/MustardBottle"
@@ -117,8 +117,8 @@ assets:
     rotation: [0.7071, -0.7071, 0, 0]
     scale: [0.6, 0.6, 0.6]
     physics:
-      rigid_body: false
-      collision: false
+      rigid_body: true
+      collision: true
     randomize:
       position:
         type: absolute
@@ -129,8 +129,34 @@ assets:
         yaw: [-1.0, 1.0]
       min_separation: 0.10
 
+  # Target zone on floor (gold flat pad between robot and cabinet)
+  - name: target_zone
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/TargetZone"
+    position: [0.4, 0.0, 0.003]
+    scale: [0.15, 0.15, 0.003]              # 15cm x 15cm x 3mm flat pad
+    color: [0.85, 0.65, 0.13]               # gold
+    physics:
+      rigid_body: false
+      collision: false
+
 goal:
-  description: "Environment with 3 graspable YCB objects on top of the Sektion Cabinet"
+  description: "Pick all 3 YCB objects from cabinet top and place them on the target zone"
+  conditions:
+    - subject: mug
+      relation: at_position
+      target: target_zone
+      tolerance: 0.05
+    - subject: tomato_soup_can
+      relation: at_position
+      target: target_zone
+      tolerance: 0.05
+    - subject: mustard_bottle
+      relation: at_position
+      target: target_zone
+      tolerance: 0.05
 
 camera:
   prim_path: "/World/Camera"
@@ -143,4 +169,7 @@ notes:
   - "Cabinet top z=0.802, all objects 0.6x scale for graspability"
   - "Soup can/mustard rotated -90 X (Y-up→Z-up), mug already upright"
   - "Scaled sizes: mug 5.6cm, can 4.1cm dia, mustard 3.5cm thin - all fit 8cm gripper"
+  - "Objects are rigid (graspable), must be picked from elevated cabinet top"
+  - "Target zone on floor at [0.4, 0, 0.003] between robot and cabinet"
+  - "Episode 30s for 3 sequential pick-place cycles from elevated surface"
   - "Randomization x=[0.60,0.82] constrained by Franka workspace envelope x_max=0.85"

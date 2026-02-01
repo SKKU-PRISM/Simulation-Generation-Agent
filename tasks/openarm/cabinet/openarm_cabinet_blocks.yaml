@@ -1,17 +1,17 @@
 # Task Document: OpenArmCabinetBlocks
-# Version: 1.0.0
-# Description: OpenArm robot with scaled Sektion Cabinet and 3 colored blocks on cabinet top
+# Version: 1.1.0
+# Description: OpenArm picks 3 colored blocks from scaled cabinet top and places on target zone
 
 task:
   name: OpenArmCabinetBlocks
-  description: "Scaled Sektion Cabinet with 3 different-colored blocks placed on top (OpenArm)"
-  version: "1.0.0"
+  description: "OpenArm picks 3 colored blocks from cabinet top and places them on a target zone on the floor"
+  version: "1.1.0"
 
 simulation:
   gravity: [0, 0, -9.81]
   timestep: 0.01667
   decimation: 1
-  episode_length: 8.0
+  episode_length: 30.0
   render_interval: 1
   physx:
     solver_type: TGS
@@ -64,9 +64,9 @@ assets:
       drawer_bottom_joint: 0.0
       drawer_top_joint: 0.0
 
-  # Blue block on cabinet top (static visual)
+  # Blue block on cabinet top (5cm cube, ~50g)
   - name: blue_block
-    type: static
+    type: rigid
     source: primitive
     primitive: cube
     prim_path: "/World/BlueBlock"
@@ -75,8 +75,9 @@ assets:
     scale: [0.05, 0.05, 0.05]
     color: [0.1, 0.2, 1.0]
     physics:
-      rigid_body: false
-      collision: false
+      rigid_body: true
+      collision: true
+      mass: 0.05
     randomize:
       position:
         type: absolute
@@ -87,9 +88,9 @@ assets:
         yaw: [-1.0, 1.0]
       min_separation: 0.06
 
-  # Red block on cabinet top (static visual)
+  # Red block on cabinet top (5cm cube, ~50g)
   - name: red_block
-    type: static
+    type: rigid
     source: primitive
     primitive: cube
     prim_path: "/World/RedBlock"
@@ -98,8 +99,9 @@ assets:
     scale: [0.05, 0.05, 0.05]
     color: [1.0, 0.15, 0.1]
     physics:
-      rigid_body: false
-      collision: false
+      rigid_body: true
+      collision: true
+      mass: 0.05
     randomize:
       position:
         type: absolute
@@ -110,9 +112,9 @@ assets:
         yaw: [-1.0, 1.0]
       min_separation: 0.06
 
-  # Green block on cabinet top (static visual)
+  # Green block on cabinet top (5cm cube, ~50g)
   - name: green_block
-    type: static
+    type: rigid
     source: primitive
     primitive: cube
     prim_path: "/World/GreenBlock"
@@ -120,6 +122,10 @@ assets:
     rotation: [1, 0, 0, 0]
     scale: [0.05, 0.05, 0.05]
     color: [0.1, 0.9, 0.2]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.05
     randomize:
       position:
         type: absolute
@@ -129,12 +135,35 @@ assets:
       orientation:
         yaw: [-1.0, 1.0]
       min_separation: 0.06
+
+  # Target zone on floor (gold flat pad between robot and cabinet)
+  - name: target_zone
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/TargetZone"
+    position: [0.35, 0.0, 0.003]
+    scale: [0.12, 0.12, 0.003]              # 12cm x 12cm x 3mm flat pad
+    color: [0.85, 0.65, 0.13]               # gold
     physics:
       rigid_body: false
       collision: false
 
 goal:
-  description: "Environment with 3 colored blocks on top of the scaled Sektion Cabinet"
+  description: "Pick all 3 colored blocks from cabinet top and place them on the target zone"
+  conditions:
+    - subject: blue_block
+      relation: at_position
+      target: target_zone
+      tolerance: 0.05
+    - subject: red_block
+      relation: at_position
+      target: target_zone
+      tolerance: 0.05
+    - subject: green_block
+      relation: at_position
+      target: target_zone
+      tolerance: 0.05
 
 camera:
   prim_path: "/World/Camera"
@@ -145,5 +174,8 @@ camera:
 
 notes:
   - "Cabinet at [0.7, 0, 0.3] 0.75x scale, rotation [0,0,0,1] (180 deg Z)"
-  - "Block z estimated, will correct after bbox query"
+  - "Cabinet top surface z ~ 0.60, blocks at z=0.626 (surface + half 5cm cube)"
+  - "Blocks are rigid (graspable), must be picked from elevated cabinet top"
+  - "Target zone on floor at [0.35, 0, 0.003] between robot and cabinet"
+  - "Episode 30s for 3 sequential pick-place cycles from elevated surface"
   - "Ground plane at z=0 (cabinet task convention)"

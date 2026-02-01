@@ -94,8 +94,9 @@ assets:
     source: usd
     asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/007_tuna_fish_can.usd"
     prim_path: "/World/Object"
-    position: [0.4, -0.15, 0.017]    # on table surface (half height = 1.7cm)
+    position: [0.4, -0.15, 0.015]    # on table surface (half height = 1.53cm after 0.9x scale)
     rotation: [0.7071, 0.7071, 0, 0] # wxyz: 90 X-rotation to stand upright (USD default height axis is Y)
+    scale: [0.9, 0.9, 0.9]           # 0.9x scale: 7.7 x 3.1 x 7.7 cm — fits Franka gripper 8cm
     physics:
       rigid_body: true
       collision: true
@@ -109,7 +110,7 @@ assets:
         type: absolute
         x: [0.35, 0.50]              # left half of table
         y: [-0.25, -0.05]
-        z: 0.017                      # fixed on table surface
+        z: 0.015                      # fixed on table surface (0.9x scaled)
 
   # Target placement marker (flat green pad on table)
   - name: target_marker
@@ -150,9 +151,9 @@ camera:
   resolution: [1280, 720]
 
 notes:
-  - "YCB 007_tuna_fish_can (Axis_Aligned, no built-in physics): 8.6 x 3.4 x 8.6 cm"
-  - "Very flat can (only 3.4cm tall) — requires top-down grip approach"
-  - "Franka gripper max 8cm < can diameter 8.6cm — must grip from sides where it's 3.4cm tall"
-  - "Can initial z=0.017m (half of 3.4cm height, upright on table)"
+  - "YCB 007_tuna_fish_can (Axis_Aligned, no built-in physics): original 8.6 x 3.4 x 8.6 cm"
+  - "Scaled 0.9x to fit Franka gripper: 7.7 x 3.1 x 7.7 cm (diameter 7.7cm < gripper 8cm)"
+  - "Very flat can (only 3.1cm tall after scaling) — requires top-down grip approach"
+  - "Can initial z=0.015m (half of 3.1cm scaled height, upright on table)"
   - "Low profile object — different grip strategy than taller cans/bottles"
   - "Episode 8s (standard pick-place duration)"
