@@ -337,6 +337,38 @@ Use this structure/pattern, but fill in values from the YAML above.
             env_cfg_path.write_text(content)
             console.print("  [yellow]Auto-patched[/yellow] env_cfg.py → import mdp as mdp (local)")
 
+    # ----- Post-Generation Validation -----
+
+    def _validate_generated_code(self, output_dir: Path) -> list[str]:
+        """Post-generation validation: auto-fix known mistakes before execution."""
+        fixes = []
+
+        # Fix: `in env.scene:` → `in env.scene.keys():`
+        # InteractiveScene has no __contains__, so `in` operator causes KeyError
+        for py_file in output_dir.rglob("*.py"):
+            try:
+                text = py_file.read_text()
+            except Exception:
+                continue
+            original = text
+            # Match patterns like `not in env.scene:` or `in env.scene:`
+            # but not already `in env.scene.keys():`
+            text = re.sub(
+                r'\bnot in env\.scene\b(?!\.keys)',
+                'not in env.scene.keys()',
+                text,
+            )
+            text = re.sub(
+                r'(?<!not )\bin env\.scene\b(?!\.keys|\.articulations|\.rigid_objects|\.sensors|\[)',
+                'in env.scene.keys()',
+                text,
+            )
+            if text != original:
+                py_file.write_text(text)
+                fixes.append(f"Patched {py_file.name}: env.scene → env.scene.keys()")
+
+        return fixes
+
     # ----- Execution -----
 
     def execute_isaaclab(self, output_dir: Path) -> tuple[bool, str]:
@@ -522,6 +554,11 @@ Use this structure/pattern, but fill in values from the YAML above.
             console.print("[green]Dry run complete.[/green] Code saved to:", str(output_dir))
             return {"success": True, "output_dir": str(output_dir), "attempts": 0, "error": None}
 
+        # Step 3.5: Validate and auto-fix known mistakes
+        fixes = self._validate_generated_code(output_dir)
+        for fix in fixes:
+            console.print(f"  [yellow]Auto-fix[/yellow]: {fix}")
+
         # Step 4: Execute and iterate
         for attempt in range(1, self.max_retries + 1):
             console.print(f"[bold]Step 4:[/bold] Execution attempt {attempt}/{self.max_retries}...")
@@ -554,6 +591,10 @@ Use this structure/pattern, but fill in values from the YAML above.
             if attempt < self.max_retries:
                 code_dict = self.fix_errors(code_dict, output, attempt + 1)
                 self.write_output(code_dict, output_dir)
+                # Re-validate after error fix
+                fixes = self._validate_generated_code(output_dir)
+                for fix in fixes:
+                    console.print(f"  [yellow]Auto-fix[/yellow]: {fix}")
 
         console.print(f"[red bold]FAILED[/red bold] after {self.max_retries} attempts")
         return {

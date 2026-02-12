@@ -8,9 +8,9 @@
 
 ```
 Simulation-Generation-Agent
-├── Isaac Sim 4.2.0+ ─────── Pipeline 1 (씬 빌드 + VLM 평가)
+├── Isaac Sim 4.2.0+ ─────── Isaac Sim Pipeline (씬 빌드 + VLM 평가)
 │   └── isaac-sim-mcp ────── MCP 서버 (TCP 소켓 통신)
-├── IsaacLab v2.3.2+ ─────── Pipeline 2 (코드 생성 + 실행)
+├── IsaacLab v2.3.2+ ─────── IsaacLab Pipeline (코드 생성 + 실행)
 │   └── conda env: env_isaaclab
 └── Azure OpenAI API ──────── 두 파이프라인 공용 (LLM + VLM)
 ```
@@ -19,8 +19,8 @@ Simulation-Generation-Agent
 
 | 사용 목적 | 필수 설치 |
 |-----------|----------|
-| Pipeline 2만 (IsaacLab 코드 생성) | 이 프로젝트 + IsaacLab + Azure OpenAI 키 |
-| Pipeline 1만 (Isaac Sim 씬 빌드) | 이 프로젝트 + Isaac Sim + isaac-sim-mcp + VLM 키 |
+| IsaacLab Pipeline만 (코드 생성) | 이 프로젝트 + IsaacLab + Azure OpenAI 키 |
+| Isaac Sim Pipeline만 (씬 빌드) | 이 프로젝트 + Isaac Sim + isaac-sim-mcp + VLM 키 |
 | 두 파이프라인 모두 | 전부 |
 
 ---
@@ -31,7 +31,7 @@ Simulation-Generation-Agent
 - **GPU**: NVIDIA GPU (RTX 2070 이상 권장)
 - **CUDA**: 12.x
 - **Python**: 3.10+
-- **Conda**: Miniconda 또는 Anaconda (Pipeline 2 사용 시)
+- **Conda**: Miniconda 또는 Anaconda (IsaacLab Pipeline 사용 시)
 - **디스크**: Isaac Sim ~15GB, IsaacLab ~5GB
 
 ---
@@ -44,7 +44,7 @@ git clone <repo-url>
 cd Simulation-Generation-Agent
 
 # Python 의존성 설치
-pip install -r requirements.txt
+pip install -e .
 ```
 
 ### 환경변수 설정
@@ -61,7 +61,7 @@ cp .env.example .env
 AZURE_OPENAI_API_KEY=your-azure-openai-key
 AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1/
 
-# === 선택: VLM 백엔드 (Pipeline 1에서 VLM 평가 시) ===
+# === 선택: VLM 백엔드 (Isaac Sim Pipeline에서 VLM 평가 시) ===
 # Azure가 최우선으로 사용되므로, 위 키만 있으면 VLM도 Azure로 동작합니다.
 # 아래는 추가 백엔드가 필요한 경우에만 설정:
 # ANTHROPIC_API_KEY=your-anthropic-key    # Claude VLM
@@ -80,9 +80,9 @@ AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1/
 
 ---
 
-## 3. Pipeline 1 전용: Isaac Sim + MCP 설치
+## 3. Isaac Sim Pipeline 전용: Isaac Sim + MCP 설치
 
-> Pipeline 2만 사용한다면 이 섹션을 건너뛰세요.
+> IsaacLab Pipeline만 사용한다면 이 섹션을 건너뛰세요.
 
 ### 3.1 Isaac Sim 설치
 
@@ -141,9 +141,9 @@ python3 tests/test_components.py connection
 
 ---
 
-## 4. Pipeline 2 전용: IsaacLab 설치
+## 4. IsaacLab Pipeline 전용: IsaacLab 설치
 
-> Pipeline 1만 사용한다면 이 섹션을 건너뛰세요.
+> Isaac Sim Pipeline만 사용한다면 이 섹션을 건너뛰세요.
 
 ### 4.1 IsaacLab 클론 및 설치
 
@@ -216,10 +216,10 @@ ls $ISAACLAB_PATH/source/isaaclab_tasks/isaaclab_tasks/manager_based/manipulatio
 
 ### 공통
 
-- [ ] `pip install -r requirements.txt` 성공
+- [ ] `pip install -e .` 성공
 - [ ] `.env` 파일에 `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_BASE_URL` 설정
 
-### Pipeline 1 (Isaac Sim + VLM)
+### Isaac Sim Pipeline
 
 - [ ] Isaac Sim 실행 가능
 - [ ] isaac-sim-mcp 클론 완료
@@ -227,7 +227,7 @@ ls $ISAACLAB_PATH/source/isaaclab_tasks/isaaclab_tasks/manager_based/manipulatio
 - [ ] `./run_isaac_mcp_streaming.sh 0` 으로 MCP 서버 시작
 - [ ] `python3 tests/test_components.py connection` 성공
 
-### Pipeline 2 (IsaacLab + LLM)
+### IsaacLab Pipeline
 
 - [ ] IsaacLab 클론 및 설치 완료
 - [ ] conda 환경 `env_isaaclab` 생성 완료

@@ -12,10 +12,6 @@ Note: Requires running Isaac Sim with MCP extension on localhost:8766.
 """
 
 import sys
-from pathlib import Path
-
-# Ensure project root is on sys.path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # TODO: Import from src.isaac_sim.runner once implemented
 print("Isaac Sim automated runner is not yet implemented.")

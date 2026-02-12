@@ -4,7 +4,7 @@
 
 ---
 
-## Pipeline 2: IsaacLab 코드 생성 (주요 파이프라인)
+## IsaacLab Pipeline: 코드 생성
 
 YAML 태스크 문서를 입력하면, LLM이 IsaacLab ManagerBasedRLEnv Python 코드를 생성하고 자동 실행합니다.
 
@@ -96,11 +96,11 @@ outputs/isaaclab/FrankaStack_20260212_143000/
 
 ---
 
-## Pipeline 1: Isaac Sim 씬 빌드 (보조 파이프라인)
+## Isaac Sim Pipeline: 씬 빌드
 
 YAML 태스크 문서를 Isaac Sim에서 시각적으로 빌드합니다. MCP 서버가 실행 중이어야 합니다.
 
-> **현재 제약**: Pipeline 1의 자동 반복 루프(빌드 → 스크린샷 → VLM 평가 → 재시도)는 아직 미구현 상태입니다.
+> **현재 제약**: Isaac Sim Pipeline의 자동 반복 루프(빌드 → 스크린샷 → VLM 평가 → 재시도)는 아직 미구현 상태입니다.
 > 각 컴포넌트를 개별적으로 사용해야 합니다.
 
 ### 전제 조건
@@ -169,52 +169,20 @@ python3 scripts/evaluate.py --skip-runtime \
 
 ---
 
-## Claude Code 스킬 (선택)
-
-이 프로젝트를 Claude Code에서 열면 4개의 커스텀 스킬을 사용할 수 있습니다.
-
-| 스킬 | 설명 | MCP 필요 |
-|------|------|:-------:|
-| `/design-task "설명" [robot]` | 자연어 설명으로 Task YAML 자동 생성 | X |
-| `/validate-task <yaml_path>` | Task YAML 검증 (19개 항목, 9개 카테고리) | X |
-| `/list-nucleus-assets [path]` | Nucleus 서버 에셋 디렉토리 탐색 | O |
-| `/verify-asset <nucleus_path>` | USD 에셋 로드 테스트 + 바운딩 박스 측정 | O |
-
-### 사용 예시
-
-```
-# 자연어로 태스크 생성
-/design-task "Franka가 빨간 큐브를 집어서 트레이에 놓기"
-
-# 생성된 YAML 검증
-/validate-task tasks/franka/pick_place/franka_pick_place_cube.yaml
-
-# Nucleus 에셋 탐색
-/list-nucleus-assets /Isaac/Props/YCB/Axis_Aligned/
-
-# 특정 에셋 검증
-/verify-asset /Isaac/Props/YCB/Axis_Aligned/006_mustard_bottle.usd
-```
-
----
-
 ## 전체 워크플로우 예시
 
 ### 예시: 새로운 Franka 태스크 생성부터 실행까지
 
 ```bash
-# 1. 태스크 YAML 작성 (또는 /design-task 스킬 사용)
+# 1. 태스크 YAML 작성
 #    tasks/franka/stack/franka_stack_v2.yaml 작성
 
-# 2. YAML 검증 (Claude Code에서)
-#    /validate-task tasks/franka/stack/franka_stack_v2.yaml
-
-# 3. IsaacLab 코드 생성 + 실행 + 평가
+# 2. IsaacLab 코드 생성 + 실행 + 평가
 python3 scripts/run_isaac_lab.py \
   tasks/franka/stack/franka_stack_v2.yaml \
   --evaluate
 
-# 4. 결과 확인
+# 3. 결과 확인
 cat outputs/isaaclab/FrankaStackV2_*/eval_report.json
 ```
 

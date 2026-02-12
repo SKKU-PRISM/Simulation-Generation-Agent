@@ -27,6 +27,33 @@ You previously generated IsaacLab environment code that failed to execute. Fix t
 {ERROR_TRACEBACK}
 ```
 
+### Known Error Patterns and Fixes
+
+Before analyzing the traceback, check if it matches one of these known patterns:
+
+a. `KeyError: "Scene entity with key '0' not found"`
+   → Cause: `if x not in env.scene:` — InteractiveScene has no `__contains__`
+   → Fix: Change to `if x not in env.scene.keys():`
+
+b. `RuntimeError: Found an articulation root when resolving ... for rigid objects`
+   → Cause: USD asset has embedded FixedJoint/ArticulationRoot (common with Factory assets)
+   → Fix: Add `articulation_props=sim_utils.ArticulationRootPropertiesCfg(articulation_enabled=False)` to the spawn config of the RigidObjectCfg
+
+c. `ImportError: cannot import name 'ArticulationRootPropertiesCfg' from 'isaaclab.sim.spawners...'`
+   → Cause: Wrong import path — ArticulationRootPropertiesCfg is NOT in spawners
+   → Fix: Use `import isaaclab.sim as sim_utils` then `sim_utils.ArticulationRootPropertiesCfg`
+
+d. `AttributeError: module 'mdp' has no attribute 'ImplicitActuatorCfg'`
+   → Cause: ImplicitActuatorCfg is NOT in isaaclab.envs.mdp (thus not in the local mdp/ package)
+   → Fix: `from isaaclab.actuators import ImplicitActuatorCfg` then use directly in ArticulationCfg.actuators
+
+e. `TypeError: Missing values ... scene.cabinet.actuators`
+   → Cause: ArticulationCfg requires actuators dict, cannot be empty or omitted
+   → Fix: Add actuators dict with ImplicitActuatorCfg for each joint group:
+   ```python
+   actuators={"drawers": ImplicitActuatorCfg(joint_names_expr=["drawer_top_joint"], effort_limit=87.0, stiffness=10.0, damping=1.0)}
+   ```
+
 ### Fix Instructions
 
 Analyze the traceback, identify the root cause, and return the corrected file(s).

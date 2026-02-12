@@ -2,8 +2,8 @@
 
 YAML task document 기반 로보틱스 시뮬레이션 환경 자동 구성 프레임워크. 두 가지 파이프라인을 지원합니다:
 
-1. **Isaac Sim Pipeline**: MCP 소켓으로 Isaac Sim 씬을 빌드하고 VLM으로 평가
-2. **IsaacLab Pipeline**: LLM이 IsaacLab ManagerBasedRLEnv Python 코드를 생성하고 자동 실행
+- **Isaac Sim Pipeline**: MCP 소켓으로 Isaac Sim 씬을 빌드하고 VLM으로 평가
+- **IsaacLab Pipeline**: LLM이 IsaacLab ManagerBasedRLEnv Python 코드를 생성하고 자동 실행
 
 ## Architecture
 
@@ -14,7 +14,7 @@ YAML task document 기반 로보틱스 시뮬레이션 환경 자동 구성 프�
               +----------------+----------------+
               |                                 |
               v                                 v
-   Pipeline 1: Isaac Sim + VLM      Pipeline 2: IsaacLab + LLM
+   Isaac Sim Pipeline               IsaacLab Pipeline
               |                                 |
    +----------v-----------+          +----------v-----------+
    |    SceneBuilder       |          |    IsaacLabAgent      |
@@ -59,7 +59,7 @@ YAML task document 기반 로보틱스 시뮬레이션 환경 자동 구성 프�
 # 설치
 git clone <repo-url>
 cd Simulation-Generation-Agent
-pip install -r requirements.txt
+pip install -e .
 cp .env.example .env   # AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL 설정
 ```
 
@@ -96,8 +96,8 @@ python3 scripts/build_scene.py tasks/franka/stack/franka_stack.yaml
 Simulation-Generation-Agent/
 ├── src/                               # 핵심 소스 코드
 │   ├── common/                        # 공유 유틸리티 (MCPClient, LLMClient)
-│   ├── isaac_sim/                     # Pipeline 1 (SceneBuilder, Screenshot, VLM)
-│   └── isaac_lab/                     # Pipeline 2 (Agent, Evaluator)
+│   ├── isaac_sim/                     # Isaac Sim Pipeline (SceneBuilder, Screenshot, VLM)
+│   └── isaac_lab/                     # IsaacLab Pipeline (Agent, Evaluator)
 ├── scripts/                           # CLI 진입점
 ├── tests/                             # 컴포넌트 테스트
 ├── tasks/                             # 62 Task YAML documents

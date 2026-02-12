@@ -39,7 +39,7 @@ Always start env_cfg.py with these imports (include ALL, remove unused later):
 ```python
 from dataclasses import MISSING
 
-import isaaclab.sim as sim_utils
+import isaaclab.sim as sim_utils  # includes ArticulationRootPropertiesCfg, CollisionPropertiesCfg, etc.
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
@@ -55,6 +55,8 @@ from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
+
+from isaaclab.actuators import ImplicitActuatorCfg  # for ArticulationCfg.actuators (cabinet drawers/doors etc.)
 
 import mdp as mdp  # ALWAYS use local mdp/ package (re-exports isaaclab.envs.mdp + custom functions)
 
@@ -480,3 +482,10 @@ success = DoneTerm(func=mdp.cubes_stacked, params={"xy_threshold": 0.04, ...})
 13. `InteractiveSceneCfg` MUST set `env_spacing` in constructor or `__post_init__`: `SceneCfg(num_envs=4096, env_spacing=2.5)`
 14. DO NOT use `import isaaclab.envs.mdp as mdp` — ALWAYS use `import mdp as mdp` (local package)
 15. The `@configclass` MUST import ALL manager imports: include `from isaaclab.managers import RewardTermCfg as RewTerm` if using rewards
+16. `InteractiveScene`에는 `__contains__`가 구현되어 있지 않으므로 `if name in env.scene:` 사용 금지. 반드시 `if name in env.scene.keys():` 또는 `try/except KeyError` 패턴을 사용해야 함
+17. Factory 에셋(peg, hole, nut 등 `{ISAACLAB_NUCLEUS_DIR}/Factory/` 경로)은 내부에 FixedJoint가 있어 articulation root로 감지됨. `RigidObjectCfg`의 spawn에 반드시 `articulation_props=sim_utils.ArticulationRootPropertiesCfg(articulation_enabled=False)` 추가 (sim_utils는 `import isaaclab.sim as sim_utils`로 이미 import됨)
+18. `ArticulationRootPropertiesCfg`를 직접 import하려 하지 말 것. `from isaaclab.sim.spawners...` 등에는 없음. 반드시 `sim_utils.ArticulationRootPropertiesCfg`로 접근
+19. Cabinet 등 non-robot ArticulationCfg의 actuators에는 `ImplicitActuatorCfg`를 사용. `from isaaclab.actuators import ImplicitActuatorCfg`로 import. `mdp.ImplicitActuatorCfg`는 존재하지 않음. 예시:
+    ```python
+    actuators={"drawers": ImplicitActuatorCfg(joint_names_expr=["drawer_top_joint"], effort_limit=87.0, stiffness=10.0, damping=1.0)}
+    ```

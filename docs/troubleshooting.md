@@ -4,7 +4,7 @@
 
 ---
 
-## IsaacLab Pipeline (Pipeline 2)
+## IsaacLab Pipeline
 
 ### `simulation_app.close()`가 무한 대기 (hang)
 
@@ -90,7 +90,7 @@ my_reward = RewTerm(func=mdp.action_rate_l2, weight=-0.01, params={})
 
 ---
 
-## Isaac Sim MCP (Pipeline 1)
+## Isaac Sim Pipeline
 
 ### 연결 거부
 
