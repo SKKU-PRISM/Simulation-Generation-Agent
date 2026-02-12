@@ -155,7 +155,7 @@ class IsaacLabAgent:
             mdp_path = self.reference_base / mdp_file
             if mdp_path.exists():
                 content = mdp_path.read_text()
-                # Truncate if too long (save tokens for gpt-4.1-mini)
+                # Truncate if too long (save tokens for gpt-5-mini)
                 if len(content) > 3000:
                     content = content[:3000] + "\n# ... (truncated)"
                 parts.append(f"### Reference: {mdp_file}\n```python\n{content}\n```")

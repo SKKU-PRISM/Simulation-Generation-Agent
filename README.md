@@ -29,7 +29,7 @@ YAML task document 기반 로보틱스 시뮬레이션 환경 자동 구성 프�
               |                       +-----------+----------+
    +----------v-----------+                       |
    |    VLM Evaluator      |          +-----------v----------+
-   |  Claude/Gemini/Ollama  |          |  Generated Code       |
+   |  Azure/Claude/Gemini/Ollama |          |  Generated Code       |
    |  (score 0-100)        |          |  env_cfg.py + run_env  |
    +----------+------------+          +-----------+----------+
               |                                   |
@@ -222,12 +222,16 @@ camera:
 ## Environment Variables
 
 ```bash
-# Isaac Sim Pipeline
+# Isaac Sim Pipeline (VLM 평가)
 ANTHROPIC_API_KEY        # Claude VLM 백엔드
 GOOGLE_API_KEY           # Gemini VLM 백엔드 (무료 tier)
+CLAUDE_MODEL             # Claude 모델명 (default: claude-sonnet-4-20250514)
+GEMINI_MODEL             # Gemini 모델명 (default: gemini-2.5-flash)
+OLLAMA_MODEL             # Ollama 모델명 (default: llava:7b)
+OLLAMA_BASE_URL          # Ollama 서버 URL (default: http://localhost:11434)
 
-# IsaacLab Pipeline
-AZURE_OPENAI_API_KEY     # IsaacLab 코드 생성 LLM (필수)
+# Azure OpenAI (Isaac Sim VLM + IsaacLab LLM 공용)
+AZURE_OPENAI_API_KEY     # Azure OpenAI API 키 (필수)
 AZURE_OPENAI_BASE_URL    # Azure 엔드포인트 (필수)
 AZURE_OPENAI_MODEL       # 모델명 (default: gpt-5-mini)
 ```
