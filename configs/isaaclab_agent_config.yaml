@@ -1,0 +1,25 @@
+# IsaacLab Environment Generation Agent Configuration
+
+isaaclab:
+  path: null  # Set via ISAACLAB_PATH env var or override here
+  conda_env: "env_isaaclab"
+  use_launcher: true  # use isaaclab.sh for automatic env setup
+
+agent:
+  max_retries: 5
+  max_tokens: 8000
+  temperature: 0.1
+  output_dir: "outputs/isaaclab"
+  execution_timeout: 300  # seconds (IsaacLab + PhysX init can be slow)
+  validation_num_envs: 2
+  headless: true
+  save_intermediate: true  # keep code from failed attempts
+
+# Reference file base path (relative to isaaclab.path)
+reference_base: "source/isaaclab_tasks/isaaclab_tasks/manager_based/manipulation"
+
+# Evaluation settings (used when --evaluate flag is set)
+evaluation:
+  config_path: "configs/isaaclab_eval_config.yaml"
+  skip_runtime: false
+  min_score: 0  # minimum acceptable score (0 = no threshold)

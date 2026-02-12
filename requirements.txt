@@ -19,3 +19,6 @@ python-dotenv>=1.0
 
 # Gemini VLM backend
 google-generativeai>=0.8.0
+
+# Azure OpenAI (IsaacLab agent)
+openai>=1.0

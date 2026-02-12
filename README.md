@@ -1,27 +1,53 @@
-# AutoEnvConstruction
+# Simulation-Generation-Agent
 
-MCP 기반 Isaac Sim 로보틱스 시뮬레이션 환경 자동 구성 파이프라인. YAML task document를 읽어 Isaac Sim 씬을 빌드하고, 스크린샷을 캡처하여 VLM으로 검증합니다.
+YAML task document 기반 로보틱스 시뮬레이션 환경 자동 구성 프레임워크. 두 가지 파이프라인을 지원합니다:
+
+1. **Isaac Sim Pipeline**: MCP 소켓으로 Isaac Sim 씬을 빌드하고 VLM으로 평가
+2. **IsaacLab Pipeline**: LLM이 IsaacLab ManagerBasedRLEnv Python 코드를 생성하고 자동 실행
 
 ## Architecture
 
 ```
-YAML Task Document
-       |
-       v
- +-------------+    +---------------+    +--------------+
- | SceneBuilder|--->|ScreenshotCapt.|--->| VLM Evaluator|
- |   (MCP)     |    | (Replicator)  |    |(Claude/Gemini)|
- +-------------+    +---------------+    +--------------+
+                        62 Task YAML Documents
+                    tasks/{robot}/{category}/*.yaml
+                               |
+              +----------------+----------------+
+              |                                 |
+              v                                 v
+   Pipeline 1: Isaac Sim + VLM      Pipeline 2: IsaacLab + LLM
+              |                                 |
+   +----------v-----------+          +----------v-----------+
+   |    SceneBuilder       |          |    IsaacLabAgent      |
+   |    (MCP → localhost   |          |    (YAML 파싱 →       |
+   |     :8766 TCP)        |          |     LLM 프롬프트)     |
+   +----------+------------+          +----------+-----------+
+              |                                  |
+   +----------v-----------+          +-----------v----------+
+   |  ScreenshotCapture    |          |  Azure OpenAI        |
+   |  (Replicator API)     |          |  gpt-5-mini        |
+   +----------+------------+          |  (코드 생성)          |
+              |                       +-----------+----------+
+   +----------v-----------+                       |
+   |    VLM Evaluator      |          +-----------v----------+
+   |  Claude/Gemini/Ollama  |          |  Generated Code       |
+   |  (score 0-100)        |          |  env_cfg.py + run_env  |
+   +----------+------------+          +-----------+----------+
+              |                                   |
+        score >= 80?                    +---------v---------+
+        YES → 완료                      |  isaaclab.sh       |
+        NO  → 재시도 (max 5)           |  (headless 실행)    |
+                                        +---------+---------+
+                                                  |
+                                           SUCCESS? → 실패시
+                                           에러 피드백 → LLM
+                                           재생성 (max 5회)
 ```
-
-- **SceneBuilder**: YAML을 파싱하여 MCP 소켓(localhost:8766)을 통해 Isaac Sim에 USD prim 생성
-- **ScreenshotCapture**: Omni Replicator API로 뷰포트 캡처
-- **VLM Evaluator**: Claude/Gemini/Ollama 등으로 씬 품질 평가 (0-100점)
 
 ## Prerequisites
 
-- **Isaac Sim** (2023.1.1+) + MCP 확장 활성화
 - **Python 3.10+**
+- **Isaac Sim** (2023.1.1+) + MCP 확장 — Pipeline 1
+- **IsaacLab** (v2.3.2+) + conda env `env_isaaclab` — Pipeline 2
 - Isaac Sim MCP 서버: [isaac-sim-mcp](https://github.com/isaac-sim/isaac-sim-mcp)
 
 ## Installation
@@ -30,79 +56,100 @@ YAML Task Document
 pip install -r requirements.txt
 ```
 
-### Isaac Sim MCP 시작
-
-씬 빌드 전 Isaac Sim MCP 서버가 실행 중이어야 합니다:
-
-```bash
-# GPU 0번으로 Isaac Sim + MCP 시작
-/path/to/isaac-sim-mcp/run_isaac_mcp_streaming.sh 0
-```
-
 ## Quick Start
 
+### Pipeline 1: Isaac Sim + VLM
+
 ```bash
-cd scripts
+# Isaac Sim MCP 서버 시작
+/path/to/isaac-sim-mcp/run_isaac_mcp_streaming.sh 0
 
 # 1. 씬 빌드
-python3 scene_builder.py ../tasks/franka/stack/franka_stack.yaml
+python3 scripts/scene_builder.py tasks/franka/stack/franka_stack.yaml
 
 # 2. 스크린샷 캡처
-python3 screenshot_capture.py ../outputs/test.png
+python3 scripts/screenshot_capture.py outputs/test.png
 
-# 3. VLM 평가 (API 키 필요)
-python3 vlm_evaluator.py \
-  --screenshot ../outputs/test.png \
-  --document ../tasks/franka/stack/franka_stack.yaml \
-  --output ../outputs/eval.json
+# 3. VLM 평가
+python3 scripts/vlm_evaluator.py \
+  -s outputs/test.png \
+  -d tasks/franka/stack/franka_stack.yaml
+```
+
+### Pipeline 2: IsaacLab Code Generation
+
+```bash
+# .env에 API 키 설정
+echo 'AZURE_OPENAI_API_KEY=your-key' >> .env
+echo 'AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1/' >> .env
+
+# 단일 task → IsaacLab 코드 생성 + 실행
+python3 scripts/isaaclab_agent.py tasks/franka/stack/franka_stack.yaml
+
+# 코드 생성 + 실행 + 품질 평가 (100점 만점)
+python3 scripts/isaaclab_agent.py tasks/franka/stack/franka_stack.yaml --evaluate
+
+# 코드 생성만 (실행 안 함)
+python3 scripts/isaaclab_agent.py tasks/franka/stack/franka_stack.yaml --dry-run
+
+# 기존 output 평가만 (standalone)
+python3 scripts/isaaclab_evaluator.py outputs/isaaclab/<dir>/ tasks/franka/stack/franka_stack.yaml
+
+# 폴더 전체 batch 변환
+python3 scripts/isaaclab_agent.py --batch tasks/franka/
 ```
 
 ### 컴포넌트 테스트
 
 ```bash
-cd scripts
-
-# MCP 연결 테스트
-python3 test_components.py connection
-
-# 씬 빌드 테스트
-python3 test_components.py scene ../tasks/franka/stack/franka_stack.yaml
-
-# 전체 테스트 (연결 -> 빌드 -> 스크린샷)
-python3 test_components.py full --skip-vlm
+python3 scripts/test_components.py connection     # MCP 연결
+python3 scripts/test_components.py scene tasks/franka/stack/franka_stack.yaml
+python3 scripts/test_components.py full --skip-vlm # 전체 (VLM 제외)
 ```
 
 ## Project Structure
 
 ```
-AutoEnvConstruction/
+Simulation-Generation-Agent/
 ├── scripts/
-│   ├── scene_builder.py          # YAML -> Isaac Sim 씬 (MCP)
-│   ├── screenshot_capture.py     # 뷰포트 스크린샷 캡처
-│   ├── vlm_evaluator.py          # VLM 기반 씬 평가
-│   └── test_components.py        # 컴포넌트 개별 테스트
-├── tasks/                        # Task document (YAML)
-│   ├── franka/                   # Franka Panda (7-DOF + 2-finger)
-│   ├── openarm/                  # OpenArm (7-DOF + 2-finger)
-│   └── ur10/                     # UR10 (6-DOF)
+│   ├── isaaclab_agent.py          # [IsaacLab] YAML → LLM → 코드 생성 + 실행
+│   ├── isaaclab_evaluator.py      # [IsaacLab] 생성 코드 품질 평가 (100점)
+│   ├── llm_client.py              # [IsaacLab] Azure OpenAI 클라이언트
+│   ├── scene_builder.py           # [Isaac Sim] YAML → MCP → 씬 빌드
+│   ├── screenshot_capture.py      # [Isaac Sim] Replicator 스크린샷
+│   ├── vlm_evaluator.py           # [Isaac Sim] VLM 평가 (Claude/Gemini/Ollama)
+│   └── test_components.py         # 컴포넌트 테스트
+├── tasks/                         # 62 Task YAML documents
+│   ├── franka/                    # Franka Panda (20 tasks)
+│   ├── openarm/                   # OpenArm (20 tasks)
+│   ├── ur10/                      # UR10 (13 tasks)
+│   ├── so101/                     # SO-101 (9 tasks)
+│   └── templates/                 # v2.0.0 템플릿
 ├── configs/
-│   ├── pipeline_config.yaml      # MCP 연결, 씬 기본값
-│   ├── vlm_config.yaml           # VLM 모델, 평가 가중치
-│   └── robot_profiles/           # 로봇별 kinematics 프로파일
+│   ├── pipeline_config.yaml       # MCP 연결, 씬 기본값
+│   ├── vlm_config.yaml            # VLM 모델, 평가 가중치
+│   ├── isaaclab_agent_config.yaml # IsaacLab Agent 설정
+│   ├── isaaclab_eval_config.yaml  # IsaacLab 평가 설정
+│   └── robot_profiles/            # 로봇별 kinematics (4종)
 ├── prompts/
-│   └── vlm_evaluation.md         # VLM 평가 프롬프트 템플릿
+│   ├── vlm_evaluation.md          # VLM 평가 프롬프트
+│   ├── isaaclab_generation.md     # IsaacLab 코드 생성 프롬프트
+│   └── isaaclab_error_fix.md      # 에러 수정 프롬프트
+├── .claude/skills/                # Claude Code 스킬 (4종)
+├── .mcp.json                      # Isaac Sim MCP 서버 설정
 └── requirements.txt
 ```
 
 ## Supported Robots & Tasks
 
-| Robot | Tasks |
-|-------|-------|
-| **Franka Panda** | stack, lift, cabinet, pick_place |
-| **OpenArm** | stack, lift, cabinet, reach |
-| **UR10** | stack, cabinet, pick_place, reach |
+| Robot | DOF | Gripper | Tasks (62 total) |
+|-------|-----|---------|-------------------|
+| **Franka Panda** | 7+2 | Parallel jaw (8cm) | stack(2), lift(2), pick_place(9), cabinet(3), sort(3), peg_insert(1) |
+| **OpenArm** | 7+2 | Parallel jaw (8.8cm) | stack(2), lift(2), pick_place(9), reach(1), cabinet(3), sort(3) |
+| **UR10** | 6 | Suction | stack(2), cabinet(3), pick_place(7), reach(1) |
+| **SO-101** | 5+1 | Claw (5cm) | stack(1), lift(1), pick_place(3), reach(1), sort(3) |
 
-Task document 경로: `tasks/{robot}/{task}/{robot}_{task}.yaml`
+Task document 경로: `tasks/{robot}/{category}/{robot}_{task}.yaml`
 
 ## Task Document Format
 
@@ -114,53 +161,63 @@ task:
 simulation:
   gravity: [0, 0, -9.81]
   timestep: 0.01
+  decimation: 5
+  episode_length: 30.0
 
 scene:
   lighting: { type: dome, intensity: 3000 }
-  ground: { position: [0, 0, -1.05] }
+  ground: { enabled: true, position: [0, 0, -1.05] }
 
 assets:
   - name: robot
     type: articulation
     robot_type: franka
-    prim_path: /World/Robot
     position: [0, 0, 0]
-    rotation: [1, 0, 0, 0]     # wxyz quaternion
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
     initial_joints: { ... }
 
   - name: table
     type: static
     asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/..."
-    position: [0.5, 0, 0]
 
   - name: cube_1
     type: rigid
-    primitive: cube
-    position: [0.4, 0, 0.0203]
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/blue_block.usd"
     physics: { rigid_body: true, collision: true }
     randomize:
-      position: { x: [0.4, 0.6], y: [-0.1, 0.1] }
+      position: { type: absolute, x: [0.4, 0.6], y: [-0.1, 0.1] }
+
+goal:
+  description: "Stack cubes: Blue -> Red -> Green"
+  success_criteria:
+    xy_threshold: 0.04
+    height_diff: 0.0468
 
 camera:
   position: [1.5, 1.2, 1.0]
   target: [0.25, 0, 0.3]
   fov: 60
-
-goal:
-  description: "Stack cubes: Blue -> Red -> Green"
 ```
 
 ## Configuration
 
-| File | Description |
-|------|-------------|
-| `configs/pipeline_config.yaml` | MCP 연결(host/port), 씬 기본값(physics, lighting) |
-| `configs/vlm_config.yaml` | VLM 모델 설정, 평가 가중치, 재시도 설정 |
-| `configs/robot_profiles/*.yaml` | 로봇별 kinematics, workspace, gripper 정보 |
+| File | Pipeline | Description |
+|------|----------|-------------|
+| `configs/pipeline_config.yaml` | Isaac Sim | MCP 연결, 평가 임계치, 씬 기본값 |
+| `configs/vlm_config.yaml` | Isaac Sim | VLM 모델, 평가 가중치, 재시도 설정 |
+| `configs/isaaclab_agent_config.yaml` | IsaacLab | IsaacLab 경로, LLM 설정, 실행 타임아웃 |
+| `configs/isaaclab_eval_config.yaml` | IsaacLab | 평가 가중치, 유효 MDP 함수, 런타임 설정 |
+| `configs/robot_profiles/*.yaml` | Both | 로봇별 kinematics, workspace, gripper 정보 |
 
 ## Environment Variables
 
 ```bash
-ANTHROPIC_API_KEY    # Claude VLM 백엔드
-GOOGLE_API_KEY       # Gemini VLM 백엔드 (무료 tier 사용 가능)
+# Isaac Sim Pipeline
+ANTHROPIC_API_KEY        # Claude VLM 백엔드
+GOOGLE_API_KEY           # Gemini VLM 백엔드 (무료 tier)
+
+# IsaacLab Pipeline
+AZURE_OPENAI_API_KEY     # IsaacLab 코드 생성 LLM (필수)
+AZURE_OPENAI_BASE_URL    # Azure 엔드포인트 (필수)
+AZURE_OPENAI_MODEL       # 모델명 (default: gpt-5-mini)
 ```

@@ -1,0 +1,77 @@
+# IsaacLab Environment Evaluation Configuration
+
+evaluation:
+  # Category weights (must sum to 100)
+  weights:
+    scene_fidelity: 30
+    mdp_correctness: 25
+    task_alignment: 25
+    runtime_validity: 20
+
+  # Tolerances for static analysis
+  position_tolerance: 0.02    # meters
+  rotation_tolerance: 0.01    # quaternion dot product difference
+  scale_tolerance: 0.05       # fractional difference
+
+  # Known valid MDP functions (for validity checking)
+  valid_obs_functions:
+    - "mdp.joint_pos_rel"
+    - "mdp.joint_vel_rel"
+    - "mdp.joint_pos"
+    - "mdp.joint_vel"
+    - "mdp.last_action"
+    - "mdp.body_pose_w"
+    - "mdp.root_pos_w"
+    - "mdp.root_quat_w"
+    - "mdp.root_lin_vel_w"
+    - "mdp.root_ang_vel_w"
+
+  valid_event_functions:
+    - "mdp.reset_scene_to_default"
+    - "mdp.reset_root_state_uniform"
+    - "mdp.reset_joints_by_offset"
+    - "mdp.push_by_setting_velocity"
+
+  valid_termination_functions:
+    - "mdp.time_out"
+    - "mdp.root_height_below_minimum"
+    - "mdp.illegal_contact"
+
+  valid_reward_functions:
+    - "mdp.action_rate_l2"
+    - "mdp.joint_vel_l2"
+
+runtime:
+  eval_steps: 20
+  num_envs: 2
+  timeout: 300          # seconds
+  headless: true
+  position_bound: 10.0  # meters — objects beyond this are "exploded"
+  reward_signal_threshold: 0.001
+
+isaaclab:
+  path: null  # Set via ISAACLAB_PATH env var or override here
+  conda_env: "env_isaaclab"
+
+# Robot DOF mapping for action space validation
+robot_dof:
+  franka:
+    arm_joints: 7
+    gripper_type: "binary"
+    arm_joint_pattern: "panda_joint.*"
+    gripper_joint_pattern: "panda_finger.*"
+  ur10:
+    arm_joints: 6
+    gripper_type: "binary"
+    arm_joint_pattern: ".*"
+    gripper_joint_pattern: "finger_joint.*"
+  openarm:
+    arm_joints: 6
+    gripper_type: "binary"
+    arm_joint_pattern: ".*_joint[1-6]"
+    gripper_joint_pattern: ".*_finger.*"
+  so101:
+    arm_joints: 6
+    gripper_type: "binary"
+    arm_joint_pattern: ".*_joint[1-6]"
+    gripper_joint_pattern: ".*_finger.*"

@@ -13,6 +13,9 @@ __pycache__/
 outputs/
 
 
+# Environment variables (API keys)
+.env
+
 # OS files
 .DS_Store
 Thumbs.db
