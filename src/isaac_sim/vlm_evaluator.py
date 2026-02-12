@@ -39,6 +39,11 @@ except ImportError:
     genai = None
     Image = None
 
+try:
+    from openai import OpenAI as _OpenAI
+except ImportError:
+    _OpenAI = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -284,24 +289,25 @@ class OllamaVLMEvaluator(BaseVLMEvaluator):
 
     def __init__(
         self,
-        model: str = "llava:7b",
-        base_url: str = "http://localhost:11434",
+        model: str = None,
+        base_url: str = None,
         timeout: int = 300
     ):
         super().__init__()
-        self.model = model
-        self.base_url = base_url
+        self.model = model or os.environ.get("OLLAMA_MODEL", "llava:7b")
+        self.base_url = base_url or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
         self.timeout = timeout
 
         if requests is None:
             raise ImportError("requests package is required for Ollama. Install with: pip install requests")
 
     @staticmethod
-    def is_available(base_url: str = "http://localhost:11434") -> bool:
+    def is_available(base_url: str = None) -> bool:
         """Check if Ollama is running and has a vision model available."""
         if requests is None:
             return False
 
+        base_url = base_url or os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
         try:
             # Check if Ollama is running
             response = requests.get(f"{base_url}/api/tags", timeout=5)
@@ -389,12 +395,123 @@ class OllamaVLMEvaluator(BaseVLMEvaluator):
             }
 
 
+class AzureVLMEvaluator(BaseVLMEvaluator):
+    """Evaluates scenes using Azure OpenAI Vision API (gpt-5-mini).
+
+    Uses the same AZURE_OPENAI_API_KEY and AZURE_OPENAI_BASE_URL
+    environment variables as the IsaacLab code generation pipeline.
+    """
+
+    def __init__(
+        self,
+        model: str = None,
+        max_tokens: int = 2000,
+    ):
+        super().__init__()
+
+        if _OpenAI is None:
+            raise ImportError("openai package is required. Install with: pip install openai")
+
+        api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+        base_url = os.environ.get("AZURE_OPENAI_BASE_URL")
+        if not api_key or not base_url:
+            raise ValueError(
+                "AZURE_OPENAI_API_KEY and AZURE_OPENAI_BASE_URL must be set"
+            )
+
+        self.client = _OpenAI(api_key=api_key, base_url=base_url)
+        self.model = model or os.environ.get("AZURE_OPENAI_MODEL", "gpt-5-mini")
+        self.max_tokens = max_tokens
+
+    @staticmethod
+    def is_available() -> bool:
+        """Check if Azure OpenAI API is available."""
+        return (
+            _OpenAI is not None
+            and os.environ.get("AZURE_OPENAI_API_KEY") is not None
+            and os.environ.get("AZURE_OPENAI_BASE_URL") is not None
+        )
+
+    def evaluate(
+        self,
+        screenshot_path: str | Path,
+        task_document: dict | str,
+        config: Optional[dict] = None
+    ) -> dict:
+        screenshot_path = Path(screenshot_path)
+
+        if not screenshot_path.exists():
+            return {
+                "success": False,
+                "error": f"Screenshot not found: {screenshot_path}"
+            }
+
+        # Read and encode image
+        with open(screenshot_path, "rb") as f:
+            image_data = base64.b64encode(f.read()).decode("utf-8")
+
+        # Get media type
+        suffix = screenshot_path.suffix.lower()
+        media_type_map = {
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".gif": "image/gif",
+            ".webp": "image/webp"
+        }
+        media_type = media_type_map.get(suffix, "image/png")
+
+        # Format task document
+        if isinstance(task_document, dict):
+            doc_str = yaml.dump(task_document, default_flow_style=False, sort_keys=False)
+        else:
+            doc_str = task_document
+
+        # Build prompt
+        prompt = self.prompt_template.replace("{task_document}", doc_str)
+
+        # Call Azure OpenAI Vision API (Chat Completions format)
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[{
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{media_type};base64,{image_data}"
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ]
+                }],
+                max_tokens=self.max_tokens,
+            )
+
+            response_text = response.choices[0].message.content
+            result = self._parse_response(response_text)
+            result["success"] = True
+            result["_backend"] = "azure"
+            return result
+
+        except Exception as e:
+            logger.error(f"Azure VLM evaluation failed: {e}")
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+
 class ClaudeVLMEvaluator(BaseVLMEvaluator):
     """Evaluates scenes using Claude Vision API."""
 
     def __init__(
         self,
-        model: str = "claude-sonnet-4-20250514",
+        model: str = None,
         max_tokens: int = 2000,
         temperature: float = 0
     ):
@@ -408,7 +525,7 @@ class ClaudeVLMEvaluator(BaseVLMEvaluator):
             raise ValueError("ANTHROPIC_API_KEY environment variable not set")
 
         self.client = anthropic.Anthropic(api_key=api_key)
-        self.model = model
+        self.model = model or os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
         self.max_tokens = max_tokens
         self.temperature = temperature
 
@@ -516,7 +633,7 @@ class GeminiVLMEvaluator(BaseVLMEvaluator):
 
     def __init__(
         self,
-        model: str = "gemini-2.5-flash",
+        model: str = None,
         temperature: float = 0
     ):
         super().__init__()
@@ -532,7 +649,8 @@ class GeminiVLMEvaluator(BaseVLMEvaluator):
             raise ValueError("GOOGLE_API_KEY environment variable not set")
 
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model)
+        model_name = model or os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+        self.model = genai.GenerativeModel(model_name)
         self.temperature = temperature
 
     @staticmethod
@@ -617,7 +735,7 @@ class GeminiGTComparisonEvaluator(BaseVLMEvaluator):
     def __init__(
         self,
         gt_image_path: str | Path,
-        model: str = "gemini-2.5-flash",
+        model: str = None,
         temperature: float = 0
     ):
         self.gt_image_path = Path(gt_image_path)
@@ -636,7 +754,8 @@ class GeminiGTComparisonEvaluator(BaseVLMEvaluator):
             raise ValueError("GOOGLE_API_KEY environment variable not set")
 
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model)
+        model_name = model or os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+        self.model = genai.GenerativeModel(model_name)
         self.temperature = temperature
 
     def _build_comparison_prompt(self, task_document: dict | str) -> str:
@@ -757,7 +876,7 @@ class ClaudeGTComparisonEvaluator(BaseVLMEvaluator):
     def __init__(
         self,
         gt_image_path: str | Path,
-        model: str = "claude-sonnet-4-20250514",
+        model: str = None,
         max_tokens: int = 2000,
         temperature: float = 0
     ):
@@ -775,7 +894,7 @@ class ClaudeGTComparisonEvaluator(BaseVLMEvaluator):
             raise ValueError("ANTHROPIC_API_KEY environment variable not set")
 
         self.client = anthropic.Anthropic(api_key=api_key)
-        self.model = model
+        self.model = model or os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-20250514")
         self.max_tokens = max_tokens
         self.temperature = temperature
 
@@ -959,8 +1078,9 @@ def create_evaluator(
     Factory function to create the appropriate VLM evaluator.
 
     Args:
-        backend: "auto", "claude", "gemini", "ollama", "mock", "gt_comparison", or "gemini_gt"
-            - "auto": Try Gemini, Claude, Ollama, then Mock
+        backend: "auto", "azure", "claude", "gemini", "ollama", "mock", "gt_comparison", or "gemini_gt"
+            - "auto": Try Azure, Gemini, Claude, Ollama, then Mock
+            - "azure": Use Azure OpenAI Vision API (requires AZURE_OPENAI_API_KEY + AZURE_OPENAI_BASE_URL)
             - "claude": Use Claude Vision API (requires ANTHROPIC_API_KEY)
             - "gemini": Use Google Gemini Vision API (requires GOOGLE_API_KEY) - FREE
             - "ollama": Use Ollama with LLaVA (requires Ollama running)
@@ -989,6 +1109,10 @@ def create_evaluator(
         logger.info(f"Using Claude GT Comparison evaluator with GT: {gt_image_path}")
         return ClaudeGTComparisonEvaluator(gt_image_path=gt_image_path, **kwargs)
 
+    if backend == "azure":
+        logger.info("Using Azure OpenAI Vision API (gpt-5-mini)")
+        return AzureVLMEvaluator(**kwargs)
+
     if backend == "gemini":
         logger.info("Using Gemini Vision API (FREE)")
         return GeminiVLMEvaluator(**kwargs)
@@ -1012,7 +1136,11 @@ def create_evaluator(
                 logger.info("Auto-selected: Claude GT Comparison (GT image provided)")
                 return ClaudeGTComparisonEvaluator(gt_image_path=gt_image_path, **kwargs)
 
-        # Without GT image, use regular evaluator
+        # Without GT image: Azure → Gemini → Claude → Ollama → Mock
+        if AzureVLMEvaluator.is_available():
+            logger.info("Auto-selected: Azure OpenAI Vision API (gpt-5-mini)")
+            return AzureVLMEvaluator(**kwargs)
+
         if GeminiVLMEvaluator.is_available():
             logger.info("Auto-selected: Gemini Vision API (FREE)")
             return GeminiVLMEvaluator(**kwargs)
@@ -1049,8 +1177,11 @@ def main():
                         help="Path to task document YAML")
     parser.add_argument("--output", "-o", type=str, default=None,
                         help="Output path for evaluation results (JSON)")
-    parser.add_argument("--model", type=str, default="claude-sonnet-4-20250514",
-                        help="Claude model to use")
+    parser.add_argument("--backend", "-b", type=str, default="auto",
+                        choices=["auto", "azure", "claude", "gemini", "ollama", "mock"],
+                        help="VLM backend (default: auto)")
+    parser.add_argument("--model", type=str, default=None,
+                        help="Model name override for the selected backend")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
@@ -1059,7 +1190,10 @@ def main():
     document = load_task_document(args.document)
 
     # Create evaluator
-    evaluator = ClaudeVLMEvaluator(model=args.model)
+    kwargs = {}
+    if args.model:
+        kwargs["model"] = args.model
+    evaluator = create_evaluator(backend=args.backend, **kwargs)
 
     # Evaluate
     print(f"Evaluating {args.screenshot} against {args.document}...")

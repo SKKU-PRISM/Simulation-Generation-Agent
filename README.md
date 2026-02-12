@@ -64,16 +64,8 @@ pip install -r requirements.txt
 # Isaac Sim MCP 서버 시작
 /path/to/isaac-sim-mcp/run_isaac_mcp_streaming.sh 0
 
-# 1. 씬 빌드
-python3 scripts/scene_builder.py tasks/franka/stack/franka_stack.yaml
-
-# 2. 스크린샷 캡처
-python3 scripts/screenshot_capture.py outputs/test.png
-
-# 3. VLM 평가
-python3 scripts/vlm_evaluator.py \
-  -s outputs/test.png \
-  -d tasks/franka/stack/franka_stack.yaml
+# 씬 빌드
+python3 scripts/build_scene.py tasks/franka/stack/franka_stack.yaml
 ```
 
 ### Pipeline 2: IsaacLab Code Generation
@@ -84,59 +76,77 @@ echo 'AZURE_OPENAI_API_KEY=your-key' >> .env
 echo 'AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1/' >> .env
 
 # 단일 task → IsaacLab 코드 생성 + 실행
-python3 scripts/isaaclab_agent.py tasks/franka/stack/franka_stack.yaml
+python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml
 
 # 코드 생성 + 실행 + 품질 평가 (100점 만점)
-python3 scripts/isaaclab_agent.py tasks/franka/stack/franka_stack.yaml --evaluate
+python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml --evaluate
 
 # 코드 생성만 (실행 안 함)
-python3 scripts/isaaclab_agent.py tasks/franka/stack/franka_stack.yaml --dry-run
+python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml --dry-run
 
 # 기존 output 평가만 (standalone)
-python3 scripts/isaaclab_evaluator.py outputs/isaaclab/<dir>/ tasks/franka/stack/franka_stack.yaml
+python3 scripts/evaluate.py outputs/isaaclab/<dir>/ tasks/franka/stack/franka_stack.yaml
+
+# 기존 output 평가 (agent 경유)
+python3 scripts/run_isaac_lab.py <yaml_path> --eval-only <output_dir>
 
 # 폴더 전체 batch 변환
-python3 scripts/isaaclab_agent.py --batch tasks/franka/
+python3 scripts/run_isaac_lab.py --batch tasks/franka/
 ```
 
 ### 컴포넌트 테스트
 
 ```bash
-python3 scripts/test_components.py connection     # MCP 연결
-python3 scripts/test_components.py scene tasks/franka/stack/franka_stack.yaml
-python3 scripts/test_components.py full --skip-vlm # 전체 (VLM 제외)
+python3 tests/test_components.py connection     # MCP 연결
+python3 tests/test_components.py scene tasks/franka/stack/franka_stack.yaml
+python3 tests/test_components.py full --skip-vlm # 전체 (VLM 제외)
 ```
 
 ## Project Structure
 
 ```
 Simulation-Generation-Agent/
-├── scripts/
-│   ├── isaaclab_agent.py          # [IsaacLab] YAML → LLM → 코드 생성 + 실행
-│   ├── isaaclab_evaluator.py      # [IsaacLab] 생성 코드 품질 평가 (100점)
-│   ├── llm_client.py              # [IsaacLab] Azure OpenAI 클라이언트
-│   ├── scene_builder.py           # [Isaac Sim] YAML → MCP → 씬 빌드
-│   ├── screenshot_capture.py      # [Isaac Sim] Replicator 스크린샷
-│   ├── vlm_evaluator.py           # [Isaac Sim] VLM 평가 (Claude/Gemini/Ollama)
-│   └── test_components.py         # 컴포넌트 테스트
-├── tasks/                         # 62 Task YAML documents
-│   ├── franka/                    # Franka Panda (20 tasks)
-│   ├── openarm/                   # OpenArm (20 tasks)
-│   ├── ur10/                      # UR10 (13 tasks)
-│   ├── so101/                     # SO-101 (9 tasks)
-│   └── templates/                 # v2.0.0 템플릿
+├── src/                               # 핵심 소스 코드
+│   ├── common/                        # 파이프라인 공유 유틸리티
+│   │   ├── mcp_client.py             # MCPClient (TCP socket)
+│   │   └── llm_client.py             # AzureOpenAIClient
+│   ├── isaac_sim/                     # Isaac Sim + VLM
+│   │   ├── scene_builder.py          # SceneBuilder (MCP 씬 빌드)
+│   │   ├── screenshot.py             # ScreenshotCapture (Replicator)
+│   │   └── vlm_evaluator.py          # VLM 평가 (multi-backend)
+│   └── isaac_lab/                     # IsaacLab + LLM
+│       ├── agent.py                   # IsaacLabAgent (코드 생성 + 실행)
+│       └── evaluator/                 # 평가 시스템
+│           ├── __init__.py            # IsaacLabEvaluator (오케스트레이터)
+│           ├── parser.py              # EnvCfgParser, GoalNormalizer
+│           ├── scene_fidelity.py      # SceneFidelityChecker (30점)
+│           ├── mdp_correctness.py     # MDPCorrectnessChecker (25점)
+│           ├── task_alignment.py      # TaskAlignmentChecker (25점)
+│           └── runtime_validity.py    # RuntimeValidityChecker (20점)
+├── scripts/                           # CLI 진입점 (thin wrappers)
+│   ├── run_isaac_lab.py              # IsaacLab 코드 생성 실행
+│   ├── evaluate.py                   # Standalone 평가
+│   └── build_scene.py                # Pipeline 1 씬 빌드
+├── tests/
+│   └── test_components.py            # Pipeline 1 컴포넌트 테스트
+├── tasks/                             # 62 Task YAML documents
+│   ├── franka/                        # Franka Panda (20 tasks)
+│   ├── openarm/                       # OpenArm (20 tasks)
+│   ├── ur10/                          # UR10 (13 tasks)
+│   ├── so101/                         # SO-101 (9 tasks)
+│   └── templates/                     # v2.0.0 템플릿
 ├── configs/
-│   ├── pipeline_config.yaml       # MCP 연결, 씬 기본값
-│   ├── vlm_config.yaml            # VLM 모델, 평가 가중치
-│   ├── isaaclab_agent_config.yaml # IsaacLab Agent 설정
-│   ├── isaaclab_eval_config.yaml  # IsaacLab 평가 설정
-│   └── robot_profiles/            # 로봇별 kinematics (4종)
+│   ├── pipeline_config.yaml           # MCP 연결, 씬 기본값
+│   ├── vlm_config.yaml                # VLM 모델, 평가 가중치
+│   ├── isaaclab_agent_config.yaml     # IsaacLab Agent 설정
+│   ├── isaaclab_eval_config.yaml      # IsaacLab 평가 설정
+│   └── robot_profiles/                # 로봇별 kinematics (4종)
 ├── prompts/
-│   ├── vlm_evaluation.md          # VLM 평가 프롬프트
-│   ├── isaaclab_generation.md     # IsaacLab 코드 생성 프롬프트
-│   └── isaaclab_error_fix.md      # 에러 수정 프롬프트
-├── .claude/skills/                # Claude Code 스킬 (4종)
-├── .mcp.json                      # Isaac Sim MCP 서버 설정
+│   ├── vlm_evaluation.md              # VLM 평가 프롬프트
+│   ├── isaaclab_generation.md         # IsaacLab 코드 생성 프롬프트
+│   └── isaaclab_error_fix.md          # 에러 수정 프롬프트
+├── .claude/skills/                    # Claude Code 스킬 (4종)
+├── .mcp.json                          # Isaac Sim MCP 서버 설정
 └── requirements.txt
 ```
 

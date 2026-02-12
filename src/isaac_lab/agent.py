@@ -22,10 +22,9 @@ from rich.console import Console
 from rich.panel import Panel
 
 # Project root
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
-from llm_client import AzureOpenAIClient
+from src.common.llm_client import AzureOpenAIClient
 
 console = Console()
 
@@ -534,7 +533,7 @@ Use this structure/pattern, but fill in values from the YAML above.
 
                 if evaluate:
                     console.print("[bold]Step 5:[/bold] Running quality evaluation...")
-                    from isaaclab_evaluator import IsaacLabEvaluator
+                    from src.isaac_lab.evaluator import IsaacLabEvaluator
                     evaluator = IsaacLabEvaluator()
                     eval_result = evaluator.evaluate(
                         output_dir=str(output_dir), yaml_path=yaml_path,
@@ -609,7 +608,7 @@ def main():
     if args.eval_only:
         if not args.yaml_path:
             parser.error("--eval-only requires yaml_path")
-        from isaaclab_evaluator import IsaacLabEvaluator
+        from src.isaac_lab.evaluator import IsaacLabEvaluator
         evaluator = IsaacLabEvaluator()
         report = evaluator.evaluate(output_dir=args.eval_only, yaml_path=args.yaml_path)
         sys.exit(0 if report["total_score"] >= 70 else 1)

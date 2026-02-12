@@ -8,80 +8,14 @@ VLM evaluation.
 
 import base64
 import json
-import socket
 import logging
 import time
 from pathlib import Path
 from typing import Optional
 
+from src.common.mcp_client import MCPClient
+
 logger = logging.getLogger(__name__)
-
-
-class MCPClient:
-    """Simple MCP client that communicates with Isaac Sim extension via socket."""
-
-    def __init__(self, host: str = "localhost", port: int = 8766, timeout: float = 300.0):
-        self.host = host
-        self.port = port
-        self.timeout = timeout
-        self.socket = None
-
-    def connect(self) -> bool:
-        """Connect to Isaac Sim MCP extension."""
-        try:
-            self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.socket.settimeout(self.timeout)
-            self.socket.connect((self.host, self.port))
-            logger.info(f"Connected to Isaac Sim at {self.host}:{self.port}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to connect: {e}")
-            return False
-
-    def disconnect(self):
-        """Disconnect from Isaac Sim."""
-        if self.socket:
-            self.socket.close()
-            self.socket = None
-
-    def send_command(self, command: dict) -> dict:
-        """Send a command and receive response."""
-        if not self.socket:
-            if not self.connect():
-                return {"error": "Not connected"}
-
-        try:
-            message = json.dumps(command) + "\n"
-            self.socket.sendall(message.encode())
-
-            # Receive response (extension may not send newline)
-            response_data = b""
-            while True:
-                chunk = self.socket.recv(8192)
-                if not chunk:
-                    break
-                response_data += chunk
-                # Try to parse JSON to detect complete message
-                try:
-                    response = json.loads(response_data.decode().strip())
-                    return response
-                except json.JSONDecodeError:
-                    # Incomplete JSON, continue receiving
-                    continue
-
-            # Final attempt to parse
-            response = json.loads(response_data.decode().strip())
-            return response
-        except Exception as e:
-            logger.error(f"Command failed: {e}")
-            return {"error": str(e)}
-
-    def execute_script(self, code: str) -> dict:
-        """Execute Python code in Isaac Sim."""
-        return self.send_command({
-            "type": "execute_script",
-            "params": {"code": code}
-        })
 
 
 class ScreenshotCapture:

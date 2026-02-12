@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
 """
-Test Components - Quick tests for individual AutoEnvConstruction components
+Test Components - Quick tests for individual pipeline components.
 
-This script tests each component independently without requiring
-the full pipeline.
+Tests each component independently without requiring the full pipeline.
+
+Usage:
+    python tests/test_components.py connection
+    python tests/test_components.py scene tasks/franka/stack/franka_stack.yaml
+    python tests/test_components.py screenshot outputs/test.png
+    python tests/test_components.py full --skip-vlm
 """
 
 import argparse
 import logging
 import sys
 from pathlib import Path
+
+# Ensure project root is on sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 def test_mcp_connection(host: str = "localhost", port: int = 8766) -> bool:
     """Test MCP connection to Isaac Sim."""
-    from scene_builder import MCPClient
+    from src.common.mcp_client import MCPClient
 
     logger.info(f"Testing MCP connection to {host}:{port}...")
     client = MCPClient(host=host, port=port)
@@ -38,7 +46,8 @@ def test_mcp_connection(host: str = "localhost", port: int = 8766) -> bool:
 
 def test_scene_builder(document_path: str, host: str = "localhost", port: int = 8766) -> bool:
     """Test scene builder with a document."""
-    from scene_builder import SceneBuilder, MCPClient
+    from src.common.mcp_client import MCPClient
+    from src.isaac_sim.scene_builder import SceneBuilder
 
     logger.info(f"Testing scene builder with {document_path}...")
 
@@ -62,7 +71,8 @@ def test_scene_builder(document_path: str, host: str = "localhost", port: int = 
 
 def test_screenshot_capture(output_path: str, host: str = "localhost", port: int = 8766) -> bool:
     """Test screenshot capture."""
-    from screenshot_capture import ScreenshotCapture, MCPClient
+    from src.common.mcp_client import MCPClient
+    from src.isaac_sim.screenshot import ScreenshotCapture
 
     logger.info(f"Testing screenshot capture to {output_path}...")
 
@@ -82,19 +92,20 @@ def test_screenshot_capture(output_path: str, host: str = "localhost", port: int
 
 def test_vlm_evaluator(screenshot_path: str, document_path: str) -> bool:
     """Test VLM evaluator."""
-    import os
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        logger.error("ANTHROPIC_API_KEY not set")
-        return False
-
-    from vlm_evaluator import ClaudeVLMEvaluator, load_task_document
+    from src.isaac_sim.vlm_evaluator import create_evaluator, load_task_document, MockVLMEvaluator
 
     logger.info(f"Testing VLM evaluator...")
+
+    evaluator = create_evaluator(backend="auto")
+    if isinstance(evaluator, MockVLMEvaluator):
+        logger.warning("No VLM backend available (set AZURE_OPENAI_API_KEY or ANTHROPIC_API_KEY or GOOGLE_API_KEY)")
+        return False
+
+    logger.info(f"Using backend: {type(evaluator).__name__}")
     logger.info(f"Screenshot: {screenshot_path}")
     logger.info(f"Document: {document_path}")
 
     document = load_task_document(document_path)
-    evaluator = ClaudeVLMEvaluator()
 
     result = evaluator.evaluate(screenshot_path, document)
 
@@ -108,7 +119,7 @@ def test_vlm_evaluator(screenshot_path: str, document_path: str) -> bool:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Test AutoEnvConstruction components")
+    parser = argparse.ArgumentParser(description="Test pipeline components")
     subparsers = parser.add_subparsers(dest="command", help="Component to test")
 
     # Connection test
@@ -161,7 +172,7 @@ def main():
             return 1
 
         # 2. Use existing task document
-        base_dir = Path(__file__).parent.parent
+        base_dir = Path(__file__).resolve().parent.parent
         if args.document:
             test_doc = Path(args.document)
         else:
