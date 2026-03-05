@@ -328,9 +328,8 @@ print("SUCCESS: Lighting created")
         asset_path = asset_path.replace("{ISAACLAB_NUCLEUS_DIR}", "/Isaac/IsaacLab")
         # Local assets/ paths -> project absolute paths
         if asset_path.startswith("assets/"):
-            import os
-            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            asset_path = os.path.join(project_root, asset_path)
+            project_root = Path(__file__).resolve().parents[2]
+            asset_path = str(project_root / asset_path)
         return asset_path
 
     def _load_usd_asset(self, asset: dict, is_static: bool = True) -> dict:

@@ -3,7 +3,7 @@
 YAML task document 기반 로보틱스 시뮬레이션 환경 자동 구성 프레임워크. 두 가지 파이프라인을 지원합니다:
 
 - **Isaac Sim Pipeline**: MCP 소켓으로 Isaac Sim 씬을 빌드하고 VLM으로 평가
-- **IsaacLab Pipeline**: LLM이 IsaacLab ManagerBasedRLEnv Python 코드를 생성하고 자동 실행
+- **IsaacLab Pipeline**: LLM이 IsaacLab ManagerBasedRLEnv Python 코드를 생성하고 자동 실행. 생성된 환경 위에서 **Data Collection** 확장 가능 (LLM 스킬 플래닝 → 에피소드 수집 → LeRobot v3.0 데이터셋)
 
 ## Architecture
 
@@ -41,6 +41,19 @@ YAML task document 기반 로보틱스 시뮬레이션 환경 자동 구성 프�
                                            SUCCESS? → 실패시
                                            에러 피드백 → LLM
                                            재생성 (max 5회)
+                                                  |
+                                           (환경 생성 완료)
+                                                  |
+                                    +-------------v--------------+
+                                    |  Data Collection (선택 확장) |
+                                    |  Episode Loop × N:          |
+                                    |  detect → plan → execute →  |
+                                    |  VLM judge → record         |
+                                    +-------------+--------------+
+                                                  |
+                                    +-------------v--------------+
+                                    |  LeRobot v3.0 Dataset       |
+                                    +----------------------------+
 ```
 
 ## 문서
@@ -48,7 +61,7 @@ YAML task document 기반 로보틱스 시뮬레이션 환경 자동 구성 프�
 | 문서 | 설명 |
 |------|------|
 | **[설치 가이드](docs/getting_started.md)** | 환경 구성, 외부 의존성(Isaac Sim, IsaacLab, MCP) 설치 및 연결 방법 |
-| **[사용법](docs/usage.md)** | 두 파이프라인 CLI 사용법, 옵션, 실행 예시, 출력 구조 |
+| **[사용법](docs/usage.md)** | 두 파이프라인 + Data Collection CLI 사용법, 옵션, 실행 예시, 출력 구조 |
 | **[Task YAML 명세](docs/task_yaml_spec.md)** | 태스크 문서 포맷, 필드 정의, 에셋 규약, 로봇별 참고사항 |
 | **[평가 시스템](docs/evaluation.md)** | 4카테고리 100점 자동 평가, 결과 해석법 |
 | **[트러블슈팅](docs/troubleshooting.md)** | 자주 발생하는 문제와 해결책 |
@@ -61,6 +74,10 @@ git clone <repo-url>
 cd Simulation-Generation-Agent
 pip install -e .
 cp .env.example .env   # AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL 설정
+
+# (선택) Data Collection 의존성 + ADC 서브모듈
+pip install -e ".[data-collection]"
+git submodule update --init external/AutoDataCollector
 ```
 
 자세한 설치 과정 (Isaac Sim, IsaacLab, MCP 서버 연결)은 **[설치 가이드](docs/getting_started.md)**를 참고하세요.
@@ -77,6 +94,11 @@ python3 scripts/run_isaac_lab.py --batch tasks/franka/
 
 # Isaac Sim Pipeline — 씬 빌드 (MCP 서버 필요)
 python3 scripts/build_scene.py tasks/franka/stack/franka_stack.yaml
+
+# Data Collection — IsaacLab 환경 위에서 에피소드 수집
+python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml
+python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml \
+  --env-dir outputs/isaaclab/FrankaStack_20260219/
 ```
 
 더 많은 옵션은 **[사용법](docs/usage.md)**을 참고하세요.
@@ -97,7 +119,9 @@ Simulation-Generation-Agent/
 ├── src/                               # 핵심 소스 코드
 │   ├── common/                        # 공유 유틸리티 (MCPClient, LLMClient)
 │   ├── isaac_sim/                     # Isaac Sim Pipeline (SceneBuilder, Screenshot, VLM)
-│   └── isaac_lab/                     # IsaacLab Pipeline (Agent, Evaluator)
+│   ├── isaac_lab/                     # IsaacLab Pipeline (Agent, Evaluator)
+│   └── data_collection/              # Data Collection (IsaacLab 확장)
+├── external/                          # 외부 서브모듈 (AutoDataCollector)
 ├── scripts/                           # CLI 진입점
 ├── tests/                             # 컴포넌트 테스트
 ├── tasks/                             # 62 Task YAML documents

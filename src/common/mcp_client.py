@@ -34,33 +34,81 @@ class MCPClient:
             self.socket.close()
             self.socket = None
 
-    def send_command(self, command: dict) -> dict:
-        """Send a command and receive response."""
-        if not self.socket:
-            if not self.connect():
-                return {"error": "Not connected"}
-
+    @staticmethod
+    def _parse_json_payload(payload: str) -> dict:
+        """Parse a JSON payload, allowing optional non-JSON prefixes."""
+        payload = payload.strip()
+        if not payload:
+            raise json.JSONDecodeError("Empty payload", payload, 0)
         try:
-            message = json.dumps(command) + "\n"
-            self.socket.sendall(message.encode())
+            return json.loads(payload)
+        except json.JSONDecodeError:
+            start = payload.find("{")
+            end = payload.rfind("}")
+            if start >= 0 and end > start:
+                return json.loads(payload[start:end + 1])
+            raise
 
-            response_data = b""
-            while True:
-                chunk = self.socket.recv(8192)
-                if not chunk:
-                    break
-                response_data += chunk
+    def _receive_response(self) -> dict:
+        """Receive one MCP JSON response (newline-delimited preferred)."""
+        buffer = ""
+        while True:
+            chunk = self.socket.recv(8192)
+            if not chunk:
+                raise ConnectionError("MCP server closed the socket")
+
+            buffer += chunk.decode("utf-8", errors="replace")
+
+            # Primary mode: newline-delimited JSON responses.
+            while "\n" in buffer:
+                line, buffer = buffer.split("\n", 1)
+                line = line.strip()
+                if not line:
+                    continue
                 try:
-                    response = json.loads(response_data.decode().strip())
-                    return response
+                    return self._parse_json_payload(line)
                 except json.JSONDecodeError:
                     continue
 
-            response = json.loads(response_data.decode().strip())
-            return response
-        except Exception as e:
-            logger.error(f"Command failed: {e}")
-            return {"error": str(e)}
+            # Fallback: some servers may send a single JSON blob without newline.
+            stripped = buffer.strip()
+            if stripped:
+                try:
+                    return self._parse_json_payload(stripped)
+                except json.JSONDecodeError:
+                    continue
+
+    def send_command(self, command: dict) -> dict:
+        """Send a command and receive response."""
+        command_type = command.get("type", "unknown")
+
+        for attempt in range(2):
+            if not self.socket and not self.connect():
+                if attempt == 0:
+                    continue
+                return {"error": f"MCP command '{command_type}' failed: not connected"}
+
+            try:
+                message = json.dumps(command) + "\n"
+                self.socket.sendall(message.encode("utf-8"))
+                return self._receive_response()
+            except (BrokenPipeError, ConnectionError, ConnectionResetError, socket.timeout, OSError) as e:
+                logger.warning(
+                    "MCP command '%s' failed on attempt %d/2: %s",
+                    command_type,
+                    attempt + 1,
+                    e,
+                )
+                self.disconnect()
+                if attempt == 0:
+                    logger.info("Reconnecting and retrying MCP command '%s' once", command_type)
+                    continue
+                return {"error": f"MCP command '{command_type}' failed: {e}"}
+            except Exception as e:
+                logger.error("MCP command '%s' failed: %s", command_type, e)
+                return {"error": f"MCP command '{command_type}' failed: {e}"}
+
+        return {"error": f"MCP command '{command_type}' failed: retries exhausted"}
 
     def execute_script(self, code: str) -> dict:
         """Execute Python code in Isaac Sim."""

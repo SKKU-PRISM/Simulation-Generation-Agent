@@ -471,33 +471,48 @@ class AzureVLMEvaluator(BaseVLMEvaluator):
         prompt = self.prompt_template.replace("{task_document}", doc_str)
 
         # Call Azure OpenAI Vision API (Chat Completions format)
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{media_type};base64,{image_data}"
-                            }
-                        },
-                        {
-                            "type": "text",
-                            "text": prompt
+        request_payload = {
+            "model": self.model,
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{media_type};base64,{image_data}"
                         }
-                    ]
-                }],
-                max_tokens=self.max_tokens,
-            )
+                    },
+                    {
+                        "type": "text",
+                        "text": prompt
+                    }
+                ]
+            }],
+        }
+
+        try:
+            try:
+                # Newer GPT-5 Azure chat deployments require max_completion_tokens.
+                response = self.client.chat.completions.create(
+                    **request_payload,
+                    max_completion_tokens=self.max_tokens,
+                )
+            except Exception as first_error:
+                first_error_msg = str(first_error)
+                if "max_completion_tokens" in first_error_msg and "unsupported" in first_error_msg.lower():
+                    # Fallback for older deployments that still expect max_tokens.
+                    response = self.client.chat.completions.create(
+                        **request_payload,
+                        max_tokens=self.max_tokens,
+                    )
+                else:
+                    raise
 
             response_text = response.choices[0].message.content
             result = self._parse_response(response_text)
             result["success"] = True
             result["_backend"] = "azure"
             return result
-
         except Exception as e:
             logger.error(f"Azure VLM evaluation failed: {e}")
             return {

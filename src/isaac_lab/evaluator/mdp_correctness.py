@@ -84,8 +84,15 @@ class MDPCorrectnessChecker:
     def check_reward_structure(self) -> dict:
         """(5 pts) Has task-relevant rewards."""
         if self.parser.rewards_is_none():
-            return _check(self.CAT, "reward_structure", 0, 5,
-                           "rewards=None — no reward signal")
+            if self.cfg.get("allow_none_rewards", True):
+                return _check(
+                    self.CAT,
+                    "reward_structure",
+                    3,
+                    5,
+                    "rewards=None — treated as validation-only setup",
+                )
+            return _check(self.CAT, "reward_structure", 0, 5, "rewards=None — no reward signal")
 
         rewards = self.parser.extract_reward_terms()
         if not rewards:

@@ -125,15 +125,20 @@ class EnvCfgParser:
 
         Returns: {name: {type, prim_path, pos, rot, usd_path, scale}}
         """
-        scene_cls = self._find_class_node("InteractiveSceneCfg")
-        if not scene_cls:
-            return {}
-
         entities = {}
-        for stmt in scene_cls.body:
-            info = self._parse_assignment(stmt)
-            if info:
-                entities[info["name"]] = info
+        scene_cls = self._find_class_node("InteractiveSceneCfg")
+        if scene_cls:
+            for stmt in scene_cls.body:
+                info = self._parse_assignment(stmt)
+                if info:
+                    entities[info["name"]] = info
+
+        # Also parse dynamic scene assignments in ManagerBasedRLEnvCfg.__post_init__:
+        #   self.scene.<entity_name> = <CfgCall>(...)
+        env_cfg_cls = self._find_class_node("ManagerBasedRLEnvCfg")
+        if env_cfg_cls:
+            entities.update(self._extract_post_init_scene_entities(env_cfg_cls))
+
         return entities
 
     def _parse_assignment(self, stmt) -> dict | None:
@@ -150,38 +155,9 @@ class EnvCfgParser:
             name = stmt.target.id
             value_node = stmt.value
 
-        if not name or not isinstance(value_node, ast.Call):
+        if not name:
             return None
-
-        call_name = self._get_name(value_node.func)
-        if not call_name:
-            return None
-
-        # Only parse known config types
-        known_types = ("RigidObjectCfg", "AssetBaseCfg", "ArticulationCfg",
-                       "FrameTransformerCfg")
-        if not any(t in call_name for t in known_types):
-            return None
-
-        info = {"name": name, "type": call_name}
-        kw = self._extract_keywords(value_node)
-
-        info["prim_path"] = kw.get("prim_path", "")
-
-        # init_state → pos, rot
-        init_state = kw.get("init_state")
-        if isinstance(init_state, dict):
-            info["pos"] = init_state.get("pos")
-            info["rot"] = init_state.get("rot")
-
-        # spawn → usd_path, scale
-        spawn = kw.get("spawn")
-        if isinstance(spawn, dict):
-            info["usd_path"] = spawn.get("usd_path", "")
-            info["scale"] = spawn.get("scale")
-            info["spawn_type"] = spawn.get("_call_name", "")
-
-        return info
+        return self._parse_scene_call_assignment(name, value_node)
 
     # --- Observation extraction ---
 
@@ -329,6 +305,83 @@ class EnvCfgParser:
         return "DomeLightCfg" in self.source or "DistantLightCfg" in self.source
 
     # --- Internal helpers ---
+
+    def _parse_scene_call_assignment(self, name: str, value_node) -> dict | None:
+        """Parse a scene assignment call into normalized entity metadata."""
+        if not isinstance(value_node, ast.Call):
+            return None
+
+        call_name = self._get_name(value_node.func)
+        if not call_name:
+            return None
+
+        known_types = ("RigidObjectCfg", "AssetBaseCfg", "ArticulationCfg", "FrameTransformerCfg")
+        if not any(t in call_name for t in known_types):
+            return None
+
+        info = {"name": name, "type": call_name}
+        kw = self._extract_keywords(value_node)
+
+        info["prim_path"] = kw.get("prim_path", "")
+
+        init_state = kw.get("init_state")
+        if isinstance(init_state, dict):
+            info["pos"] = init_state.get("pos")
+            info["rot"] = init_state.get("rot")
+
+        spawn = kw.get("spawn")
+        if isinstance(spawn, dict):
+            info["usd_path"] = spawn.get("usd_path", "")
+            info["scale"] = spawn.get("scale")
+            info["spawn_type"] = spawn.get("_call_name", "")
+
+        return info
+
+    def _extract_post_init_scene_entities(self, env_cfg_cls: ast.ClassDef) -> dict[str, dict]:
+        """Extract `self.scene.<name> = ...` entities from ManagerBasedRLEnvCfg.__post_init__."""
+        post_init = next(
+            (
+                stmt
+                for stmt in env_cfg_cls.body
+                if isinstance(stmt, ast.FunctionDef) and stmt.name == "__post_init__"
+            ),
+            None,
+        )
+        if post_init is None:
+            return {}
+
+        entities = {}
+        for stmt in ast.walk(post_init):
+            if isinstance(stmt, ast.Assign):
+                for target in stmt.targets:
+                    entity_name = self._scene_entity_name_from_target(target)
+                    if entity_name:
+                        info = self._parse_scene_call_assignment(entity_name, stmt.value)
+                        if info:
+                            entities[entity_name] = info
+            elif isinstance(stmt, ast.AnnAssign):
+                entity_name = self._scene_entity_name_from_target(stmt.target)
+                if entity_name and stmt.value is not None:
+                    info = self._parse_scene_call_assignment(entity_name, stmt.value)
+                    if info:
+                        entities[entity_name] = info
+
+        return entities
+
+    @staticmethod
+    def _scene_entity_name_from_target(target) -> str | None:
+        """Return entity name for `self.scene.<name>` assignment targets."""
+        if not isinstance(target, ast.Attribute):
+            return None
+        scene_attr = target.value
+        if not isinstance(scene_attr, ast.Attribute):
+            return None
+        root = scene_attr.value
+        if not isinstance(root, ast.Name):
+            return None
+        if root.id != "self" or scene_attr.attr != "scene":
+            return None
+        return target.attr
 
     def _find_class_node(self, base_name: str) -> ast.ClassDef | None:
         for node in ast.walk(self.tree):

@@ -13,6 +13,9 @@ evaluation:
   rotation_tolerance: 0.01    # quaternion dot product difference
   scale_tolerance: 0.05       # fractional difference
 
+  # If true, treat rewards=None as a validation-focused setup (partial credit).
+  allow_none_rewards: true
+
   # Known valid MDP functions (for validity checking)
   valid_obs_functions:
     - "mdp.joint_pos_rel"

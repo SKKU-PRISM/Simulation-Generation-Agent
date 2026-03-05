@@ -23,7 +23,7 @@ class RuntimeValidityChecker:
 
     def __init__(self, output_dir: Path, parser: EnvCfgParser,
                  yaml_doc: dict, config: dict):
-        self.output_dir = output_dir
+        self.output_dir = Path(output_dir).resolve()
         self.parser = parser
         self.yaml_doc = yaml_doc
         self.cfg = config
@@ -31,6 +31,7 @@ class RuntimeValidityChecker:
 
     def generate_eval_runner(self) -> Path:
         """Generate eval_runner.py in output_dir."""
+        self.output_dir.mkdir(parents=True, exist_ok=True)
         env_cfg_class = self.parser.find_env_cfg_class() or "EnvCfg"
 
         # Collect rigid object names for position checking
@@ -156,30 +157,39 @@ def main():
 if __name__ == "__main__":
     main()
 '''
-        runner_path = self.output_dir / "eval_runner.py"
+        runner_path = (self.output_dir / "eval_runner.py").resolve()
         runner_path.write_text(code)
         return runner_path
 
     def execute(self) -> bool:
         """Execute eval_runner.py via conda subprocess."""
         runner = self.generate_eval_runner()
+        if not runner.exists():
+            console.print(f"  [red]eval_runner.py not found[/red]: {runner}")
+            return False
+
         isaaclab_path = Path(
             self.cfg.get("isaaclab_path")
             or os.environ.get("ISAACLAB_PATH")
             or os.path.expanduser("~/workspace/IsaacLab")
-        )
+        ).expanduser().resolve()
         conda_env = self.cfg.get("conda_env", "env_isaaclab")
-        launcher = isaaclab_path / "isaaclab.sh"
+        launcher = (isaaclab_path / "isaaclab.sh").resolve()
+        if not launcher.exists():
+            console.print(f"  [red]isaaclab.sh not found[/red]: {launcher}")
+            return False
+
         timeout = self.cfg.get("timeout", 300)
 
-        isaaclab_cmd = f"{launcher} -p {runner} --num_envs {self.cfg.get('num_envs', 2)}"
+        # Run from output_dir and pass runner filename to avoid relative-path duplication.
+        isaaclab_cmd = f"{launcher} -p {runner.name} --num_envs {self.cfg.get('num_envs', 2)}"
         if self.cfg.get("headless", True):
             isaaclab_cmd += " --headless"
 
         cmd = ["conda", "run", "-n", conda_env, "--no-capture-output",
                "bash", "-c", isaaclab_cmd]
 
-        marker_file = self.output_dir / ".eval_marker"
+        marker_file = (self.output_dir / ".eval_marker").resolve()
         if marker_file.exists():
             marker_file.unlink()
 
@@ -203,7 +213,7 @@ if __name__ == "__main__":
         return self._read_results()
 
     def _read_results(self) -> bool:
-        results_file = self.output_dir / "eval_results.json"
+        results_file = (self.output_dir / "eval_results.json").resolve()
         if results_file.exists():
             with open(results_file) as f:
                 self.results = json.load(f)

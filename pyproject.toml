@@ -21,5 +21,13 @@ dependencies = [
     "openai>=1.0",
 ]
 
+[project.optional-dependencies]
+data-collection = [
+    "pin>=2.6.0",           # Pinocchio IK (ADC KinematicsEngine)
+    "scipy>=1.11.0",        # Trajectory interpolation (ADC)
+    "opencv-python>=4.8.0", # VLM judge image encoding
+    "lerobot>=0.5.0",       # LeRobot dataset format
+]
+
 [tool.setuptools.packages.find]
 include = ["src*"]

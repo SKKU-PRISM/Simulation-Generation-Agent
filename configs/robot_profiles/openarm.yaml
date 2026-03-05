@@ -75,6 +75,7 @@ gripper:
   max_force: 333.33                    # N (effort_limit from actuator)
   stiffness: 2000.0
   damping: 100.0
+  ee_finger_offset: 0.12              # m — estimated openarm_hand to finger tip
 
 physics:
   self_collision: false
@@ -95,6 +96,25 @@ spawn_ranges:
   camera:
     position: [1.2, 1.0, 0.8]
     target: [0.3, 0.0, 0.2]
+
+cameras:
+  front:
+    type: fixed
+    position: [1.2, 1.0, 0.8]
+    target: [0.3, 0.0, 0.2]
+    resolution: [640, 480]
+  wrist:
+    type: body_mounted
+    parent_body: openarm_hand
+    offset_pos: [0.10, 0.0, -0.12]                          # 10cm fwd, 12cm down from hand
+    offset_rot: [-0.70614, 0.03701, 0.03701, -0.70614]      # wxyz, ROS conv — looks downward
+    convention: ros
+    resolution: [320, 240]
+  top:
+    type: fixed
+    position: [-0.05, 0.0, 1.3]        # behind robot, high up — robot at bottom of frame
+    target: [0.30, 0.0, 0.2]            # workspace center
+    resolution: [640, 480]
 
 asset:
   usd_path: "{ISAAC_NUCLEUS_DIR}/Robots/OpenArm/openarm_unimanual/openarm_unimanual.usd"

@@ -124,6 +124,7 @@ gripper:
   max_force: 200.0                     # N (effort_limit from actuator)
   stiffness: 2000.0
   damping: 100.0
+  ee_finger_offset: 0.1035            # m — panda_hand to finger tip (0.0584 joint + 0.045 pad)
 
 physics:
   self_collision: true
@@ -146,8 +147,28 @@ spawn_ranges:
     position: [1.5, 1.2, 1.0]
     target: [0.25, 0.0, 0.3]
 
+cameras:
+  front:
+    type: fixed
+    position: [1.5, 1.2, 1.0]
+    target: [0.25, 0.0, 0.3]
+    resolution: [640, 480]
+  wrist:
+    type: body_mounted
+    parent_body: panda_hand
+    offset_pos: [0.065, 0.0, -0.10]                         # camera above palm, behind wrist → finger tips at image bottom ~1/5
+    offset_rot: [-0.70614, 0.03701, 0.03701, -0.70614]      # wxyz, ROS conv — looks forward along finger direction
+    convention: ros
+    resolution: [320, 240]
+  top:
+    type: fixed
+    position: [-0.1, 0.0, 1.8]         # behind robot, high up — gives near-top-down view
+    target: [0.35, 0.0, 0.3]            # workspace center (table height) — robot at bottom of frame
+    resolution: [640, 480]
+
 asset:
   usd_path: "{ISAACLAB_NUCLEUS_DIR}/Robots/FrankaEmika/panda_instanceable.usd"
+  urdf_path: "{ISAACLAB_URDF_DIR}/lula_franka_gen.urdf"
   prim_path: "/World/Robot"
   initial_position: [0, 0, 0]
   initial_rotation: [1, 0, 0, 0]      # wxyz

@@ -12,7 +12,9 @@ Simulation-Generation-Agent
 │   └── isaac-sim-mcp ────── MCP 서버 (TCP 소켓 통신)
 ├── IsaacLab v2.3.2+ ─────── IsaacLab Pipeline (코드 생성 + 실행)
 │   └── conda env: env_isaaclab
-└── Azure OpenAI API ──────── 두 파이프라인 공용 (LLM + VLM)
+├── AutoDataCollector ─────── Data Collection 확장 (선택, Pinocchio IK)
+│   └── external/AutoDataCollector (git submodule)
+└── Azure OpenAI API ──────── 파이프라인 공용 (LLM + VLM)
 ```
 
 **어떤 파이프라인을 사용하느냐에 따라 설치 범위가 다릅니다:**
@@ -21,6 +23,7 @@ Simulation-Generation-Agent
 |-----------|----------|
 | IsaacLab Pipeline만 (코드 생성) | 이 프로젝트 + IsaacLab + Azure OpenAI 키 |
 | Isaac Sim Pipeline만 (씬 빌드) | 이 프로젝트 + Isaac Sim + isaac-sim-mcp + VLM 키 |
+| Data Collection (데이터 수집) | IsaacLab Pipeline + `pip install -e ".[data-collection]"` |
 | 두 파이프라인 모두 | 전부 |
 
 ---
@@ -45,6 +48,9 @@ cd Simulation-Generation-Agent
 
 # Python 의존성 설치
 pip install -e .
+
+# (선택) Data Collection 의존성 설치
+pip install -e ".[data-collection]"
 ```
 
 ### 환경변수 설정
@@ -76,6 +82,7 @@ AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1/
 
 # === 선택: 경로 오버라이드 ===
 # ISAACLAB_PATH=/path/to/IsaacLab
+# ADC_PATH=/path/to/AutoDataCollector  # Data Collection용 ADC 경로 오버라이드
 ```
 
 ---
@@ -212,6 +219,29 @@ ls $ISAACLAB_PATH/source/isaaclab_tasks/isaaclab_tasks/manager_based/manipulatio
 
 ---
 
+## 4.5 Data Collection 확장: ADC 서브모듈 설치 (선택)
+
+> Data Collection을 사용하지 않는다면 이 섹션을 건너뛰세요.
+
+### ADC 서브모듈 초기화
+
+AutoDataCollector(ADC)는 Pinocchio IK 솔버와 VLM Judge 프롬프트를 제공하는 외부 서브모듈입니다.
+
+```bash
+git submodule update --init external/AutoDataCollector
+```
+
+확인:
+
+```bash
+python -c "from src.data_collection.adc_imports import is_adc_available; print(is_adc_available())"
+# True
+```
+
+> **참고**: ADC 없이도 Data Collection은 동작합니다. Pinocchio IK → IsaacLab DifferentialIK fallback, VLM Judge → 내장 프롬프트 fallback.
+
+---
+
 ## 5. 설치 검증 체크리스트
 
 ### 공통
@@ -233,6 +263,12 @@ ls $ISAACLAB_PATH/source/isaaclab_tasks/isaaclab_tasks/manager_based/manipulatio
 - [ ] conda 환경 `env_isaaclab` 생성 완료
 - [ ] `ISAACLAB_PATH` 환경변수 또는 config 설정 완료
 - [ ] `conda run -n env_isaaclab -- python -c "import isaaclab"` 성공
+
+### Data Collection 확장
+
+- [ ] `pip install -e ".[data-collection]"` 성공
+- [ ] (선택) `git submodule update --init external/AutoDataCollector` 완료
+- [ ] (선택) ADC 확인: `python -c "from src.data_collection.adc_imports import is_adc_available; print(is_adc_available())"` → True
 
 ---
 

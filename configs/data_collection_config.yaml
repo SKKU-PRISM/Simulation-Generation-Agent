@@ -1,0 +1,35 @@
+# Data Collection Pipeline Configuration
+# Used by: scripts/run_data_collection.py, src/data_collection/pipeline.py
+
+simulation:
+  dt: 0.01                    # physics timestep (100Hz)
+  decimation: 5               # control decimation -> 20Hz control
+  control_hz: 20.0            # = 1 / (dt * decimation)
+
+recording:
+  fps: 20                     # recording FPS (matched to control_hz)
+  resolution: [640, 480]      # camera resolution [width, height]
+
+episodes:
+  max: 50                     # maximum episodes per task
+  max_steps: 600              # max steps per episode (30s at 20Hz)
+
+dataset:
+  repo_id: "local/sim_dataset"
+  output_dir: "outputs/data_collection"
+
+llm:
+  model: "gpt-5-mini"         # Azure OpenAI model for skill planning
+
+vlm:
+  enabled: true               # use VLM for success judging
+  backend: "auto"             # auto-detect: Azure -> Gemini -> Claude -> Ollama
+  success_threshold: 0.8
+
+skill:
+  retry_max: 3                # max LLM retries on skill execution failure
+
+environment:
+  headless: true
+  num_envs: 1                 # single env for data collection
+  timeout: 600                # execution timeout in seconds

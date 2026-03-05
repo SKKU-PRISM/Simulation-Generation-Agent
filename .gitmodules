@@ -1,0 +1,3 @@
+[submodule "external/AutoDataCollector"]
+	path = external/AutoDataCollector
+	url = https://github.com/SKKU-PRISM/AutoDataCollector.git
