@@ -1,12 +1,12 @@
-# Task Document: UR10Reach
+# Task Document: UR10eReach
 # Version: 1.0.0
 # Template: v2.0.0
-# Description: UR10 robot reaches to target positions on the table workspace
-# Reference: IsaacLab reach_env_cfg.py + ur_10/joint_pos_env_cfg.py
+# Description: UR10e robot reaches to target positions on the table workspace
+# Reference: IsaacLab deploy/reach/reach_env_cfg.py + deploy/reach/config/ur_10e/joint_pos_env_cfg.py
 
 task:
-  name: UR10Reach
-  description: "UR10 robot reaches its end-effector to randomized target positions in the workspace above the table"
+  name: UR10eReach
+  description: "UR10e robot reaches its end-effector to randomized target positions in the workspace above the table"
   version: "1.0.0"
 
 simulation:
@@ -31,15 +31,18 @@ scene:
     position: [0, 0, -1.05]          # IsaacLab convention
 
 assets:
-  # UR10 robot (UR10_CFG)
+  # UR10e robot (UR10e_ROBOTIQ_2F_85_CFG)
   - name: robot
     type: articulation
     source: usd
-    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    robot_type: ur10e
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10e/ur10e.usd"
     prim_path: "/World/Robot"
     position: [0, 0, 0]
     rotation: [1, 0, 0, 0]           # wxyz quaternion
-    initial_joints:                   # UR10_CFG default joint positions
+    variant_sets:
+      Gripper: Robotiq_2f_85
+    initial_joints:                   # UR10e_ROBOTIQ_2F_85_CFG default joint positions
       shoulder_pan_joint: 0.0
       shoulder_lift_joint: -1.712
       elbow_joint: 1.712
@@ -54,7 +57,7 @@ assets:
         stiffness: 800.0              # N*m/rad
         damping: 40.0                 # N*m*s/rad
     ee_frame:
-      body: ee_link
+      body: wrist_3_link
     physics:
       self_collision: false
       solver_position_iterations: 8
@@ -93,7 +96,7 @@ assets:
         z: [0.15, 0.5]               # reach workspace z range
 
 goal:
-  description: "Move the UR10 end-effector to the red target marker position"
+  description: "Move the UR10e end-effector to the red target marker position"
   conditions:
     - subject: robot_ee
       relation: at_position
@@ -108,9 +111,9 @@ camera:
   resolution: [1280, 720]
 
 notes:
-  - "Based on IsaacLab reach task (ur_10/joint_pos_env_cfg.py)"
-  - "UR10_CFG: 6-DOF arm, no gripper, ee_link end-effector"
-  - "USD asset: /Isaac/Robots/UniversalRobots/ur10/ur10.usd (non-instanceable)"
+  - "Based on IsaacLab deploy reach task (deploy/reach/config/ur_10e/joint_pos_env_cfg.py)"
+  - "UR10e_ROBOTIQ_2F_85_CFG: 6-DOF arm + Robotiq 2F-85 gripper, wrist_3_link end-effector"
+  - "USD asset: /Isaac/Robots/UniversalRobots/ur10e/ur10e.usd (non-instanceable)"
   - "Table at [0.55, 0, 0] (reach cfg, slightly different from Franka tasks [0.5, 0, 0])"
   - "Reach workspace: x=[0.35,0.65], y=[-0.2,0.2], z=[0.15,0.5]"
   - "Default joints: shoulder_lift=-1.712, elbow=1.712 (arm folded, EE forward)"

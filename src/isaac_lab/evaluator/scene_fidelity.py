@@ -19,6 +19,15 @@ class SceneFidelityChecker:
         self.yaml_assets = yaml_doc.get("assets", [])
         self.scene_entities = parser.extract_scene_entities()
 
+    @staticmethod
+    def _expected_robot_cfg(robot_type: str | None) -> str | None:
+        cfg_map = {
+            "franka": "FRANKA_PANDA_CFG",
+            "ur10": "UR10e_ROBOTIQ_2F_85_CFG",
+            "ur10e": "UR10e_ROBOTIQ_2F_85_CFG",
+        }
+        return cfg_map.get((robot_type or "franka").lower())
+
     def check_asset_completeness(self) -> dict:
         """(10 pts) Every YAML asset has a corresponding scene entity."""
         entity_names_lower = {n.lower().replace("-", "_") for n in self.scene_entities}
@@ -34,10 +43,11 @@ class SceneFidelityChecker:
         missing = []
         for asset in self.yaml_assets:
             name = asset["name"].lower().replace("-", "_")
+            expected_robot_cfg = self._expected_robot_cfg(asset.get("robot_type"))
             if name in entity_names_lower or name in prim_segments:
                 matched += 1
             # Also check if robot is assigned in __post_init__
-            elif asset.get("type") == "articulation" and "FRANKA_PANDA_CFG" in self.parser.source:
+            elif asset.get("type") == "articulation" and expected_robot_cfg and expected_robot_cfg in self.parser.source:
                 matched += 1
             else:
                 missing.append(asset["name"])
@@ -127,8 +137,7 @@ class SceneFidelityChecker:
             return _check(self.CAT, "robot_config", 4, 4, "No robot in YAML (skip)")
 
         robot_type = robot_asset.get("robot_type", "franka")
-        cfg_map = {"franka": "FRANKA_PANDA_CFG"}
-        expected = cfg_map.get(robot_type)
+        expected = self._expected_robot_cfg(robot_type)
 
         if expected and expected in self.parser.source:
             return _check(self.CAT, "robot_config", 4, 4, f"{expected} found")

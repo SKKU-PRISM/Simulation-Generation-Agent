@@ -28,6 +28,13 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+_JOINT_NAME_ALIASES = {
+    "left_inner_knuckle_joint": ("left_inner_finger_knuckle_joint",),
+    "right_inner_knuckle_joint": ("right_inner_finger_knuckle_joint",),
+    "left_inner_finger_knuckle_joint": ("left_inner_knuckle_joint",),
+    "right_inner_finger_knuckle_joint": ("right_inner_knuckle_joint",),
+}
+
 
 class SimRobotInterface:
     """Joint-level robot control interface backed by IsaacLab Articulation.
@@ -279,12 +286,34 @@ class SimRobotInterface:
 
     def _resolve_joint_indices(self, joint_names: list[str]) -> list[int]:
         """Map joint names to DOF indices in the articulation."""
-        indices, _ = self._articulation.find_joints(joint_names)
+        resolved_names: list[str] | None = None
+        try:
+            indices, _ = self._articulation.find_joints(joint_names)
+            resolved_names = [self._articulation.joint_names[i] for i in indices]
+        except ValueError:
+            indices = []
+            available = list(self._articulation.joint_names)
+            available_to_index = {name: idx for idx, name in enumerate(available)}
+            resolved_names = []
+            missing: list[str] = []
+            for name in joint_names:
+                candidates = (name,) + _JOINT_NAME_ALIASES.get(name, ())
+                matched_idx = next((available_to_index[c] for c in candidates if c in available_to_index), None)
+                if matched_idx is None:
+                    missing.append(name)
+                else:
+                    indices.append(matched_idx)
+                    resolved_names.append(available[matched_idx])
+            if missing:
+                raise RuntimeError(
+                    f"Could not find joints {missing} in articulation. "
+                    f"Available: {self._articulation.joint_names}"
+                ) from None
+            logger.info("Resolved joint aliases for %s -> %s", joint_names, resolved_names)
+
         # find_joints returns (indices, names) — indices is a list[int]
         if len(indices) != len(joint_names):
-            missing = set(joint_names) - set(
-                self._articulation.joint_names[i] for i in indices
-            )
+            missing = set(joint_names) - set(resolved_names or [])
             raise RuntimeError(
                 f"Could not find joints {missing} in articulation. "
                 f"Available: {self._articulation.joint_names}"
@@ -332,8 +361,10 @@ class SimRobotInterface:
                 # Binary gripper action: BinaryJointPositionAction uses
                 # sign convention: negative = close, positive/zero = open.
                 finger_val = joint_targets[n_arm] if len(joint_targets) > n_arm else 0.0
-                open_pos = float(self.cfg.gripper_open_position)
-                close_pos = float(self.cfg.gripper_close_position)
+                open_cfg = self.cfg.gripper_open_position
+                close_cfg = self.cfg.gripper_close_position
+                open_pos = float(open_cfg[0] if isinstance(open_cfg, (list, tuple)) else open_cfg)
+                close_pos = float(close_cfg[0] if isinstance(close_cfg, (list, tuple)) else close_cfg)
                 # Map: close_position → -1.0, open_position → +1.0
                 if abs(finger_val - close_pos) < abs(finger_val - open_pos):
                     action[self.env_idx, n_arm] = -1.0  # close
@@ -368,7 +399,7 @@ class SimRobotInterface:
         # columns: pos(3), quat(4), lin_vel(3), ang_vel(3)
         body_state = self._articulation.data.body_state_w[self.env_idx, body_idx]
         pos = body_state[:3].cpu().numpy()
-        quat_xyzw = body_state[3:7].cpu().numpy()
-        # IsaacLab uses xyzw internally — convert to wxyz
-        quat_wxyz = np.array([quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]])
+        # IsaacLab body_state_w quaternion is already (w, x, y, z) format
+        # See: ArticulationData.body_link_pose_w docstring
+        quat_wxyz = body_state[3:7].cpu().numpy()
         return pos, quat_wxyz

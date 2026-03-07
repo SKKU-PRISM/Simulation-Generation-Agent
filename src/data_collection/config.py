@@ -15,6 +15,8 @@ from typing import Optional
 
 import yaml
 
+from src.common.robot_names import normalize_robot_name
+
 logger = logging.getLogger(__name__)
 
 # Project root directory
@@ -73,9 +75,12 @@ class RobotSimConfig:
     gripper_open_position: float | list[float] = 0.04
     gripper_close_position: float | list[float] = 0.0
     ee_finger_offset: float = 0.0      # m — EE frame to finger tip along grasp axis
+    gripper_close_duration: float = 1.5  # s — how long to hold close command (low-stiffness grippers need more)
+    gripper_grasp_stiffness: float = 0.0  # Nm/rad — if >0, override gripper_drive stiffness for reliable grasping
 
     # End-effector
     ee_frame_body: str = "panda_hand"
+    ik_ee_frame: str = ""
 
     # Poses: {joint_name: radian_value}
     ready_pose: dict[str, float] = field(default_factory=dict)
@@ -124,9 +129,13 @@ class RobotSimConfig:
 
 
 def _resolve_urdf_path(raw: str) -> str:
-    """Resolve URDF path templates: ``{ADC_URDF_DIR}``, ``{ISAACLAB_URDF_DIR}``, ``{ISAAC_SIM_URDF_DIR}``."""
+    """Resolve URDF path templates used by robot profiles."""
     if not raw:
         return raw
+
+    if "{ISAAC_SIM_DIR}" in raw:
+        isaac_sim_dir = os.environ.get("ISAAC_SIM_DIR", "/home/vpraise/workspace/isaac-sim")
+        raw = raw.replace("{ISAAC_SIM_DIR}", str(Path(isaac_sim_dir)))
 
     if "{ADC_URDF_DIR}" in raw:
         try:
@@ -151,6 +160,17 @@ def _resolve_urdf_path(raw: str) -> str:
         urdf_dir = Path(isaac_sim_dir) / "exts" / "isaacsim.asset.importer.urdf" / "data" / "urdf" / "robots"
         return raw.replace("{ISAAC_SIM_URDF_DIR}", str(urdf_dir))
 
+    if "{ISAAC_SIM_MOTION_GEN_URDF_DIR}" in raw:
+        isaac_sim_dir = os.environ.get("ISAAC_SIM_DIR", "/home/vpraise/workspace/isaac-sim")
+        urdf_dir = (
+            Path(isaac_sim_dir)
+            / "exts"
+            / "isaacsim.robot_motion.motion_generation"
+            / "motion_policy_configs"
+            / "universal_robots"
+        )
+        return raw.replace("{ISAAC_SIM_MOTION_GEN_URDF_DIR}", str(urdf_dir))
+
     return raw
 
 
@@ -159,12 +179,13 @@ def load_robot_config(robot_name: str) -> RobotSimConfig:
     Load robot configuration from configs/robot_profiles/{robot_name}.yaml.
 
     Args:
-        robot_name: One of "franka", "openarm", "ur10", "so101"
+        robot_name: One of "franka", "openarm", "ur10e", "so101" (`ur10` alias supported)
 
     Returns:
         RobotSimConfig populated from YAML
     """
-    yaml_path = ROBOT_PROFILES_DIR / f"{robot_name}.yaml"
+    canonical_name = normalize_robot_name(robot_name, default=robot_name) or robot_name
+    yaml_path = ROBOT_PROFILES_DIR / f"{canonical_name}.yaml"
     if not yaml_path.exists():
         raise FileNotFoundError(
             f"Robot profile not found: {yaml_path}. "
@@ -241,7 +262,7 @@ def load_robot_config(robot_name: str) -> RobotSimConfig:
         damping = list(damping.values())[0]
 
     return RobotSimConfig(
-        name=robot.get("name", robot_name),
+        name=robot.get("name", canonical_name),
         full_name=robot.get("full_name", robot_name),
         arm_dofs=robot.get("arm_dofs", len(arm_joint_names)),
         total_dofs=robot.get("total_dofs", len(arm_joint_names) + len(finger_joint_names)),
@@ -253,7 +274,10 @@ def load_robot_config(robot_name: str) -> RobotSimConfig:
         gripper_open_position=gripper_open,
         gripper_close_position=gripper_close,
         ee_finger_offset=gripper.get("ee_finger_offset", 0.0),
+        gripper_close_duration=gripper.get("close_duration", 1.5),
+        gripper_grasp_stiffness=gripper.get("grasp_stiffness", 0.0),
         ee_frame_body=asset.get("ee_frame", {}).get("body", ""),
+        ik_ee_frame=asset.get("ee_frame", {}).get("ik_frame", asset.get("ee_frame", {}).get("body", "")),
         ready_pose=asset.get("ready_pose", {}),
         default_pose=asset.get("default_pose", {}),
         max_reach=kinematics.get("max_reach", 1.0),

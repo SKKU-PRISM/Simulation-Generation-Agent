@@ -1,10 +1,10 @@
-# Task Document: UR10CabinetYCB
+# Task Document: UR10eCabinetYCB
 # Version: 1.0.0
-# Description: UR10 robot with Sektion Cabinet and 3 YCB objects (mug, soup can, mustard bottle)
+# Description: UR10e robot with Sektion Cabinet and 3 YCB objects (mug, soup can, mustard bottle)
 
 task:
-  name: UR10CabinetYCB
-  description: "UR10 picks 3 YCB objects from cabinet top and places them on a target zone"
+  name: UR10eCabinetYCB
+  description: "UR10e picks 3 YCB objects from cabinet top and places them on a target zone"
   version: "1.1.0"
 
 simulation:
@@ -30,16 +30,17 @@ scene:
     position: [0, 0, 0]
 
 assets:
-  # UR10 robot
+  # UR10e robot
   - name: robot
     type: articulation
     source: usd
-    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    robot_type: ur10e
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10e/ur10e.usd"
     prim_path: "/World/Robot"
     position: [-0.2, 0, 0]
     rotation: [1, 0, 0, 0]
     variant_sets:
-      Gripper: Long_Suction
+      Gripper: Robotiq_2f_85
     initial_joints:
       shoulder_pan_joint: 0.0
       shoulder_lift_joint: -1.712
@@ -166,9 +167,9 @@ camera:
 
 notes:
   - "Cabinet same as Franka (full-size at [0.8, 0, 0.4]), top z=0.802"
-  - "UR10 at [-0.2, 0, 0] with Long_Suction gripper variant"
+  - "UR10e at [-0.2, 0, 0] with Robotiq_2f_85 gripper variant"
   - "Objects are rigid (graspable), must be picked from elevated cabinet top"
   - "Target zone on floor at [0.3, 0, 0.003] between robot and cabinet"
   - "Episode 30s for 3 sequential pick-place cycles from elevated surface"
   - "All objects rotated -90 X (Y-up→Z-up) to stand upright"
-  - "Randomization x=[0.60,0.95] constrained by UR10 reach (1.30m from base at x=-0.2)"
+  - "Randomization x=[0.60,0.95] constrained by UR10e reach (1.30m from base at x=-0.2)"

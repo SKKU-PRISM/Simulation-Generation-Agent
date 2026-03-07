@@ -1,132 +1,121 @@
 # Simulation-Generation-Agent
 
-YAML task document 기반 로보틱스 시뮬레이션 환경 자동 구성 프레임워크. 두 가지 파이프라인을 지원합니다:
+YAML task document 기반 로보틱스 시뮬레이션 환경 자동 구성 프레임워크입니다. 현재 기준 주력 경로는 **IsaacLab Pipeline**이며, 같은 task YAML을 기준으로 **Isaac Sim 시각 검증**과 **Data Collection**까지 확장할 수 있습니다.
 
-- **Isaac Sim Pipeline**: MCP 소켓으로 Isaac Sim 씬을 빌드하고 VLM으로 평가
-- **IsaacLab Pipeline**: LLM이 IsaacLab ManagerBasedRLEnv Python 코드를 생성하고 자동 실행. 생성된 환경 위에서 **Data Collection** 확장 가능 (LLM 스킬 플래닝 → 에피소드 수집 → LeRobot v3.0 데이터셋)
+## 핵심 파이프라인
 
-## Architecture
+1. **IsaacLab Pipeline (주력)**  
+   YAML -> LLM 코드 생성 -> `isaaclab.sh` 실행 -> 100점 평가
+2. **Isaac Sim Pipeline (보조 시각 검증)**  
+   YAML -> MCP로 씬 빌드 -> 스크린샷 -> VLM 평가 -> 기준 점수 도달 시 종료
+3. **Data Collection (IsaacLab 확장)**
+   생성된 IsaacLab 환경 위에서 detect -> plan (LLM) -> execute (6-DOF IK) -> judge (VLM / geometric) -> record 반복 후 LeRobot v3.0 데이터셋 생성
+   Multi-camera (top + wrist + front), 3-tier 성공 판정 (VLM > goal verification > env termination), robot base frame 좌표계 포함
 
+## Quick Start
+
+### 1. 공통 설치
+
+```bash
+git clone <repo-url>
+cd Simulation-Generation-Agent
+
+pip install -e .
+cp .env.example .env
 ```
-                        62 Task YAML Documents
-                    tasks/{robot}/{category}/*.yaml
-                               |
-              +----------------+----------------+
-              |                                 |
-              v                                 v
-   Isaac Sim Pipeline               IsaacLab Pipeline
-              |                                 |
-   +----------v-----------+          +----------v-----------+
-   |    SceneBuilder       |          |    IsaacLabAgent      |
-   |    (MCP → localhost   |          |    (YAML 파싱 →       |
-   |     :8766 TCP)        |          |     LLM 프롬프트)     |
-   +----------+------------+          +----------+-----------+
-              |                                  |
-   +----------v-----------+          +-----------v----------+
-   |  ScreenshotCapture    |          |  Azure OpenAI        |
-   |  (Replicator API)     |          |  gpt-5-mini          |
-   +----------+------------+          |  (코드 생성)          |
-              |                       +-----------+----------+
-   +----------v-----------+                       |
-   |    VLM Evaluator      |          +-----------v----------+
-   |  Azure/Claude/Gemini/ |          |  Generated Code       |
-   |  Ollama               |          |  env_cfg.py + run_env  |
-   |  (score 0-100)        |          +-----------+----------+
-   +----------+------------+                      |
-              |                         +---------v---------+
-        score >= 80?                    |  isaaclab.sh       |
-        YES → 완료                      |  (headless 실행)    |
-        NO  → 재시도 (max 5)           +---------+---------+
-                                                  |
-                                           SUCCESS? → 실패시
-                                           에러 피드백 → LLM
-                                           재생성 (max 5회)
-                                                  |
-                                           (환경 생성 완료)
-                                                  |
-                                    +-------------v--------------+
-                                    |  Data Collection (선택 확장) |
-                                    |  Episode Loop × N:          |
-                                    |  detect → plan → execute →  |
-                                    |  VLM judge → record         |
-                                    +-------------+--------------+
-                                                  |
-                                    +-------------v--------------+
-                                    |  LeRobot v3.0 Dataset       |
-                                    +----------------------------+
+
+`.env`에는 최소 다음 값이 필요합니다.
+
+```bash
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1/
+```
+
+### 2. IsaacLab 설치 및 연결
+
+```bash
+cd ~/workspace
+git clone https://github.com/isaac-sim/IsaacLab.git
+cd IsaacLab
+./isaaclab.sh --install
+```
+
+그다음 프로젝트 루트에서:
+
+```bash
+export ISAACLAB_PATH=~/workspace/IsaacLab
+python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml --evaluate
+```
+
+### 3. 선택 확장
+
+```bash
+# Isaac Sim visual validation
+python3 scripts/run_isaac_sim.py tasks/franka/stack/franka_stack.yaml --backend auto
+
+# Data Collection
+pip install -e ".[data-collection]"
+pip install pin                    # Pinocchio (6-DOF IK 필수)
+git submodule update --init external/AutoDataCollector
+python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml
+```
+
+## 대표 명령어
+
+```bash
+# IsaacLab: 생성 + 실행
+python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml
+
+# IsaacLab: 생성 + 실행 + 평가
+python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml --evaluate
+
+# IsaacLab: 기존 결과 재평가
+python3 scripts/evaluate.py outputs/isaaclab/<run_dir> tasks/franka/stack/franka_stack.yaml
+
+# Isaac Sim: 자동 씬 빌드 + 스크린샷 + VLM 평가
+python3 scripts/run_isaac_sim.py tasks/franka/stack/franka_stack.yaml --backend auto
+
+# Data Collection: 생성된 env 위에서 에피소드 수집
+python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml \
+  --env-dir outputs/isaaclab/<run_dir>
 ```
 
 ## 문서
 
-| 문서 | 설명 |
-|------|------|
-| **[설치 가이드](docs/getting_started.md)** | 환경 구성, 외부 의존성(Isaac Sim, IsaacLab, MCP) 설치 및 연결 방법 |
-| **[사용법](docs/usage.md)** | 두 파이프라인 + Data Collection CLI 사용법, 옵션, 실행 예시, 출력 구조 |
-| **[Task YAML 명세](docs/task_yaml_spec.md)** | 태스크 문서 포맷, 필드 정의, 에셋 규약, 로봇별 참고사항 |
-| **[평가 시스템](docs/evaluation.md)** | 4카테고리 100점 자동 평가, 결과 해석법 |
-| **[트러블슈팅](docs/troubleshooting.md)** | 자주 발생하는 문제와 해결책 |
+- `docs/getting_started.md`: 설치 순서와 외부 의존성 연결
+- `docs/usage.md`: 각 CLI 사용법과 출력 구조
+- `docs/evaluation.md`: IsaacLab 평가 체계와 결과 해석
+- `docs/task_yaml_spec.md`: task YAML 포맷과 자산 규약
+- `docs/troubleshooting.md`: 자주 발생하는 런타임/VLM/MCP 문제
 
-## Quick Start
+## 프로젝트 구조
 
-```bash
-# 설치
-git clone <repo-url>
-cd Simulation-Generation-Agent
-pip install -e .
-cp .env.example .env   # AZURE_OPENAI_API_KEY, AZURE_OPENAI_BASE_URL 설정
-
-# (선택) Data Collection 의존성 + ADC 서브모듈
-pip install -e ".[data-collection]"
-git submodule update --init external/AutoDataCollector
-```
-
-자세한 설치 과정 (Isaac Sim, IsaacLab, MCP 서버 연결)은 **[설치 가이드](docs/getting_started.md)**를 참고하세요.
-
-```bash
-# IsaacLab Pipeline — 코드 생성 + 실행
-python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml
-
-# 코드 생성 + 실행 + 평가 (100점 만점)
-python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml --evaluate
-
-# 배치 처리
-python3 scripts/run_isaac_lab.py --batch tasks/franka/
-
-# Isaac Sim Pipeline — 씬 빌드 (MCP 서버 필요)
-python3 scripts/build_scene.py tasks/franka/stack/franka_stack.yaml
-
-# Data Collection — IsaacLab 환경 위에서 에피소드 수집
-python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml
-python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml \
-  --env-dir outputs/isaaclab/FrankaStack_20260219/
-```
-
-더 많은 옵션은 **[사용법](docs/usage.md)**을 참고하세요.
-
-## Supported Robots & Tasks
-
-| Robot | DOF | Gripper | Tasks (62 total) |
-|-------|-----|---------|-------------------|
-| **Franka Panda** | 7+2 | Parallel jaw (8cm) | stack(2), lift(2), pick_place(9), cabinet(3), sort(3), peg_insert(1) |
-| **OpenArm** | 7+2 | Parallel jaw (8.8cm) | stack(2), lift(2), pick_place(9), reach(1), cabinet(3), sort(3) |
-| **UR10** | 6 | Suction | stack(2), cabinet(3), pick_place(7), reach(1) |
-| **SO-101** | 5+1 | Claw (5cm) | stack(1), lift(1), pick_place(3), reach(1), sort(3) |
-
-## Project Structure
-
-```
+```text
 Simulation-Generation-Agent/
-├── src/                               # 핵심 소스 코드
-│   ├── common/                        # 공유 유틸리티 (MCPClient, LLMClient)
-│   ├── isaac_sim/                     # Isaac Sim Pipeline (SceneBuilder, Screenshot, VLM)
-│   ├── isaac_lab/                     # IsaacLab Pipeline (Agent, Evaluator)
-│   └── data_collection/              # Data Collection (IsaacLab 확장)
-├── external/                          # 외부 서브모듈 (AutoDataCollector)
-├── scripts/                           # CLI 진입점
-├── tests/                             # 컴포넌트 테스트
-├── tasks/                             # 62 Task YAML documents
-├── configs/                           # 설정 파일 (pipeline, VLM, agent, eval, robot profiles)
-├── prompts/                           # LLM/VLM 프롬프트
-├── docs/                              # 문서
-└── research_notes/                    # 연구 노트
+├── src/common/              # Azure/OpenAI, MCP 공용 클라이언트
+├── src/isaac_lab/           # 주력 파이프라인: 코드 생성 + 평가
+├── src/isaac_sim/           # 시각 검증 파이프라인
+├── src/data_collection/     # IsaacLab 기반 데이터 수집
+├── src/task_search/         # task YAML 카탈로그/검색 메타데이터
+├── scripts/                 # CLI 진입점
+├── configs/                 # agent/pipeline/eval/robot profile 설정
+├── tasks/                   # 62개 task YAML
+├── docs/                    # 사용자 문서
+├── assets/                  # 로컬 USD 자산 (예: SO-101)
+└── external/AutoDataCollector/  # ADC 서브모듈, read-only
 ```
+
+## 지원 로봇과 태스크
+
+- **Franka Panda**: stack, lift, pick_place, cabinet, sort, peg_insert
+- **OpenArm**: stack, lift, pick_place, reach, cabinet, sort
+- **UR10e**: stack, cabinet, pick_place, reach
+- **SO-101**: stack, lift, pick_place, reach, sort
+
+총 task YAML 수는 현재 `62`개입니다.
+
+## 참고
+
+- Isaac Sim 경로는 MCP TCP 소켓 `localhost:8766`에 의존합니다.
+- `external/AutoDataCollector/`는 read-only 서브모듈입니다. 이 레포에서 직접 수정하지 않습니다.
+- 생성 산출물은 `outputs/` 아래에 저장되며 git에 커밋하지 않습니다.

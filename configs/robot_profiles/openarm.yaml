@@ -106,10 +106,10 @@ cameras:
   wrist:
     type: body_mounted
     parent_body: openarm_hand
-    offset_pos: [0.10, 0.0, -0.12]                          # 10cm fwd, 12cm down from hand
+    offset_pos: [0.05, 0.0, -0.04]                          # near palm — fingers visible at image bottom ~1/5
     offset_rot: [-0.70614, 0.03701, 0.03701, -0.70614]      # wxyz, ROS conv — looks downward
     convention: ros
-    resolution: [320, 240]
+    resolution: [640, 480]
   top:
     type: fixed
     position: [-0.05, 0.0, 1.3]        # behind robot, high up — robot at bottom of frame

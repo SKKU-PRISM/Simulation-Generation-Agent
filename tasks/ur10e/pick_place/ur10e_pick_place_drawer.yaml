@@ -1,18 +1,18 @@
-# Task Document: UR10PickPlaceDrawer
+# Task Document: UR10ePickPlaceDrawer
 # Version: 1.0.0
 # Template: v2.0.0
-# Description: UR10 robot with suction gripper picks a DexCube and places it on top of a small drawer
-# Reference: Based on franka/pick_place_drawer + UR10 robot config from ur10/pick_place
+# Description: UR10e robot with Robotiq 2F-85 gripper picks a DexCube and places it on top of a small drawer
+# Reference: Based on franka/pick_place_drawer + UR10e robot config
 
 task:
-  name: UR10PickPlaceDrawer
-  description: "UR10 robot with suction gripper picks up a DexCube from the table and places it on top of a small drawer box positioned on the table"
+  name: UR10ePickPlaceDrawer
+  description: "UR10e robot with Robotiq 2F-85 gripper picks up a DexCube from the table and places it on top of a small drawer box positioned on the table"
   version: "1.0.0"
 
 simulation:
   gravity: [0, 0, -9.81]             # m/s^2
   timestep: 0.01                     # 100 Hz simulation
-  decimation: 5                      # control at 20 Hz (matching UR10 convention)
+  decimation: 5                      # control at 20 Hz (matching UR10e convention)
   episode_length: 15.0               # seconds (longer for pick + transport + elevated place)
   render_interval: 5
   physx:
@@ -33,16 +33,17 @@ scene:
     position: [0, 0, -1.05]          # IsaacLab convention
 
 assets:
-  # UR10 robot (suction gripper variant)
+  # UR10e robot (Robotiq 2F-85 gripper variant)
   - name: robot
     type: articulation
     source: usd
-    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    robot_type: ur10e
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10e/ur10e.usd"
     prim_path: "/World/Robot"
     position: [0, 0, 0]
     rotation: [1, 0, 0, 0]           # wxyz quaternion
     variant_sets:
-      Gripper: Long_Suction           # activate suction gripper visual
+      Gripper: Robotiq_2f_85           # activate Robotiq 2F-85 gripper visual
     initial_joints:                   # EE pointing down
       shoulder_pan_joint: 0.0
       shoulder_lift_joint: -1.5707    # -pi/2
@@ -58,8 +59,8 @@ assets:
         stiffness: 800.0
         damping: 40.0
     ee_frame:
-      body: ee_link
-      offset_position: [0.22, 0, 0]  # long suction gripper TCP offset
+      body: wrist_3_link
+      offset_position: [0.0, 0.0, 0.0]
     physics:
       self_collision: false
       solver_position_iterations: 8
@@ -142,7 +143,7 @@ assets:
       collision: false
 
 goal:
-  description: "Pick the DexCube with suction gripper and place it on top of the small drawer box (green marker)"
+  description: "Pick the DexCube with Robotiq 2F-85 gripper and place it on top of the small drawer box (green marker)"
   conditions:
     - subject: cube
       relation: at_position
@@ -161,8 +162,8 @@ camera:
   resolution: [1280, 720]
 
 notes:
-  - "Based on franka/pick_place_drawer but with UR10 robot"
-  - "UR10 with Gripper variant=Long_Suction (SurfaceGripper at ee_link, TCP offset 0.22m)"
+  - "Based on franka/pick_place_drawer but with UR10e robot"
+  - "UR10e with Gripper variant=Robotiq_2f_85 mounted at wrist_3_link"
   - "Sektion Cabinet 0.3x scale on table, top drawer pre-opened 0.1"
   - "Cabinet rotation [0,0,0,1] wxyz = 180° Z so front faces robot"
   - "Cube starts on left side (y < 0), must be placed on top of cabinet (y > 0)"

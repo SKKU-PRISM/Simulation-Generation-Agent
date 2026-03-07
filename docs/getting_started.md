@@ -1,277 +1,207 @@
 # 설치 가이드
 
-이 문서는 Simulation-Generation-Agent의 전체 설치 과정을 안내합니다.
+이 레포는 세 경로를 제공합니다. **기본 설치 대상은 IsaacLab Pipeline**이며, Isaac Sim과 Data Collection은 선택 확장입니다.
 
----
+## 권장 설치 순서
 
-## 전체 의존성 구조
+1. 이 프로젝트 + Python 의존성 설치
+2. Azure OpenAI 환경변수 설정
+3. IsaacLab 설치 및 연결
+4. 필요 시 Isaac Sim + MCP 연결
+5. 필요 시 Data Collection extra + ADC 서브모듈 초기화
 
-```
-Simulation-Generation-Agent
-├── Isaac Sim 4.2.0+ ─────── Isaac Sim Pipeline (씬 빌드 + VLM 평가)
-│   └── isaac-sim-mcp ────── MCP 서버 (TCP 소켓 통신)
-├── IsaacLab v2.3.2+ ─────── IsaacLab Pipeline (코드 생성 + 실행)
-│   └── conda env: env_isaaclab
-├── AutoDataCollector ─────── Data Collection 확장 (선택, Pinocchio IK)
-│   └── external/AutoDataCollector (git submodule)
-└── Azure OpenAI API ──────── 파이프라인 공용 (LLM + VLM)
-```
-
-**어떤 파이프라인을 사용하느냐에 따라 설치 범위가 다릅니다:**
-
-| 사용 목적 | 필수 설치 |
-|-----------|----------|
-| IsaacLab Pipeline만 (코드 생성) | 이 프로젝트 + IsaacLab + Azure OpenAI 키 |
-| Isaac Sim Pipeline만 (씬 빌드) | 이 프로젝트 + Isaac Sim + isaac-sim-mcp + VLM 키 |
-| Data Collection (데이터 수집) | IsaacLab Pipeline + `pip install -e ".[data-collection]"` |
-| 두 파이프라인 모두 | 전부 |
-
----
-
-## 1. 시스템 요구사항
-
-- **OS**: Ubuntu 22.04+ (또는 동등한 Linux)
-- **GPU**: NVIDIA GPU (RTX 2070 이상 권장)
-- **CUDA**: 12.x
-- **Python**: 3.10+
-- **Conda**: Miniconda 또는 Anaconda (IsaacLab Pipeline 사용 시)
-- **디스크**: Isaac Sim ~15GB, IsaacLab ~5GB
-
----
-
-## 2. 이 프로젝트 설치
+## 1. 공통 설치
 
 ```bash
-# 레포지토리 클론
 git clone <repo-url>
 cd Simulation-Generation-Agent
 
-# Python 의존성 설치
 pip install -e .
-
-# (선택) Data Collection 의존성 설치
-pip install -e ".[data-collection]"
-```
-
-### 환경변수 설정
-
-```bash
-# .env 파일 생성 (API 키는 절대 git에 커밋하지 않음)
 cp .env.example .env
 ```
 
-`.env` 파일을 편집하여 다음을 설정합니다:
+`.env` 최소 설정:
 
 ```bash
-# === 필수 (두 파이프라인 공용) ===
-AZURE_OPENAI_API_KEY=your-azure-openai-key
+AZURE_OPENAI_API_KEY=your-key
 AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1/
-
-# === 선택: VLM 백엔드 (Isaac Sim Pipeline에서 VLM 평가 시) ===
-# Azure가 최우선으로 사용되므로, 위 키만 있으면 VLM도 Azure로 동작합니다.
-# 아래는 추가 백엔드가 필요한 경우에만 설정:
-# ANTHROPIC_API_KEY=your-anthropic-key    # Claude VLM
-# GOOGLE_API_KEY=your-google-key          # Gemini VLM (무료)
-
-# === 선택: 모델명 오버라이드 ===
-# AZURE_OPENAI_MODEL=gpt-5-mini           # 기본값
-# CLAUDE_MODEL=claude-sonnet-4-20250514
-# GEMINI_MODEL=gemini-2.5-flash
-# OLLAMA_MODEL=llava:7b
-# OLLAMA_BASE_URL=http://localhost:11434
-
-# === 선택: 경로 오버라이드 ===
-# ISAACLAB_PATH=/path/to/IsaacLab
-# ADC_PATH=/path/to/AutoDataCollector  # Data Collection용 ADC 경로 오버라이드
 ```
 
----
-
-## 3. Isaac Sim Pipeline 전용: Isaac Sim + MCP 설치
-
-> IsaacLab Pipeline만 사용한다면 이 섹션을 건너뛰세요.
-
-### 3.1 Isaac Sim 설치
-
-1. [NVIDIA Omniverse Launcher](https://www.nvidia.com/en-us/omniverse/) 설치
-2. Launcher에서 **Isaac Sim 4.2.0+** 설치
-3. 설치 확인:
-   ```bash
-   # Isaac Sim 실행 확인 (GUI 모드)
-   ~/.local/share/ov/pkg/isaac-sim-*/isaac-sim.sh
-   ```
-
-### 3.2 isaac-sim-mcp 설치 (MCP 서버)
-
-isaac-sim-mcp는 Isaac Sim과 이 프로젝트를 TCP 소켓으로 연결하는 MCP 서버입니다.
+선택 설정:
 
 ```bash
-# 이 프로젝트와 같은 워크스페이스에 클론
-cd ~/workspace  # 또는 원하는 디렉토리
+# VLM backends
+# ANTHROPIC_API_KEY=...
+# GOOGLE_API_KEY=...
+# OLLAMA_BASE_URL=http://localhost:11434
+
+# Paths
+# ISAACLAB_PATH=/home/you/workspace/IsaacLab
+# ADC_PATH=/home/you/workspace/AutoDataCollector
+```
+
+## 2. IsaacLab 설치 (권장, 주력 파이프라인)
+
+```bash
+cd ~/workspace
+git clone https://github.com/isaac-sim/IsaacLab.git
+cd IsaacLab
+./isaaclab.sh --install
+```
+
+프로젝트에서 IsaacLab 위치를 인식시키는 방법:
+
+```bash
+export ISAACLAB_PATH=~/workspace/IsaacLab
+```
+
+또는 `configs/isaaclab_agent_config.yaml`의 `isaaclab.path`를 직접 설정합니다.
+
+### IsaacLab 연결 확인
+
+```bash
+conda run -n env_isaaclab --no-capture-output \
+  python -c "import isaaclab; print('IsaacLab import OK')"
+
+python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml --dry-run
+```
+
+성공 기준:
+
+- `isaaclab.sh`가 존재한다
+- `env_isaaclab` conda 환경이 동작한다
+- `--dry-run`이 `outputs/isaaclab/<task>_<timestamp>/`에 코드를 생성한다
+
+## 3. Isaac Sim + MCP 설치 (선택)
+
+Isaac Sim은 주로 YAML task의 **시각적 검증**에 사용합니다.
+
+### Isaac Sim
+
+- Isaac Sim 5.x 계열 기준으로 사용 중
+- GPU 및 NVIDIA 드라이버가 필요합니다
+
+### isaac-sim-mcp
+
+```bash
+cd ~/workspace
 git clone https://github.com/isaac-sim/isaac-sim-mcp.git
 ```
 
-#### MCP 서버 시작
+Isaac Sim을 MCP extension과 함께 실행:
 
 ```bash
-# Isaac Sim을 스트리밍 모드로 시작 + MCP 서버 자동 로드
-cd ~/workspace/isaac-sim-mcp
-./run_isaac_mcp_streaming.sh 0   # 0 = GPU ID
+cd ~/workspace/isaac-sim
+./isaac-sim.streaming.sh \
+  --ext-folder /home/$USER/workspace/isaac-sim-mcp \
+  --enable isaac.sim.mcp_extension
 ```
 
-서버가 시작되면 `localhost:8766`에서 TCP 소켓을 수신합니다.
+정상 기동 시 `localhost:8766`에서 TCP 소켓을 수신합니다.
 
-#### 연결 설정 (`.mcp.json`)
+### `.mcp.json`의 역할
 
-이 프로젝트 루트의 `.mcp.json`에서 isaac-sim-mcp 경로를 **본인의 경로로 수정**해야 합니다:
+루트의 `.mcp.json`은 **Claude Code 등의 MCP 클라이언트가 `isaac_mcp/server.py`를 띄울 수 있게 하는 설정**입니다.  
+실제 파이프라인 런타임은 여전히 Isaac Sim extension의 TCP 서버(`localhost:8766`)와 통신합니다.
 
-```json
-{
-  "mcpServers": {
-    "isaac-sim": {
-      "command": "python3",
-      "args": ["/your/path/to/isaac-sim-mcp/isaac_mcp/server.py"]
-    }
-  }
-}
-```
-
-#### 연결 확인
+### Isaac Sim 연결 확인
 
 ```bash
-# MCP 서버가 실행 중인 상태에서:
 python3 tests/test_components.py connection
-
-# 기대 출력:
-# ✓ MCP connection successful
 ```
 
----
+## 4. Data Collection 설치 (선택)
 
-## 4. IsaacLab Pipeline 전용: IsaacLab 설치
-
-> Isaac Sim Pipeline만 사용한다면 이 섹션을 건너뛰세요.
-
-### 4.1 IsaacLab 클론 및 설치
+Data Collection은 IsaacLab 환경 위에서 동작합니다. 즉, **IsaacLab 설치가 먼저**입니다.
 
 ```bash
-cd ~/workspace  # 또는 원하는 디렉토리
-git clone https://github.com/isaac-sim/IsaacLab.git
-cd IsaacLab
-```
-
-IsaacLab은 자체 conda 환경이 필요합니다. 공식 설치 가이드를 따릅니다:
-
-> 참고: [IsaacLab 공식 설치 문서](https://isaac-sim.github.io/IsaacLab/main/source/setup/installation/index.html)
-
-요약:
-
-```bash
-# conda 환경 생성 (IsaacLab 공식 스크립트 사용)
-./isaaclab.sh --install
-
-# 또는 수동으로 conda 환경 생성 후 설치
-conda create -n env_isaaclab python=3.10 -y
-conda activate env_isaaclab
-pip install -e .
-```
-
-설치 확인:
-
-```bash
-# conda 환경에서 import 테스트
-conda run -n env_isaaclab --no-capture-output \
-  python -c "import isaaclab; print('IsaacLab OK:', isaaclab.__version__)"
-```
-
-### 4.2 이 프로젝트와 연결
-
-IsaacLab 경로를 설정합니다. 두 가지 방법 중 택일:
-
-**방법 A: 환경변수 (권장)**
-
-```bash
-# .env 파일에 추가
-echo 'ISAACLAB_PATH=/path/to/IsaacLab' >> .env
-```
-
-**방법 B: config 파일 직접 수정**
-
-`configs/isaaclab_agent_config.yaml`에서:
-
-```yaml
-isaaclab:
-  path: "/path/to/IsaacLab"  # null → 실제 경로로 변경
-  conda_env: "env_isaaclab"   # conda 환경 이름 (변경 시 수정)
-```
-
-### 4.3 연결 확인
-
-```bash
-# isaaclab.sh가 실행 가능한지 확인
-conda run -n env_isaaclab --no-capture-output \
-  bash -c "echo 'Conda env OK'"
-
-# IsaacLab 참조 코드 디렉토리 존재 확인
-ls $ISAACLAB_PATH/source/isaaclab_tasks/isaaclab_tasks/manager_based/manipulation/
-# 기대 출력: stack/ lift/ reach/ 등의 디렉토리
-```
-
----
-
-## 4.5 Data Collection 확장: ADC 서브모듈 설치 (선택)
-
-> Data Collection을 사용하지 않는다면 이 섹션을 건너뛰세요.
-
-### ADC 서브모듈 초기화
-
-AutoDataCollector(ADC)는 Pinocchio IK 솔버와 VLM Judge 프롬프트를 제공하는 외부 서브모듈입니다.
-
-```bash
+pip install -e ".[data-collection]"
+pip install pin                    # Pinocchio — 6-DOF IK 필수
 git submodule update --init external/AutoDataCollector
 ```
 
-확인:
+**필수 의존성**:
+- `pinocchio` (`pip install pin`): 6-DOF IK solver (FK 기반 `robot_xyzrpy` 계산에도 사용)
+- ADC 서브모듈: FK/IK 엔진 + judge 프롬프트 재사용 (없으면 fallback)
+
+### Data Collection 연결 확인
 
 ```bash
-python -c "from src.data_collection.adc_imports import is_adc_available; print(is_adc_available())"
-# True
+# ADC 서브모듈 확인
+python3 -c "from src.data_collection.adc_imports import is_adc_available; print(is_adc_available())"
+
+# Pinocchio 확인
+python3 -c "import pinocchio; print('Pinocchio OK')"
+
+# CLI 확인
+python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml --help
 ```
 
-> **참고**: ADC 없이도 Data Collection은 동작합니다. Pinocchio IK → IsaacLab DifferentialIK fallback, VLM Judge → 내장 프롬프트 fallback.
+## 5. 첫 실행 권장 순서
 
----
+### IsaacLab 우선 검증
 
-## 5. 설치 검증 체크리스트
+```bash
+python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml --evaluate
+```
+
+확인할 산출물:
+
+- `outputs/isaaclab/<run_dir>/env_cfg.py`
+- `outputs/isaaclab/<run_dir>/run_env.py`
+- `outputs/isaaclab/<run_dir>/eval_report.json`
+
+### Isaac Sim 시각 검증
+
+```bash
+python3 scripts/run_isaac_sim.py tasks/franka/stack/franka_stack.yaml --backend auto
+```
+
+확인할 산출물:
+
+- `outputs/isaac_sim/<run_dir>/run_report.json`
+- `outputs/isaac_sim/<run_dir>/iter_*.png`
+
+### Data Collection
+
+```bash
+python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml
+```
+
+확인할 산출물:
+
+- `outputs/data_collection/<run_dir>/collection_results.json`
+- `outputs/data_collection/<run_dir>/raw_dataset/`
+
+## 6. 체크리스트
 
 ### 공통
 
 - [ ] `pip install -e .` 성공
-- [ ] `.env` 파일에 `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_BASE_URL` 설정
+- [ ] `.env`에 `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_BASE_URL` 설정
 
-### Isaac Sim Pipeline
+### IsaacLab
+
+- [ ] `ISAACLAB_PATH` 설정 또는 config 반영
+- [ ] `env_isaaclab` 사용 가능
+- [ ] `python3 scripts/run_isaac_lab.py ... --dry-run` 성공
+
+### Isaac Sim
 
 - [ ] Isaac Sim 실행 가능
-- [ ] isaac-sim-mcp 클론 완료
-- [ ] `.mcp.json` 경로 수정 완료
-- [ ] `./run_isaac_mcp_streaming.sh 0` 으로 MCP 서버 시작
+- [ ] `isaac-sim-mcp` 설치 완료
+- [ ] Isaac Sim extension이 `localhost:8766`에서 수신
 - [ ] `python3 tests/test_components.py connection` 성공
 
-### IsaacLab Pipeline
-
-- [ ] IsaacLab 클론 및 설치 완료
-- [ ] conda 환경 `env_isaaclab` 생성 완료
-- [ ] `ISAACLAB_PATH` 환경변수 또는 config 설정 완료
-- [ ] `conda run -n env_isaaclab -- python -c "import isaaclab"` 성공
-
-### Data Collection 확장
+### Data Collection
 
 - [ ] `pip install -e ".[data-collection]"` 성공
-- [ ] (선택) `git submodule update --init external/AutoDataCollector` 완료
-- [ ] (선택) ADC 확인: `python -c "from src.data_collection.adc_imports import is_adc_available; print(is_adc_available())"` → True
+- [ ] `git submodule update --init external/AutoDataCollector` 완료
+- [ ] ADC 없이도 fallback으로 실행 가능함을 이해
 
----
+## 관련 문서
 
-## 다음 단계
-
-설치가 완료되었으면 [사용법](usage.md)을 참고하세요.
+- `docs/usage.md`
+- `docs/evaluation.md`
+- `docs/task_yaml_spec.md`
+- `docs/troubleshooting.md`

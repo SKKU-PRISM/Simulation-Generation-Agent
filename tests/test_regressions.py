@@ -7,9 +7,12 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from src.data_collection.config import load_robot_config
+from src.isaac_lab.agent import IsaacLabAgent
 from src.isaac_lab.evaluator.mdp_correctness import MDPCorrectnessChecker
 from src.isaac_lab.evaluator.parser import EnvCfgParser
 from src.isaac_lab.evaluator.runtime_validity import RuntimeValidityChecker
+from src.isaac_lab.evaluator.scene_fidelity import SceneFidelityChecker
 from src.isaac_sim.scene_builder import SceneBuilder
 
 
@@ -130,6 +133,61 @@ class EnvCfg(ManagerBasedRLEnvCfg):
         result = checker.check_reward_structure()
         self.assertEqual(result["score"], 3)
         self.assertEqual(result["status"], "WARN")
+
+    def test_robot_detection_normalizes_ur10_aliases_to_ur10e(self):
+        agent = IsaacLabAgent.__new__(IsaacLabAgent)
+
+        task_doc = {
+            "task": {"name": "UR10PickPlaceBox"},
+            "assets": [
+                {
+                    "type": "articulation",
+                    "robot_type": "ur10",
+                    "asset_path": "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10e/ur10e.usd",
+                }
+            ],
+        }
+        detected = agent._detect_robot(task_doc, "tasks/ur10e/pick_place/ur10e_pick_place_box.yaml")
+        self.assertEqual(detected, "ur10e")
+
+    def test_scene_fidelity_recognizes_ur10e_robot_config(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_cfg_path = Path(tmpdir) / "env_cfg.py"
+            env_cfg_path.write_text(
+                """
+from isaaclab.envs import ManagerBasedRLEnvCfg
+from isaaclab.scene import InteractiveSceneCfg
+from isaaclab.utils import configclass
+from isaaclab_assets.robots.universal_robots import UR10e_ROBOTIQ_2F_85_CFG
+
+@configclass
+class SceneCfg(InteractiveSceneCfg):
+    pass
+
+@configclass
+class EnvCfg(ManagerBasedRLEnvCfg):
+    scene: SceneCfg = SceneCfg(num_envs=2, env_spacing=2.5)
+
+    def __post_init__(self):
+        self.scene.robot = UR10e_ROBOTIQ_2F_85_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+""".strip()
+            )
+
+            parser = EnvCfgParser(env_cfg_path)
+            checker = SceneFidelityChecker(
+                yaml_doc={"assets": [{"name": "robot", "type": "articulation", "robot_type": "ur10e"}]},
+                parser=parser,
+                config={},
+            )
+            result = checker.check_robot_config()
+            self.assertEqual(result["score"], 4)
+            self.assertEqual(result["status"], "PASS")
+
+    def test_load_robot_config_maps_ur10_alias_to_ur10e_profile(self):
+        cfg = load_robot_config("ur10")
+        self.assertEqual(cfg.name, "ur10e")
+        self.assertTrue(cfg.has_gripper_joints)
+        self.assertEqual(len(cfg.finger_joint_names), 6)
 
 
 if __name__ == "__main__":

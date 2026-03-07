@@ -23,6 +23,8 @@ from typing import Optional
 
 import yaml
 
+from src.common.robot_names import normalize_robot_name
+
 from .config import (
     PROJECT_ROOT,
     DataCollectionConfig,
@@ -122,8 +124,19 @@ class DataCollectionPipeline:
         if raw_data_dir.exists():
             self._convert_to_lerobot(raw_data_dir)
 
+        pipeline_completed = bool(
+            success or results.get("pipeline_completed", False)
+        )
+        target_met = bool(results.get("target_met", False))
+        successful_episodes = int(results.get("successful_episodes", 0))
+        total_episodes = int(results.get("total_episodes", 0))
+
         return {
-            "success": success,
+            "success": pipeline_completed,
+            "pipeline_completed": pipeline_completed,
+            "target_met": target_met,
+            "successful_episodes": successful_episodes,
+            "total_episodes": total_episodes,
             "output_dir": str(self.output_dir),
             "raw_dataset": str(raw_data_dir) if raw_data_dir.exists() else None,
             "results": results,
@@ -136,21 +149,24 @@ class DataCollectionPipeline:
         # Check assets for articulation type
         for asset in self.task_doc.get("assets", []):
             if asset.get("type") == "articulation":
-                robot_type = asset.get("robot_type", "").lower()
-                if robot_type in ("franka", "openarm", "ur10", "so101"):
+                robot_type = normalize_robot_name(asset.get("robot_type", ""))
+                if robot_type:
+                    return robot_type
+                robot_type = normalize_robot_name(asset.get("asset_path", ""))
+                if robot_type:
                     return robot_type
 
         # Fallback: check task name or metadata
         task_name = self.task_doc.get("task", {}).get("name", "").lower()
-        for robot in ("franka", "openarm", "ur10", "so101"):
-            if robot in task_name:
-                return robot
+        robot = normalize_robot_name(task_name)
+        if robot:
+            return robot
 
         # Check file path
         yaml_str = str(self.yaml_path).lower()
-        for robot in ("franka", "openarm", "ur10", "so101"):
-            if robot in yaml_str:
-                return robot
+        robot = normalize_robot_name(yaml_str)
+        if robot:
+            return robot
 
         logger.warning("Could not detect robot type, defaulting to 'franka'")
         return "franka"
@@ -254,12 +270,12 @@ class DataCollectionPipeline:
             from src.data_collection.sim_robot_interface import SimRobotInterface
             from src.data_collection.sim_detector import SimDetector
             from src.data_collection.sim_camera import SimCamera, MultiCameraManager, inject_cameras_into_scene, SceneCameraManager
-            from src.data_collection.sim_recorder import SimRecorder
+            from src.data_collection.sim_recorder import SimRecorder, RecorderStorageError
             from src.data_collection.sim_skills import SimSkills, create_ik_solver
             from src.data_collection.skill_planner import SkillPlanner
             from src.data_collection.sim_judge import SimJudge
 
-            MARKER_FILE = os.path.join("{Path(self.output_dir).resolve()}", "COLLECTION_SUCCESS_MARKER")
+            MARKER_FILE = os.path.join("{Path(self.output_dir).resolve()}", "COLLECTION_COMPLETE_MARKER")
             USE_LLM_PLANNER = {self.config.skill_retry_max > 0}
             USE_VLM_JUDGE = {self.config.use_vlm_judge}
 
@@ -333,21 +349,29 @@ class DataCollectionPipeline:
                             target[2] += height
                             skills.execute_pick(obj)
 
-            def _capture_top_image(cameras):
-                \"\"\"Capture a single image for VLM judge (prefer top view for best scene overview).\"\"\"
-                if cameras is not None:
-                    try:
-                        images = cameras.capture_all()
-                        for name in ("top_cam", "top", "front_cam", "front"):
-                            if name in images and images[name] is not None:
-                                return images[name]
-                        # Return first available
-                        for img in images.values():
-                            if img is not None:
-                                return img
-                    except Exception:
-                        pass
-                return None
+            def _capture_judge_images(cameras):
+                \"\"\"Capture wrist + front images for VLM judge (multi-view assessment).
+
+                Returns dict {{"wrist": array, "front": array}} or None.
+                Wrist view: close-up gripper/object interaction.
+                Front view: full scene overview for task completion.
+                \"\"\"
+                if cameras is None:
+                    return None
+                try:
+                    all_imgs = cameras.capture_all()
+                    judge_imgs = {{}}
+                    for name in ("wrist_cam", "wrist"):
+                        if name in all_imgs and all_imgs[name] is not None:
+                            judge_imgs["wrist"] = all_imgs[name]
+                            break
+                    for name in ("front_cam", "front"):
+                        if name in all_imgs and all_imgs[name] is not None:
+                            judge_imgs["front"] = all_imgs[name]
+                            break
+                    return judge_imgs if judge_imgs else None
+                except Exception:
+                    return None
 
             def _verify_goal_conditions(detector, goal, xy_threshold=0.05, height_diff=0.05, z_threshold=0.01):
                 \"\"\"Verify task success by re-querying object positions against goal conditions.
@@ -425,11 +449,15 @@ class DataCollectionPipeline:
                     total = 0
                     details = []
                     for cond in conditions:
-                        cond_type = cond.get("type", "")
+                        cond_type = cond.get("type", cond.get("relation", ""))
                         if cond_type in ("on_top_of", "stacked"):
                             total += 1
-                            top_obj = cond.get("object", cond.get("top"))
+                            top_obj = cond.get(
+                                "object",
+                                cond.get("top", cond.get("subject")),
+                            )
                             bottom_obj = cond.get("target", cond.get("bottom"))
+                            cond_tol = cond.get("tolerance", xy_threshold)
                             if not top_obj or not bottom_obj:
                                 details.append(f"skip: missing object names")
                                 continue
@@ -441,16 +469,52 @@ class DataCollectionPipeline:
                                 continue
                             xy_err = np.linalg.norm(top_pos[:2] - bot_pos[:2])
                             z_diff = top_pos[2] - bot_pos[2]
-                            ok = xy_err < xy_threshold and abs(z_diff - height_diff) < z_threshold
+                            ok = (
+                                xy_err < cond_tol
+                                and abs(z_diff - height_diff)
+                                < max(z_threshold, cond_tol)
+                            )
                             if ok:
                                 passed += 1
                             details.append(
                                 f"{{top_obj}} on {{bottom_obj}}: xy_err={{xy_err:.3f}}m z_diff={{z_diff:.3f}}m {{'OK' if ok else 'FAIL'}}"
                             )
-                        elif cond_type in ("lifted", "above"):
+                        elif cond_type == "at_position":
                             total += 1
-                            obj = cond.get("object", "")
-                            min_height = cond.get("height", 0.1)
+                            obj = cond.get("object", cond.get("subject", ""))
+                            target = cond.get("position", cond.get("target"))
+                            tol = cond.get("tolerance", xy_threshold)
+                            if not obj or target is None:
+                                details.append("skip: missing at_position fields")
+                                continue
+                            try:
+                                obj_pos = detector.get_object_position(obj)
+                            except Exception as e:
+                                details.append(f"{{obj}} at_position: detection failed ({{e}})")
+                                continue
+                            target_pos = None
+                            if isinstance(target, (list, tuple)) and len(target) == 3:
+                                target_pos = np.array(target, dtype=float)
+                            elif isinstance(target, str):
+                                try:
+                                    target_pos = detector.get_object_position(target)
+                                except Exception as e:
+                                    details.append(f"{{obj}} at_position target '{{target}}' missing ({{e}})")
+                                    continue
+                            if target_pos is None:
+                                details.append(f"{{obj}} at_position: unsupported target={{target}}")
+                                continue
+                            xy_err = np.linalg.norm(obj_pos[:2] - target_pos[:2])
+                            ok = xy_err < tol
+                            if ok:
+                                passed += 1
+                            details.append(
+                                f"{{obj}} at_position: xy_err={{xy_err:.3f}}m {{'OK' if ok else 'FAIL'}}"
+                            )
+                        elif cond_type in ("lifted", "above", "height_above"):
+                            total += 1
+                            obj = cond.get("object", cond.get("subject", ""))
+                            min_height = cond.get("height", cond.get("value", 0.1))
                             try:
                                 pos = detector.get_object_position(obj)
                                 ok = pos[2] > min_height
@@ -526,40 +590,141 @@ class DataCollectionPipeline:
                     env_cfg.actions.arm_action.use_default_offset = False
                     print("Patched arm_action: scale=1.0, use_default_offset=False (absolute joint control)")
 
+                # --- Patch initial joint state from robot profile ready_pose ---
+                # LLM-generated env_cfg may use stale joint values (e.g. stiff standing pose).
+                # Override with the robot profile's task-ready pose for proper workspace alignment.
+                ready_pose = {repr({k: v for k, v in self.robot_cfg.ready_pose.items()})}
+                if ready_pose and hasattr(env_cfg.scene, 'robot') and hasattr(env_cfg.scene.robot, 'init_state'):
+                    old_jp = dict(env_cfg.scene.robot.init_state.joint_pos)
+                    env_cfg.scene.robot.init_state.joint_pos = ready_pose
+                    print(f"Patched initial joint_pos from robot profile ready_pose: {{ready_pose}}")
+
                 # --- Patch actuator PD gains + disable gravity (HIGH_PD config) ---
-                # Default stiffness=80/damping=4 is tuned for RL (small action deltas).
-                # For IK-based absolute control, need HIGH_PD: stiffness=400, damping=80,
-                # with gravity disabled (matching FRANKA_PANDA_HIGH_PD_CFG).
+                # For IK-based absolute control, need HIGH stiffness/damping.
+                # Use max(original, target) to never downgrade — UR10e shoulder
+                # defaults to 1320 Nm/rad which we must preserve, while its
+                # wrist defaults to 216 which needs upgrading to resist gripper
+                # contact forces during grasping.
                 if hasattr(env_cfg.scene, 'robot') and hasattr(env_cfg.scene.robot, 'actuators'):
                     for act_name, actuator in env_cfg.scene.robot.actuators.items():
                         if 'hand' not in act_name and 'finger' not in act_name and 'gripper' not in act_name:
-                            actuator.stiffness = 400.0
-                            actuator.damping = 80.0
-                            # Override low effort limits (e.g. Franka forearm: 12 Nm)
-                            # that prevent HIGH_PD torques from converging.
-                            # For ImplicitActuatorCfg, both effort_limit and effort_limit_sim
-                            # must be set to the same value (or only effort_limit_sim).
-                            actuator.effort_limit = 200.0
-                            actuator.effort_limit_sim = 200.0
-                    print("Patched actuators: stiffness=400, damping=80, effort_limit=200 (HIGH_PD)")
+                            orig_s = getattr(actuator, 'stiffness', 80.0)
+                            orig_d = getattr(actuator, 'damping', 4.0)
+                            orig_s = float(orig_s) if isinstance(orig_s, (int, float)) else 80.0
+                            orig_d = float(orig_d) if isinstance(orig_d, (int, float)) else 4.0
+                            # Proportional scaling: preserve per-joint ratios.
+                            # Wrist joints (orig=216) stay at 1080 — higher values
+                            # cause numerical instability due to low wrist link inertia
+                            # at 100Hz physics. Joint coupling is handled via Cartesian
+                            # waypoint subdivision in sim_skills instead.
+                            STIFFNESS_MULT = 5.0
+                            MAX_STIFFNESS = 5000.0
+                            MAX_DAMPING = 400.0
+                            new_s = min(orig_s * STIFFNESS_MULT, MAX_STIFFNESS)
+                            new_d = min(orig_d * STIFFNESS_MULT, MAX_DAMPING)
+                            if robot_cfg.name == "ur10e" and act_name == "wrist":
+                                # The Robotiq grasp loads wrist_2 heavily during post-close lift.
+                                # Give the shared UR wrist actuator more authority than the
+                                # generic x5 scaling so the wrist can hold its fixed-joint pose.
+                                new_s = max(new_s, 2000.0)
+                                new_d = max(new_d, 200.0)
+                            actuator.stiffness = new_s
+                            actuator.damping = new_d
+                            # Remove effort limit clipping — let PD solver produce
+                            # whatever torque it needs for unconditional stability.
+                            actuator.effort_limit = 1e9
+                            actuator.effort_limit_sim = 1e9
+                            print(f"  {{act_name}}: stiffness={{orig_s}}->{{new_s}}, damping={{orig_d}}->{{new_d}}, effort_limit=1e9")
+                    print("Patched arm actuators: proportional PD scaling (×5, cap 5000), effort_limit=1e9")
+                    # --- Patch gripper drive stiffness for reliable grasping ---
+                    # Some grippers (e.g. Robotiq 2F-85: stiffness=11.25 Nm/rad) use
+                    # very low stiffness that causes slow/incomplete closure at data-collection
+                    # timescales. Override with robot profile grasp_stiffness when set.
+                    grasp_stiffness = {self.robot_cfg.gripper_grasp_stiffness!r}
+                    if grasp_stiffness > 0:
+                        for act_name, actuator in env_cfg.scene.robot.actuators.items():
+                            if 'gripper_drive' in act_name or 'gripper_finger' in act_name:
+                                old_s = getattr(actuator, 'stiffness', None)
+                                actuator.stiffness = grasp_stiffness
+                                actuator.damping = grasp_stiffness * 0.05
+                                actuator.effort_limit_sim = max(100.0, grasp_stiffness * 0.2)
+                                print(f"Patched {{act_name}}: stiffness {{old_s}} -> {{grasp_stiffness}} (grasp_stiffness override)")
+                            elif 'gripper_passive' in act_name or 'passive' in act_name:
+                                # Passive mimic joints (stiffness=0, damping=0) are completely
+                                # unconstrained, causing reaction forces on wrist joints during
+                                # gripper closure. Give them enough stiffness to track targets.
+                                old_s = getattr(actuator, 'stiffness', None)
+                                actuator.stiffness = grasp_stiffness * 0.5
+                                actuator.damping = grasp_stiffness * 0.025
+                                print(f"Patched {{act_name}}: stiffness {{old_s}} -> {{grasp_stiffness * 0.5}} (passive joint stabilization)")
                 if hasattr(env_cfg.scene, 'robot') and hasattr(env_cfg.scene.robot, 'spawn'):
                     if hasattr(env_cfg.scene.robot.spawn, 'rigid_props') and env_cfg.scene.robot.spawn.rigid_props is not None:
                         env_cfg.scene.robot.spawn.rigid_props.disable_gravity = True
                         print("Patched robot: disable_gravity=True (matching HIGH_PD_CFG)")
+                    # Moderately increase solver iterations for tighter constraint
+                    # satisfaction without GPU OOM (64 caused OOM on 8GB GPUs).
+                    if hasattr(env_cfg.scene.robot.spawn, 'articulation_props') and env_cfg.scene.robot.spawn.articulation_props is not None:
+                        env_cfg.scene.robot.spawn.articulation_props.solver_position_iteration_count = 32
+                        env_cfg.scene.robot.spawn.articulation_props.solver_velocity_iteration_count = 2
+                        print("Patched solver iterations: position=32, velocity=2")
+                        # Keep self-collisions DISABLED (UR10e default).
+                        # Finger collision shapes still collide with external objects (cubes)
+                        # but NOT with other robot links (prevents wrist instability).
+                        env_cfg.scene.robot.spawn.articulation_props.enabled_self_collisions = False
+                        print("Patched articulation: enabled_self_collisions=False (finger-cube only)")
+                    # Enable collision on all robot body meshes and set contact offset
+                    # for reliable contact detection between finger pads and objects.
+                    import isaaclab.sim as sim_utils_patch
+                    if not hasattr(env_cfg.scene.robot.spawn, 'collision_props') or env_cfg.scene.robot.spawn.collision_props is None:
+                        env_cfg.scene.robot.spawn.collision_props = sim_utils_patch.CollisionPropertiesCfg(
+                            collision_enabled=True,
+                            contact_offset=0.005,
+                            rest_offset=0.0,
+                        )
+                        print("Patched robot spawn: collision_props(collision_enabled=True, contact_offset=0.005)")
 
                 # --- Inject cameras into scene config BEFORE env construction ---
                 # This ensures cameras get the PLAY event and initialize properly.
                 # Top view: near-top-down, robot at bottom of frame, workspace in center.
                 # Wrist view: body-mounted on end-effector for close-up manipulation view.
-                camera_attr_names = inject_cameras_into_scene(env_cfg, robot_cfg, camera_names=["top", "wrist"])
+                camera_attr_names = inject_cameras_into_scene(env_cfg, robot_cfg, camera_names=["top", "wrist", "front"])
                 if camera_attr_names:
                     print(f"Injected cameras into scene: {{camera_attr_names}}")
 
+                using_local_ur10e_asset = False
+                if robot_cfg.name == "ur10e":
+                    from src.data_collection.ur10e_patches import (
+                        apply_local_ur10e_asset_override,
+                        should_use_local_ur10e_asset,
+                    )
+
+                    if should_use_local_ur10e_asset():
+                        using_local_ur10e_asset = apply_local_ur10e_asset_override(env_cfg, verbose=True)
+                    else:
+                        print("Using default Isaac Sim UR10e asset (local override disabled)")
+
                 env = ManagerBasedRLEnv(cfg=env_cfg)
+
+                # Add the minimal UR10e/Robotiq pad-collision patch only in the
+                # UR10e path.  Keep this logic centralized so debug harnesses and
+                # the main pipeline use the same geometry source-of-truth.
+                try:
+                    if robot_cfg.name == "ur10e" and not using_local_ur10e_asset:
+                        from src.data_collection.ur10e_patches import ensure_ur10e_pad_collisions
+
+                        added_paths = ensure_ur10e_pad_collisions(env.sim.stage, env_idx=0, verbose=True)
+                        print(f"Ensured {{len(added_paths)}} UR10e finger-pad collision shapes")
+                except Exception as coll_err:
+                    print(f"WARNING: Failed to add Robotiq collision shapes: {{coll_err}}")
+                    traceback.print_exc()
 
                 # Initialize components
                 robot_interface = SimRobotInterface(env, robot_cfg, env_idx=0)
                 detector = SimDetector(env, task_doc, env_idx=0)
+
+                # Read robot base position for IK frame conversion
+                robot_base_pos = env.scene["robot"].data.root_pos_w[0].cpu().numpy()
+                print(f"Robot base position (world frame): {{robot_base_pos}}")
 
                 # Initialize multi-camera system from scene-integrated cameras
                 cameras = None
@@ -591,6 +756,7 @@ class DataCollectionPipeline:
                     camera=camera,
                     cameras=cameras,
                     ik_solver=ik_solver,
+                    base_offset=robot_base_pos,
                 )
 
                 # Initialize LLM-based skill planner if enabled
@@ -621,6 +787,9 @@ class DataCollectionPipeline:
                     "episodes": [],
                     "total_episodes": 0,
                     "successful_episodes": 0,
+                    "pipeline_completed": False,
+                    "target_met": False,
+                    "raw_dataset": None,
                 }}
 
                 # Success-based episode loop
@@ -637,10 +806,16 @@ class DataCollectionPipeline:
                         obs, info = env.reset()
                         robot_interface.reset_termination_flags()
 
-                        # Render warmup: step the environment a few times so camera
+                        # Render warmup: hold initial position for a few steps so camera
                         # buffers are populated (first frames after reset can be black).
+                        # CRITICAL: Must send initial joint positions as action, NOT zeros!
+                        # With scale=1.0 + use_default_offset=False, zero action = target 0.0
+                        # which drives the robot away from its initial pose.
+                        _warmup_action = torch.zeros(env.num_envs, env.action_space.shape[-1], device=env.device)
+                        _warmup_action[0, :6] = env.scene["robot"].data.joint_pos[0, :6].clone()
+                        _warmup_action[0, 6] = 1.0  # gripper open
                         for _ in range(10):
-                            env.step(torch.zeros(env.num_envs, env.action_space.shape[-1], device=env.device))
+                            env.step(_warmup_action)
 
                         # Start recording
                         task_desc = task_doc.get("task", {{}}).get("description", "")
@@ -650,10 +825,10 @@ class DataCollectionPipeline:
                         scene_state = detector.get_all_objects()
                         print(f"Scene objects: {{list(scene_state.keys())}}")
 
-                        # Capture initial image for VLM judge
-                        initial_image = None
+                        # Capture initial images for VLM judge (wrist + front)
+                        initial_images = None
                         if sim_judge is not None:
-                            initial_image = _capture_top_image(cameras)
+                            initial_images = _capture_judge_images(cameras)
 
                         # Debug: save initial images from ALL cameras (first episode)
                         if episode_idx == 0 and cameras is not None:
@@ -710,30 +885,33 @@ class DataCollectionPipeline:
                                 # Only check if env hasn't auto-reset yet
                                 pre_retreat_goal_ok, pre_retreat_goal_details = _verify_goal_conditions(detector, goal)
 
-                            # Capture final image BEFORE retreat (for VLM judge)
-                            final_image = None
+                            # Capture final images BEFORE retreat (for VLM judge)
+                            final_images = None
                             if sim_judge is not None:
-                                final_image = _capture_top_image(cameras)
+                                final_images = _capture_judge_images(cameras)
 
                             skills.move_to_ready(duration=1.5, safe_retreat=True)
                             execution_ok = True
                         except Exception as e:
-                            print(f"Skill execution error: {{e}}")
+                            if isinstance(e, RecorderStorageError):
+                                print(f"Recorder storage error: {{e}}")
+                            else:
+                                print(f"Skill execution error: {{e}}")
                             traceback.print_exc()
                             execution_ok = False
                             env_terminated_during_skills = robot_interface.env_terminated
                             env_truncated_during_skills = robot_interface.env_truncated
                             pre_retreat_goal_ok = False
                             pre_retreat_goal_details = "execution error"
-                            final_image = None
+                            final_images = None
 
                         # Determine episode success
                         # Priority: VLM judge > goal verification > env termination
-                        if sim_judge is not None and execution_ok and final_image is not None and initial_image is not None:
+                        if sim_judge is not None and execution_ok and final_images is not None and initial_images is not None:
                             verdict = sim_judge.judge_episode(
                                 task_description=task_desc,
-                                initial_image=initial_image,
-                                final_image=final_image,
+                                initial_images=initial_images,
+                                final_images=final_images,
                                 object_positions=scene_state,
                                 executed_skills=executed_skills_desc,
                             )
@@ -768,7 +946,7 @@ class DataCollectionPipeline:
                             "steps": recorder.current_episode_steps,
                             "discarded": discard_failed,
                         }}
-                        if sim_judge is not None and execution_ok and initial_image is not None:
+                        if sim_judge is not None and execution_ok and initial_images is not None:
                             episode_result["judge_prediction"] = verdict.get("prediction", "N/A")
                             episode_result["judge_reasoning"] = verdict.get("reasoning", "")
                         results["episodes"].append(episode_result)
@@ -784,22 +962,52 @@ class DataCollectionPipeline:
 
                 except KeyboardInterrupt:
                     print("\\nCollection interrupted by user")
+                    results["pipeline_error"] = "interrupted"
                 except Exception as e:
                     print(f"Pipeline error: {{e}}")
+                    results["pipeline_error"] = str(e)
                     traceback.print_exc()
                 finally:
-                    # Finalize dataset
-                    dataset_path = recorder.finalize()
+                    if recorder.is_recording:
+                        try:
+                            recorder.end_episode(success=False, discard=False)
+                        except Exception as end_err:
+                            print(f"WARNING: Failed to close active episode: {{end_err}}")
+                            traceback.print_exc()
+                            results.setdefault("cleanup_errors", []).append(
+                                f"end_episode failed: {{end_err}}"
+                            )
+
+                    dataset_path = None
+                    try:
+                        dataset_path = recorder.finalize()
+                    except Exception as finalize_err:
+                        print(f"WARNING: Dataset finalize failed: {{finalize_err}}")
+                        traceback.print_exc()
+                        results.setdefault("cleanup_errors", []).append(
+                            f"finalize failed: {{finalize_err}}"
+                        )
+                        results.setdefault(
+                            "pipeline_error",
+                            f"finalize failed: {{finalize_err}}",
+                        )
+
                     results["dataset_path"] = dataset_path
+                    results["raw_dataset"] = dataset_path
+                    results["target_met"] = (
+                        results["successful_episodes"] >= target_success
+                    )
+                    results["pipeline_completed"] = dataset_path is not None
+                    results["success"] = results["pipeline_completed"]
 
                     # Save results
                     results_path = os.path.join(cfg["output_dir"], "collection_results.json")
                     with open(results_path, "w") as f:
                         json.dump(results, f, indent=2)
 
-                    # Write success marker
-                    with open(MARKER_FILE, "w") as f:
-                        f.write("SUCCESS")
+                    if results["pipeline_completed"]:
+                        with open(MARKER_FILE, "w") as f:
+                            f.write("COMPLETE")
 
                     print(f"\\nResults saved to {{results_path}}")
                     print(f"Dataset at {{dataset_path}}")
@@ -875,9 +1083,17 @@ class DataCollectionPipeline:
             proc.wait()
             output = "\n".join(output_lines)
 
-            # Check success marker
-            marker_path = self.output_dir / "COLLECTION_SUCCESS_MARKER"
-            success = marker_path.exists()
+            # Check completion marker / results file
+            marker_path = self.output_dir / "COLLECTION_COMPLETE_MARKER"
+            legacy_marker_path = self.output_dir / "COLLECTION_SUCCESS_MARKER"
+            success = marker_path.exists() or legacy_marker_path.exists()
+
+            if not success:
+                results_path = self.output_dir / "collection_results.json"
+                if results_path.exists():
+                    with open(results_path) as f:
+                        results = json.load(f)
+                    success = bool(results.get("pipeline_completed", False))
 
             if success:
                 logger.info("Data collection completed successfully")

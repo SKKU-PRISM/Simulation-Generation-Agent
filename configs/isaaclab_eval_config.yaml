@@ -63,11 +63,16 @@ robot_dof:
     gripper_type: "binary"
     arm_joint_pattern: "panda_joint.*"
     gripper_joint_pattern: "panda_finger.*"
+  ur10e:
+    arm_joints: 6
+    gripper_type: "binary"
+    arm_joint_pattern: "(shoulder_.*|elbow_joint|wrist_.*)"
+    gripper_joint_pattern: "(finger_joint|right_outer_knuckle_joint|.*_inner_finger_joint|.*_inner_finger_knuckle_joint)"
   ur10:
     arm_joints: 6
     gripper_type: "binary"
-    arm_joint_pattern: ".*"
-    gripper_joint_pattern: "finger_joint.*"
+    arm_joint_pattern: "(shoulder_.*|elbow_joint|wrist_.*)"
+    gripper_joint_pattern: "(finger_joint|right_outer_knuckle_joint|.*_inner_finger_joint|.*_inner_finger_knuckle_joint)"
   openarm:
     arm_joints: 6
     gripper_type: "binary"

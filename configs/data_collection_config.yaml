@@ -29,7 +29,24 @@ vlm:
 skill:
   retry_max: 3                # max LLM retries on skill execution failure
 
+# Goal verification (geometric, VLM 없이도 성공 판정 가능)
+goal_verification:
+  xy_threshold: 0.05          # m, max XY distance for stacking alignment
+  height_diff: 0.05           # m, expected Z difference between stacked objects
+  z_threshold: 0.01           # m, tolerance on height_diff check
+
+# IK solver configuration
+ik:
+  num_random_samples: 30      # Pinocchio multi-start IK attempts
+  orientation_tolerance: 0.15 # rad (~8.6°), allowed orientation error for 6-DOF IK
+
+# Camera configuration
+cameras:
+  dataset_cameras: ["top", "wrist"]    # cameras included in dataset recording
+  judge_cameras: ["wrist", "front"]    # cameras used for VLM judge (before/after images)
+  # Camera specs defined per-robot in configs/robot_profiles/*.yaml
+
 environment:
   headless: true
   num_envs: 1                 # single env for data collection
-  timeout: 600                # execution timeout in seconds
+  timeout: 1800               # execution timeout in seconds (increased for shader compilation)

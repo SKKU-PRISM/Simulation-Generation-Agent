@@ -1,107 +1,104 @@
 # Task YAML 명세
 
-이 문서는 Task YAML 문서의 포맷, 필드 정의, 에셋 규약을 설명합니다.
-
-템플릿 파일: `tasks/templates/task_document.yaml.template` (v2.0.0)
-
----
+이 문서는 `tasks/{robot}/{category}/*.yaml` 형식의 task 문서를 설명합니다. 이 YAML은 **IsaacLab 생성의 입력이자**, 필요할 때 **Isaac Sim 시각 검증**과 **Data Collection**의 공통 입력으로도 사용됩니다.
 
 ## 기본 구조
 
 ```yaml
-task:           # 태스크 메타데이터
-simulation:     # 시뮬레이션 파라미터
-scene:          # 조명, 지면 설정
-assets:         # 로봇, 테이블, 오브젝트 목록
-goal:           # 목표 상태 + 성공 기준
-camera:         # 카메라 위치/방향
-notes:          # (선택) 참고사항
+task:
+simulation:
+scene:
+assets:
+goal:
+camera:
+notes:
 ```
 
----
+핵심은 `assets`와 `goal`입니다. IsaacLab Pipeline이 가장 먼저 이 둘을 해석합니다.
 
-## 섹션별 필드 정의
+## 1. `task`
 
-### `task` — 태스크 메타데이터
+```yaml
+task:
+  name: FrankaStack
+  description: Stack three cubes
+  version: "1.0.0"
+```
 
-| 필드 | 타입 | 필수 | 설명 |
-|------|------|:----:|------|
-| `name` | string | O | 태스크 이름 (CamelCase, 예: `FrankaStack`) |
-| `description` | string | O | 로봇이 수행해야 할 작업 설명 |
-| `version` | string | O | 문서 버전 (SemVer, 예: `"1.0.0"`) |
+권장:
 
-### `simulation` — 시뮬레이션 파라미터
+- `name`: PascalCase
+- 파일명: lowercase + underscore
 
-| 필드 | 타입 | 필수 | 기본값 | 설명 |
-|------|------|:----:|--------|------|
-| `gravity` | [x,y,z] | O | `[0,0,-9.81]` | 중력 벡터 (m/s^2, Z-up) |
-| `timestep` | float | O | `0.01` | 시뮬레이션 타임스텝 (100Hz) |
-| `decimation` | int | | `5` | 제어 주기 = timestep * decimation |
-| `episode_length` | float | | `30.0` | 에피소드 길이 (초) |
-| `render_interval` | int | | `2` | 렌더링 간격 |
-| `physx` | object | | | PhysX 엔진 파라미터 |
+## 2. `simulation`
 
-### `scene` — 씬 설정
+```yaml
+simulation:
+  gravity: [0, 0, -9.81]
+  timestep: 0.01
+  decimation: 5
+  episode_length: 30.0
+  render_interval: 2
+```
+
+IsaacLab evaluator는 여기서 특히 다음 값을 비교합니다.
+
+- `timestep`
+- `decimation`
+- `episode_length`
+
+## 3. `scene`
 
 ```yaml
 scene:
   lighting:
-    type: dome           # dome, distant, sphere
-    intensity: 3000      # 조명 강도
-    color: [0.75, 0.75, 0.75]  # RGB (0-1)
-
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
   ground:
     enabled: true
-    position: [0, 0, -1.05]   # IsaacLab 규약: z=-1.05
-    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"  # (선택)
+    position: [0, 0, -1.05]
 ```
 
-### `assets` — 에셋 목록
+평가기에서 `ground`, `light`, `env_spacing` 유무를 씬 구조 점수에 반영합니다.
 
-모든 에셋은 다음 공통 필드를 가집니다:
+## 4. `assets`
 
-| 필드 | 타입 | 필수 | 설명 |
-|------|------|:----:|------|
-| `name` | string | O | 고유 이름 (예: `robot`, `cube_1`) |
-| `type` | string | O | `articulation`, `static`, `rigid` 중 택일 |
-| `source` | string | | `usd`, `primitive`, `asset_db` |
-| `position` | [x,y,z] | O | 월드 좌표 위치 (m) |
-| `rotation` | [w,x,y,z] | | 쿼터니언 (wxyz 포맷, 기본: `[1,0,0,0]`) |
-| `scale` | [x,y,z] | | 스케일 (기본: `[1,1,1]`) |
-| `prim_path` | string | | USD prim 경로 (예: `/World/Robot`) |
+지원 타입:
 
-#### `type: articulation` (로봇)
+- `articulation`: 로봇
+- `static`: 고정 자산
+- `rigid`: 조작 대상 자산
+
+공통 예시:
+
+```yaml
+- name: cube_1
+  type: rigid
+  source: usd
+  asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/blue_block.usd"
+  position: [0.4, 0.0, 0.0203]
+  rotation: [1, 0, 0, 0]
+  scale: [1, 1, 1]
+  prim_path: /World/Cube_1
+```
+
+### `articulation`
 
 ```yaml
 - name: robot
   type: articulation
-  source: usd
-  robot_type: franka              # franka, openarm, ur10, so101
+  robot_type: franka
   asset_path: "{ISAACLAB_NUCLEUS_DIR}/Robots/FrankaEmika/panda_instanceable.usd"
   position: [0, 0, 0]
-  rotation: [1, 0, 0, 0]
-  initial_joints:                 # 초기 관절 각도 (rad)
+  initial_joints:
     panda_joint1: 0.0
-    panda_joint2: -0.7854
-    # ...
-  actuators:                      # 액추에이터 설정
-    shoulder:
-      joint_names: ["panda_joint1", "panda_joint2", ...]
-      effort_limit: 87.0          # N*m
-      stiffness: 80.0
-      damping: 4.0
-  ee_frame:                       # 엔드이펙터 프레임
-    body: panda_hand
-    offset_position: [0, 0, 0.1034]
-  physics:
-    self_collision: true
-  randomize:
-    joint_position:
-      distribution: gaussian
-      std: 0.02
 ```
 
-#### `type: static` (고정 물체 — 테이블 등)
+로봇별 실행 설정은 YAML 외에 `configs/robot_profiles/*.yaml`도 함께 사용됩니다.  
+Data Collection은 이 robot profile을 읽어 joint 이름, gripper 타입, IK 관련 설정을 가져옵니다.
+
+### `static`
 
 ```yaml
 - name: table
@@ -109,36 +106,25 @@ scene:
   source: usd
   asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
   position: [0.5, 0, 0]
-  rotation: [0.707, 0, 0, 0.707]
-  physics:
-    collision: true
 ```
 
-#### `type: rigid` (조작 대상 물체)
+### `rigid`
 
-USD 에셋 사용:
+USD 자산:
+
 ```yaml
-- name: cube_1
+- name: can
   type: rigid
   source: usd
-  asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/blue_block.usd"
-  position: [0.4, 0, 0.0203]
+  asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned_Physics/006_mustard_bottle.usd"
+  position: [0.45, 0.0, 0.05]
   physics:
     rigid_body: true
     collision: true
-    solver_position_iterations: 16
-  randomize:
-    position:
-      type: absolute              # absolute 또는 relative
-      x: [0.4, 0.6]
-      y: [-0.1, 0.1]
-      z: 0.0203                   # 고정 (테이블 높이 + 반높이)
-    orientation:
-      yaw: [-1.0, 1.0]           # rad
-    min_separation: 0.1           # m (다른 오브젝트와 최소 거리)
 ```
 
-프리미티브 사용 (asset_path 불필요):
+primitive 자산:
+
 ```yaml
 - name: target_pad
   type: rigid
@@ -147,100 +133,87 @@ USD 에셋 사용:
   position: [0.5, 0, 0.001]
   scale: [0.08, 0.08, 0.002]
   color: [1.0, 0.0, 0.0]
-  physics:
-    rigid_body: false
-    collision: true
 ```
 
-### `goal` — 목표 정의
+## 5. `goal`
 
-두 가지 포맷이 있습니다:
+두 가지 포맷을 지원합니다.
 
-**포맷 1: `success_criteria` (stack/lift 등)**
+### `success_criteria` 포맷
+
+주로 stack 계열에서 사용합니다.
 
 ```yaml
 goal:
-  description: "Stack cubes: Blue -> Red -> Green"
+  description: Stack cubes
   success_criteria:
-    xy_threshold: 0.04          # m, XY 정렬 허용 오차
-    height_diff: 0.0468         # m, 큐브 간 높이 차이
-    height_threshold: 0.005     # m, 높이 차이 허용 오차
+    xy_threshold: 0.04
+    height_diff: 0.0468
+    height_threshold: 0.005
     gripper_must_be_open: true
 ```
 
-**포맷 2: `conditions` 리스트 (pick_place/sort/cabinet 등)**
+### `conditions` 포맷
+
+주로 pick/place, sort, cabinet 등에서 사용합니다.
 
 ```yaml
 goal:
-  description: "Pick up the can and place it on the tray"
+  description: Place can on tray
   conditions:
     - type: position_match
       subject: can
       target: tray
-      threshold: 0.05           # m
-    - type: height_above
-      subject: can
-      min_height: 0.1           # m
+      threshold: 0.05
 ```
 
-### `camera` — 카메라 설정
+## 6. 파이프라인이 goal을 해석하는 방식
 
-| 필드 | 타입 | 필수 | 설명 |
-|------|------|:----:|------|
-| `position` | [x,y,z] | O | 카메라 위치 (m) |
-| `target` | [x,y,z] | O | 카메라가 바라보는 지점 |
-| `fov` | float | | 시야각 (도, 기본: 60) |
-| `resolution` | [w,h] | | 해상도 (기본: [1280, 720]) |
+IsaacLab evaluator는 두 포맷을 내부적으로 정규화합니다.
 
----
+- `success_criteria` -> stacked / xy_aligned / gripper open 계열 조건으로 변환
+- `conditions` -> 그대로 condition list로 사용
 
-## 에셋 경로 규약
+즉 문서 작성자는 포맷만 맞추면 되고, 평가는 동일한 condition 기반으로 진행됩니다.
+
+## 7. 에셋 경로 규약
 
 ### 템플릿 변수
 
-| 변수 | 치환값 | 용도 |
-|------|--------|------|
-| `{ISAAC_NUCLEUS_DIR}` | `/Isaac` | Props, 환경, 일부 로봇 |
-| `{ISAACLAB_NUCLEUS_DIR}` | `/IsaacLab` | IsaacLab 전용 로봇 에셋 |
+- `{ISAAC_NUCLEUS_DIR}` -> Nucleus `/Isaac`
+- `{ISAACLAB_NUCLEUS_DIR}` -> `/Isaac/IsaacLab`
+- `{ADC_URDF_DIR}` -> Data Collection에서 ADC 서브모듈의 URDF 루트로 해석
+- `{ISAACLAB_URDF_DIR}`, `{ISAAC_SIM_URDF_DIR}` -> robot profile에서 사용할 수 있는 URDF 템플릿
 
-이 변수들은 런타임에 Nucleus 서버 URL과 결합됩니다.
+### 로컬 자산
 
-### YCB 오브젝트
+`assets/...`로 시작하는 경로는 **레포 루트 기준 로컬 자산**으로 해석합니다.
 
-| 경로 | 물리 속성 | 비고 |
-|------|----------|------|
-| `{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned_Physics/*.usd` | 내장 (rigid_body + collision) | 바로 사용 가능 |
-| `{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/*.usd` | 없음 (geometry만) | `physics: { rigid_body: true, collision: true }` 필수 |
+예:
 
-### 스케일 주의사항
+```yaml
+asset_path: "assets/robots/so101/so101.usd"
+```
 
-| 에셋 | 기본 단위 | 필요한 scale |
-|------|----------|-------------|
-| YCB 오브젝트 | 미터 | `[1, 1, 1]` (그대로) |
-| `Props/Mugs/SM_Mug_*.usd` | 센티미터 | `[0.01, 0.01, 0.01]` 필수 |
-| 대부분의 Nucleus Props | 미터 | `[1, 1, 1]` |
+이 규칙은 특히 SO-101 로컬 USD 자산에서 중요합니다.
 
-### USD Prim 경로 규칙
+## 8. 카메라
 
-- 숫자로 시작할 수 없음: `/World/006_mustard_bottle` (X) → `/World/YCB_006_mustard_bottle` (O)
-- Y-up 모델을 Z-up 월드에서 세우려면: `rotation: [0.7071, 0.7071, 0, 0]` (X축 90도 회전)
+```yaml
+camera:
+  position: [2.0, 2.0, 1.5]
+  target: [0, 0, 0.3]
+  fov: 60
+  resolution: [1280, 720]
+```
 
----
+Isaac Sim에서는 시각 검증에 사용되고, Data Collection은 별도로 robot profile의 multi-camera 설정을 사용할 수 있습니다.
 
-## 지원 로봇 및 태스크
+## 9. 지원 로봇과 태스크
 
-### 로봇 목록
+현재 task 수는 62개입니다.
 
-| 로봇 | DOF | Gripper | Reach | 에셋 소스 |
-|------|-----|---------|-------|----------|
-| **Franka Panda** | 7+2 | Parallel jaw (8cm) | ~0.85m | Nucleus (`{ISAACLAB_NUCLEUS_DIR}`) |
-| **OpenArm** | 7+2 | Parallel jaw (8.8cm) | ~0.85m | Nucleus (`{ISAAC_NUCLEUS_DIR}`) |
-| **UR10** | 6 | Suction | ~1.3m | Nucleus (`{ISAAC_NUCLEUS_DIR}`) |
-| **SO-101** | 5+1 | Claw (5cm) | ~0.3m | 로컬 (`assets/robots/so101/`) |
-
-### 태스크 카테고리 (62개)
-
-| 카테고리 | Franka | OpenArm | UR10 | SO-101 | 합계 |
+| 카테고리 | Franka | OpenArm | UR10e | SO-101 | 합계 |
 |----------|:------:|:-------:|:----:|:------:|:----:|
 | stack | 2 | 2 | 2 | 1 | 7 |
 | lift | 2 | 2 | - | 1 | 5 |
@@ -251,42 +224,23 @@ goal:
 | peg_insert | 1 | - | - | - | 1 |
 | **합계** | **20** | **20** | **13** | **9** | **62** |
 
-태스크 파일 경로: `tasks/{robot}/{category}/{robot}_{task}.yaml`
+## 10. 작성 시 주의점
 
----
+- asset 이름은 evaluator와 scene parser가 그대로 참고하므로 일관되게 유지
+- 숫자 threshold는 evaluator가 코드 내 literal로 찾으므로 가능한 한 명시적으로 적기
+- SO-101처럼 로컬 자산을 쓰는 경우 `assets/...` 상대경로를 사용
+- Data Collection을 염두에 둔다면 로봇 타입과 scene object 이름을 모호하지 않게 작성
 
-## Randomization 규칙
+## 템플릿
 
-### Position Randomization
+기본 템플릿:
 
-| 필드 | 설명 |
-|------|------|
-| `type: absolute` | 지정된 범위 내에서 절대 좌표 샘플링 |
-| `type: relative` | 기본 위치 기준 오프셋 범위 |
-| `min_separation` | 같은 타입 오브젝트 간 최소 거리 (m) |
-
-### Orientation Randomization
-
-```yaml
-orientation:
-  yaw: [-1.0, 1.0]    # rad, Z축 회전 범위
+```text
+tasks/templates/task_document.yaml.template
 ```
-
-### Joint Position Randomization
-
-```yaml
-randomize:
-  joint_position:
-    distribution: gaussian
-    mean: 0.0
-    std: 0.02          # rad, 초기 관절 각도에 가우시안 노이즈
-```
-
----
 
 ## 관련 문서
 
-- [사용법](usage.md) — 태스크 실행 방법
-- [평가 시스템](evaluation.md) — 코드 품질 평가
-- 태스크 생성 스킬: `/design-task` (Claude Code에서 사용)
-- 태스크 검증 스킬: `/validate-task` (19개 항목 검증)
+- `docs/usage.md`
+- `docs/evaluation.md`
+- `configs/robot_profiles/`

@@ -7,7 +7,7 @@ Adapts AutoDataCollector's CaP (Code-as-Policies) pipeline for simulation:
 - Skill-based robot control via IsaacLab Articulation API
 - LeRobot v3.0 dataset recording
 
-Supports: Franka, OpenARM, UR10, SO-101
+Supports: Franka, OpenARM, UR10e, SO-101
 """
 
 from .config import DataCollectionConfig, RobotSimConfig, load_robot_config

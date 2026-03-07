@@ -1,12 +1,12 @@
-# Task Document: UR10PickPlaceMug
+# Task Document: UR10ePickPlaceMug
 # Version: 1.0.0
 # Template: v2.0.0
-# Description: UR10 robot with suction gripper picks a mug and places it at a target
-# Reference: Based on ur10_pick_place_can.yaml with SM_Mug_A2
+# Description: UR10e robot with Robotiq 2F-85 gripper picks a mug and places it at a target
+# Reference: Based on ur10e_pick_place_can.yaml with SM_Mug_A2
 
 task:
-  name: UR10PickPlaceMug
-  description: "UR10 robot with suction gripper picks up a ceramic mug from one position on the table and places it at a target position marked by a green pad"
+  name: UR10ePickPlaceMug
+  description: "UR10e robot with Robotiq 2F-85 gripper picks up a ceramic mug from one position on the table and places it at a target position marked by a green pad"
   version: "1.0.0"
 
 simulation:
@@ -33,16 +33,17 @@ scene:
     position: [0, 0, -1.05]          # IsaacLab convention
 
 assets:
-  # UR10 robot (suction gripper variant)
+  # UR10e robot (Robotiq 2F-85 gripper variant)
   - name: robot
     type: articulation
     source: usd
-    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    robot_type: ur10e
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10e/ur10e.usd"
     prim_path: "/World/Robot"
     position: [0, 0, 0]
     rotation: [1, 0, 0, 0]
     variant_sets:
-      Gripper: Long_Suction
+      Gripper: Robotiq_2f_85
     initial_joints:
       shoulder_pan_joint: 0.0
       shoulder_lift_joint: -1.5707
@@ -58,8 +59,8 @@ assets:
         stiffness: 800.0
         damping: 40.0
     ee_frame:
-      body: ee_link
-      offset_position: [0.22, 0, 0]
+      body: wrist_3_link
+      offset_position: [0.0, 0.0, 0.0]
     physics:
       self_collision: false
       solver_position_iterations: 8
@@ -122,7 +123,7 @@ assets:
         z: 0.02
 
 goal:
-  description: "Pick the mug with suction gripper and place it on the green target marker"
+  description: "Pick the mug with the Robotiq 2F-85 gripper and place it on the green target marker"
   conditions:
     - subject: mug
       relation: at_position
@@ -141,8 +142,8 @@ camera:
   resolution: [1280, 720]
 
 notes:
-  - "Based on ur10_pick_place_can with SM_Mug_A2"
+  - "Based on ur10e_pick_place_can with SM_Mug_A2"
   - "SM_Mug_A2 from /Isaac/Props/Mugs/: 9.2 x 12.7 x 9.1 cm"
-  - "UR10 suction gripper — mug bottom provides flat suction surface"
+  - "UR10e Robotiq 2F-85 gripper — mug bottom provides parallel-jaw grasp surface"
   - "Mug initial z=0.064m (half of 12.7cm height)"
   - "Episode 15s, decimation=5, control at 20Hz"

@@ -131,19 +131,26 @@ class SimJudge:
     def judge_episode(
         self,
         task_description: str,
-        initial_image: np.ndarray,
-        final_image: np.ndarray,
+        initial_images: dict[str, np.ndarray] | np.ndarray,
+        final_images: dict[str, np.ndarray] | np.ndarray,
         object_positions: dict,
         executed_skills: str = "",
+        # Legacy single-image aliases
+        initial_image: np.ndarray | None = None,
+        final_image: np.ndarray | None = None,
     ) -> dict:
         """Judge whether an episode successfully completed the task.
 
+        Supports multi-image (dict of camera views) and single-image (legacy).
+
         Args:
             task_description: Natural language task instruction.
-            initial_image: RGB (H, W, 3) uint8 before execution.
-            final_image: RGB (H, W, 3) uint8 after execution.
+            initial_images: Dict ``{"wrist": array, "front": array}`` or single RGB array.
+            final_images: Dict ``{"wrist": array, "front": array}`` or single RGB array.
             object_positions: ``{name: {"position": [x,y,z]}}`` from SimDetector.
             executed_skills: String description of executed skill sequence.
+            initial_image: Legacy single-image (used if initial_images is None).
+            final_image: Legacy single-image (used if final_images is None).
 
         Returns:
             Dict with keys:
@@ -160,8 +167,21 @@ class SimJudge:
                 "raw_response": "",
             }
 
-        # Build user prompt from ADC template (or fallback)
-        image_resolution = (initial_image.shape[1], initial_image.shape[0])
+        # Normalize inputs: accept both dict and single-image
+        if initial_images is None and initial_image is not None:
+            initial_images = initial_image
+        if final_images is None and final_image is not None:
+            final_images = final_image
+
+        # Convert single images to dict format
+        if isinstance(initial_images, np.ndarray):
+            initial_images = {"view": initial_images}
+        if isinstance(final_images, np.ndarray):
+            final_images = {"view": final_images}
+
+        # Get resolution from first image
+        first_img = next(iter(initial_images.values()))
+        image_resolution = (first_img.shape[1], first_img.shape[0])
         user_prompt = self._build_prompt(
             instruction=task_description,
             object_positions=object_positions,
@@ -169,27 +189,33 @@ class SimJudge:
             image_resolution=image_resolution,
         )
 
-        # Encode images as base64
-        initial_b64 = self._encode_image(initial_image)
-        final_b64 = self._encode_image(final_image)
+        # Build multimodal content: text + interleaved before/after images per view
+        content = [{"type": "input_text", "text": user_prompt}]
 
-        # Build multimodal input for OpenAI Responses API
+        # Add labeled images: "BEFORE (view_name)" then "AFTER (view_name)"
+        for view_name in initial_images:
+            if initial_images[view_name] is not None:
+                content.append({
+                    "type": "input_text",
+                    "text": f"BEFORE ({view_name} camera):",
+                })
+                content.append({
+                    "type": "input_image",
+                    "image_url": f"data:image/png;base64,{self._encode_image(initial_images[view_name])}",
+                })
+            if view_name in final_images and final_images[view_name] is not None:
+                content.append({
+                    "type": "input_text",
+                    "text": f"AFTER ({view_name} camera):",
+                })
+                content.append({
+                    "type": "input_image",
+                    "image_url": f"data:image/png;base64,{self._encode_image(final_images[view_name])}",
+                })
+
         messages = [
             {"role": "system", "content": self._system_prompt},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": user_prompt},
-                    {
-                        "type": "input_image",
-                        "image_url": f"data:image/png;base64,{initial_b64}",
-                    },
-                    {
-                        "type": "input_image",
-                        "image_url": f"data:image/png;base64,{final_b64}",
-                    },
-                ],
-            },
+            {"role": "user", "content": content},
         ]
 
         # Call VLM via Responses API

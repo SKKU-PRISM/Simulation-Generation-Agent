@@ -61,6 +61,7 @@ from isaaclab.actuators import ImplicitActuatorCfg  # for ArticulationCfg.actuat
 import mdp as mdp  # ALWAYS use local mdp/ package (re-exports isaaclab.envs.mdp + custom functions)
 
 from isaaclab_assets.robots.franka import FRANKA_PANDA_CFG  # if robot_type is franka
+from isaaclab_assets.robots.universal_robots import UR10e_ROBOTIQ_2F_85_CFG  # if robot_type is ur10e
 ```
 
 ## Required run_env.py Pattern
@@ -155,8 +156,21 @@ class SceneCfg(InteractiveSceneCfg):
 
 For `assets` with `type: articulation`:
 - If `robot_type: franka` → use `FRANKA_PANDA_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")`
+- If `robot_type: ur10e` → use `UR10e_ROBOTIQ_2F_85_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")`
 - Asset path template: `{ISAACLAB_NUCLEUS_DIR}` → use `ISAACLAB_NUCLEUS_DIR` Python constant
 - Asset path template: `{ISAAC_NUCLEUS_DIR}` → use `ISAAC_NUCLEUS_DIR` Python constant
+
+UR10e-specific rules:
+- NEVER use `FRANKA_PANDA_CFG`, `UR10_CFG`, `UR10_LONG_SUCTION_CFG`, `SurfaceGripperCfg`, or suction actions for `robot_type: ur10e`.
+- Use `wrist_3_link` as the end-effector body.
+- UR10e arm joints are `["shoulder_.*", "elbow_joint", "wrist_.*"]`.
+- If a gripper action is required, use `BinaryJointPositionActionCfg` with Robotiq 2F-85 joints:
+  - `finger_joint`
+  - `right_outer_knuckle_joint`
+  - `left_inner_finger_joint`
+  - `right_inner_finger_joint`
+  - `left_inner_finger_knuckle_joint`
+  - `right_inner_finger_knuckle_joint`
 
 ### 3. Rigid Objects
 
@@ -252,6 +266,45 @@ class ActionsCfg:
     )
 ```
 
+For UR10e + Robotiq 2F-85:
+```python
+@configclass
+class ActionsCfg:
+    arm_action = mdp.JointPositionActionCfg(
+        asset_name="robot",
+        joint_names=["shoulder_.*", "elbow_joint", "wrist_.*"],
+        scale=0.5,
+        use_default_offset=True,
+    )
+    gripper_action = mdp.BinaryJointPositionActionCfg(
+        asset_name="robot",
+        joint_names=[
+            "finger_joint",
+            "right_outer_knuckle_joint",
+            "left_inner_finger_joint",
+            "right_inner_finger_joint",
+            "left_inner_finger_knuckle_joint",
+            "right_inner_finger_knuckle_joint",
+        ],
+        open_command_expr={
+            "finger_joint": 0.0,
+            "right_outer_knuckle_joint": 0.0,
+            "left_inner_finger_joint": 0.0,
+            "right_inner_finger_joint": 0.0,
+            "left_inner_finger_knuckle_joint": 0.0,
+            "right_inner_finger_knuckle_joint": 0.0,
+        },
+        close_command_expr={
+            "finger_joint": 0.65,
+            "right_outer_knuckle_joint": 0.65,
+            "left_inner_finger_joint": -0.65,
+            "right_inner_finger_joint": 0.65,
+            "left_inner_finger_knuckle_joint": -0.65,
+            "right_inner_finger_knuckle_joint": -0.65,
+        },
+    )
+```
+
 ### 6. Observations
 
 CRITICAL: Only use functions that actually exist in `isaaclab.envs.mdp`. Here are the AVAILABLE observation functions:
@@ -262,7 +315,7 @@ CRITICAL: Only use functions that actually exist in `isaaclab.envs.mdp`. Here ar
 - `mdp.joint_pos` — absolute joint positions
 - `mdp.joint_vel` — absolute joint velocities
 - `mdp.last_action` — previous action
-- `mdp.body_pose_w` — body pose in world frame (requires `params={"asset_cfg": SceneEntityCfg("robot", body_names=["panda_hand"])}`)
+- `mdp.body_pose_w` — body pose in world frame (requires a robot-specific body name, e.g. `panda_hand` for Franka or `wrist_3_link` for UR10e)
 
 **Object observations (built-in):**
 - `mdp.root_pos_w` — root position in world frame (requires `params={"asset_cfg": SceneEntityCfg("object_name")}`)
@@ -370,6 +423,22 @@ ee_frame = FrameTransformerCfg(
             prim_path="{ENV_REGEX_NS}/Robot/panda_hand",
             name="end_effector",
             offset=OffsetCfg(pos=[0.0, 0.0, 0.1034]),  # from ee_frame.offset_position
+        ),
+    ],
+)
+```
+
+For `robot_type: ur10e`, replace `panda_link0`/`panda_hand` with `base_link`/`wrist_3_link`:
+
+```python
+ee_frame = FrameTransformerCfg(
+    prim_path="{ENV_REGEX_NS}/Robot/base_link",
+    debug_vis=False,
+    target_frames=[
+        FrameTransformerCfg.FrameCfg(
+            prim_path="{ENV_REGEX_NS}/Robot/wrist_3_link",
+            name="end_effector",
+            offset=OffsetCfg(pos=[0.0, 0.0, 0.0]),
         ),
     ],
 )
@@ -489,3 +558,4 @@ success = DoneTerm(func=mdp.cubes_stacked, params={"xy_threshold": 0.04, ...})
     ```python
     actuators={"drawers": ImplicitActuatorCfg(joint_names_expr=["drawer_top_joint"], effort_limit=87.0, stiffness=10.0, damping=1.0)}
     ```
+20. If `robot_type` is `ur10e`, do not emit any Franka-specific identifiers (`FRANKA_PANDA_CFG`, `panda_hand`, `panda_link0`, `panda_finger.*`) or suction-specific identifiers (`Long_Suction`, `SurfaceGripperCfg`).

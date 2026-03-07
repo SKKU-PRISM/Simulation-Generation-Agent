@@ -1,12 +1,12 @@
-# Task Document: UR10PickPlaceBox
+# Task Document: UR10ePickPlaceTuna
 # Version: 1.0.0
 # Template: v2.0.0
-# Description: UR10 robot with suction gripper picks a YCB sugar box and places it at a target
-# Reference: Based on ur10_pick_place_can.yaml with YCB sugar box
+# Description: UR10e robot with Robotiq 2F-85 gripper picks a YCB tuna fish can and places it at a target
+# Reference: Based on ur10e_pick_place_can.yaml with YCB tuna fish can
 
 task:
-  name: UR10PickPlaceBox
-  description: "UR10 robot with suction gripper picks up a YCB sugar box from one position on the table and places it at a target position marked by a green pad"
+  name: UR10ePickPlaceTuna
+  description: "UR10e robot with Robotiq 2F-85 gripper picks up a flat YCB tuna fish can from one position on the table and places it at a target position marked by a green pad"
   version: "1.0.0"
 
 simulation:
@@ -33,16 +33,17 @@ scene:
     position: [0, 0, -1.05]          # IsaacLab convention
 
 assets:
-  # UR10 robot (suction gripper variant)
+  # UR10e robot (Robotiq 2F-85 gripper variant)
   - name: robot
     type: articulation
     source: usd
-    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    robot_type: ur10e
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10e/ur10e.usd"
     prim_path: "/World/Robot"
     position: [0, 0, 0]
     rotation: [1, 0, 0, 0]
     variant_sets:
-      Gripper: Long_Suction
+      Gripper: Robotiq_2f_85
     initial_joints:
       shoulder_pan_joint: 0.0
       shoulder_lift_joint: -1.5707
@@ -58,8 +59,8 @@ assets:
         stiffness: 800.0
         damping: 40.0
     ee_frame:
-      body: ee_link
-      offset_position: [0.22, 0, 0]
+      body: wrist_3_link
+      offset_position: [0.0, 0.0, 0.0]
     physics:
       self_collision: false
       solver_position_iterations: 8
@@ -78,13 +79,13 @@ assets:
     physics:
       collision: true
 
-  # YCB Sugar Box (9.3 x 17.6 x 4.5 cm, rectangular)
-  - name: box
+  # YCB Tuna Fish Can (8.6 x 3.4 x 8.6 cm, flat cylindrical)
+  - name: can
     type: rigid
     source: usd
-    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned_Physics/004_sugar_box.usd"
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/007_tuna_fish_can.usd"
     prim_path: "/World/Object"
-    position: [0.4, -0.15, 0.088]    # on table surface (half height = 8.8cm)
+    position: [0.4, -0.15, 0.017]    # on table surface (half height = 1.7cm)
     rotation: [0.7071, 0.7071, 0, 0] # wxyz: 90 X-rotation to stand upright
     physics:
       rigid_body: true
@@ -99,7 +100,7 @@ assets:
         type: absolute
         x: [0.35, 0.50]
         y: [-0.25, -0.05]
-        z: 0.088
+        z: 0.017
 
   # Target placement marker (flat green pad on table)
   - name: target_marker
@@ -108,7 +109,7 @@ assets:
     primitive: cube
     prim_path: "/World/TargetMarker"
     position: [0.5, 0.15, 0.02]
-    scale: [0.07, 0.07, 0.003]       # flat pad (7cm x 7cm x 3mm)
+    scale: [0.06, 0.06, 0.003]       # flat pad (6cm x 6cm x 3mm)
     color: [0.0, 0.8, 0.0]
     physics:
       rigid_body: false
@@ -121,16 +122,16 @@ assets:
         z: 0.02
 
 goal:
-  description: "Pick the sugar box with suction gripper and place it on the green target marker"
+  description: "Pick the tuna fish can with Robotiq 2F-85 gripper and place it on the green target marker"
   conditions:
-    - subject: box
+    - subject: can
       relation: at_position
       target: target_marker
       tolerance: 0.03
-    - subject: box
+    - subject: can
       relation: on_surface
       target: table
-      description: "Box must be placed on the table (not dropped)"
+      description: "Can must be placed on the table (not dropped)"
 
 camera:
   prim_path: "/World/Camera"
@@ -140,8 +141,9 @@ camera:
   resolution: [1280, 720]
 
 notes:
-  - "Based on ur10_pick_place_can with YCB sugar box"
-  - "YCB 004_sugar_box (Axis_Aligned_Physics): 9.3 x 17.6 x 4.5 cm"
-  - "UR10 suction gripper — flat box top provides ideal suction surface"
-  - "Box initial z=0.088m (half of 17.6cm height)"
+  - "Based on ur10e_pick_place_can with YCB tuna fish can"
+  - "YCB 007_tuna_fish_can (Axis_Aligned, no built-in physics): 8.6 x 3.4 x 8.6 cm"
+  - "UR10e Robotiq 2F-85 gripper — the can fits a centered parallel-jaw grasp"
+  - "Very flat can (3.4cm tall) — use a shallow parallel-jaw grasp near the center of mass"
+  - "Can initial z=0.017m (half of 3.4cm height)"
   - "Episode 15s, decimation=5, control at 20Hz"

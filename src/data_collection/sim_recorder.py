@@ -24,6 +24,10 @@ from src.data_collection.config import RobotSimConfig
 logger = logging.getLogger(__name__)
 
 
+class RecorderStorageError(RuntimeError):
+    """Raised when raw dataset files cannot be written to disk."""
+
+
 class SimRecorder:
     """Stage 1: Records raw simulation data to a structured directory.
 
@@ -137,6 +141,7 @@ class SimRecorder:
         skill_progress: float = 0.0,
         goal_joint: np.ndarray | None = None,
         goal_world_xyzrpy: np.ndarray | None = None,
+        goal_robot_xyzrpy: np.ndarray | None = None,
         goal_gripper: float = 0.0,
     ) -> None:
         """Record a single simulation step.
@@ -152,6 +157,7 @@ class SimRecorder:
             skill_progress: Skill completion progress 0.0~1.0.
             goal_joint: Target joint positions for the skill, (N_dof,) float32.
             goal_world_xyzrpy: Target EE world coordinates, (6,) float32.
+            goal_robot_xyzrpy: Target EE robot base frame, (6,) float32.
             goal_gripper: Gripper target value.
         """
         if not self._recording:
@@ -172,10 +178,15 @@ class SimRecorder:
         self._states.append(state)
         self._actions.append(action)
 
+        # Judge-only cameras: excluded from dataset recording (VLM judge only)
+        _JUDGE_ONLY_CAMERAS = {"front_cam", "front"}
+
         # Save images (multi-camera or legacy single-camera)
         if images is not None:
             # Multi-camera path
             for cam_name, cam_img in images.items():
+                if cam_name in _JUDGE_ONLY_CAMERAS:
+                    continue  # VLM judge only, not in dataset
                 if cam_img is not None:
                     self._save_image(cam_img, self._image_count, cam_name=cam_name)
                     self._has_images = True
@@ -198,6 +209,11 @@ class SimRecorder:
             "goal_world_xyzrpy": (
                 goal_world_xyzrpy.tolist()
                 if goal_world_xyzrpy is not None
+                else None
+            ),
+            "goal_robot_xyzrpy": (
+                goal_robot_xyzrpy.tolist()
+                if goal_robot_xyzrpy is not None
                 else None
             ),
             "goal_gripper": float(goal_gripper),
@@ -314,11 +330,19 @@ class SimRecorder:
             from PIL import Image
 
             Image.fromarray(img).save(out_path)
+        except OSError as exc:
+            raise RecorderStorageError(
+                f"Failed to save image to {out_path}: {exc}"
+            ) from exc
         except ImportError:
             import cv2
 
             # cv2 expects BGR
-            cv2.imwrite(str(out_path), cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+            ok = cv2.imwrite(str(out_path), cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+            if not ok:
+                raise RecorderStorageError(
+                    f"Failed to save image to {out_path}: cv2.imwrite returned False"
+                )
 
 
 # ======================================================================
@@ -390,6 +414,10 @@ def convert_to_lerobot(
             "dtype": "float32",
             "shape": (6,),
         },
+        "skill.goal_position.robot_xyzrpy": {
+            "dtype": "float32",
+            "shape": (6,),
+        },
         "skill.goal_position.gripper": {"dtype": "float32", "shape": (1,)},
     }
     for cam_name in camera_names:
@@ -437,6 +465,7 @@ def convert_to_lerobot(
             skill = skills[t] if t < len(skills) else {}
             goal_joint = skill.get("goal_joint")
             goal_xyzrpy = skill.get("goal_world_xyzrpy")
+            goal_robot_xyzrpy = skill.get("goal_robot_xyzrpy")
 
             frame: dict = {
                 "observation.state": states[t],
@@ -452,6 +481,11 @@ def convert_to_lerobot(
                 "skill.goal_position.world_xyzrpy": (
                     np.array(goal_xyzrpy, dtype=np.float32)
                     if goal_xyzrpy is not None
+                    else np.zeros(6, dtype=np.float32)
+                ),
+                "skill.goal_position.robot_xyzrpy": (
+                    np.array(goal_robot_xyzrpy, dtype=np.float32)
+                    if goal_robot_xyzrpy is not None
                     else np.zeros(6, dtype=np.float32)
                 ),
                 "skill.goal_position.gripper": np.float32(

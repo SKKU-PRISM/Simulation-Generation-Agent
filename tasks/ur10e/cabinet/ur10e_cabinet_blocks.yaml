@@ -1,10 +1,10 @@
-# Task Document: UR10CabinetBlocks
+# Task Document: UR10eCabinetBlocks
 # Version: 1.1.0
-# Description: UR10 picks 3 colored blocks from cabinet top and places on target zone
+# Description: UR10e picks 3 colored blocks from cabinet top and places on target zone
 
 task:
-  name: UR10CabinetBlocks
-  description: "UR10 picks 3 colored blocks from cabinet top and places them on a target zone on the floor"
+  name: UR10eCabinetBlocks
+  description: "UR10e picks 3 colored blocks from cabinet top and places them on a target zone on the floor"
   version: "1.1.0"
 
 simulation:
@@ -30,16 +30,17 @@ scene:
     position: [0, 0, 0]
 
 assets:
-  # UR10 robot
+  # UR10e robot
   - name: robot
     type: articulation
     source: usd
-    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    robot_type: ur10e
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10e/ur10e.usd"
     prim_path: "/World/Robot"
     position: [-0.2, 0, 0]
     rotation: [1, 0, 0, 0]
     variant_sets:
-      Gripper: Long_Suction
+      Gripper: Robotiq_2f_85
     initial_joints:
       shoulder_pan_joint: 0.0
       shoulder_lift_joint: -1.712
@@ -173,7 +174,7 @@ camera:
 notes:
   - "Cabinet same as Franka (full-size at [0.8, 0, 0.4]), top z=0.802, blocks z=0.832"
   - "Blocks are rigid (graspable), must be picked from elevated cabinet top"
-  - "UR10 at [-0.2, 0, 0] with Long_Suction gripper — suction on flat block surface"
+  - "UR10e at [-0.2, 0, 0] with Robotiq_2f_85 gripper — parallel-jaw grasp on each block"
   - "Target zone on floor at [0.3, 0, 0.003] between robot and cabinet"
   - "Episode 30s for 3 sequential pick-place cycles from elevated surface"
   - "Ground plane at z=0 (cabinet task convention)"

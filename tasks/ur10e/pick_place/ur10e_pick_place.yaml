@@ -1,19 +1,19 @@
-# Task Document: UR10PickPlaceCan
+# Task Document: UR10ePickPlace
 # Version: 1.0.0
 # Template: v2.0.0
-# Description: UR10 robot with suction gripper picks a tomato soup can and places it at a target
-# Reference: Based on ur10_pick_place.yaml with YCB tomato soup can
+# Description: UR10e robot with Robotiq 2F-85 gripper picks a DexCube and places it at a target
+# Reference: Based on Franka PnP (custom) + UR10e stack cfg for robot config
 
 task:
-  name: UR10PickPlaceCan
-  description: "UR10 robot with suction gripper picks up a YCB tomato soup can from one position on the table and places it at a target position marked by a green pad"
+  name: UR10ePickPlace
+  description: "UR10e robot with Robotiq 2F-85 gripper picks up a DexCube from one position on the table and places it at a target position marked by a green pad"
   version: "1.0.0"
 
 simulation:
   gravity: [0, 0, -9.81]             # m/s^2
   timestep: 0.01                     # 100 Hz simulation
-  decimation: 5                      # control at 20 Hz (matching UR10 stack decimation)
-  episode_length: 15.0               # seconds (longer for UR10)
+  decimation: 5                      # control at 20 Hz (matching UR10e stack decimation)
+  episode_length: 15.0               # seconds (longer for pick + transport + place with UR10e)
   render_interval: 5
   physx:
     bounce_threshold: 0.01           # m/s
@@ -33,17 +33,18 @@ scene:
     position: [0, 0, -1.05]          # IsaacLab convention
 
 assets:
-  # UR10 robot (suction gripper variant)
+  # UR10e robot (Robotiq 2F-85 gripper variant for pick-and-place)
   - name: robot
     type: articulation
     source: usd
-    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    robot_type: ur10e
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10e/ur10e.usd"
     prim_path: "/World/Robot"
     position: [0, 0, 0]
     rotation: [1, 0, 0, 0]           # wxyz quaternion
     variant_sets:
-      Gripper: Long_Suction           # activate suction gripper visual
-    initial_joints:
+      Gripper: Robotiq_2f_85           # activate Robotiq 2F-85 gripper visual
+    initial_joints:                   # stack task default (EE pointing down)
       shoulder_pan_joint: 0.0
       shoulder_lift_joint: -1.5707    # -pi/2
       elbow_joint: 1.5707            # pi/2
@@ -54,12 +55,12 @@ assets:
       arm:
         joint_names: ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
                       "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"]
-        effort_limit: 87.0
+        effort_limit: 87.0            # N*m
         stiffness: 800.0
         damping: 40.0
     ee_frame:
-      body: ee_link
-      offset_position: [0.22, 0, 0]  # long suction gripper TCP offset
+      body: wrist_3_link
+      offset_position: [0.0, 0.0, 0.0]
     physics:
       self_collision: false
       solver_position_iterations: 8
@@ -78,14 +79,15 @@ assets:
     physics:
       collision: true
 
-  # YCB Tomato Soup Can (diameter 6.8cm, height 10.2cm)
-  - name: can
+  # DexCube to pick up (0.8x scaled)
+  - name: cube
     type: rigid
     source: usd
-    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned_Physics/005_tomato_soup_can.usd"
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd"
     prim_path: "/World/Object"
-    position: [0.4, -0.15, 0.051]    # on table surface (half height = 5.1cm)
-    rotation: [0.7071, 0.7071, 0, 0] # wxyz: 90 X-rotation to stand upright (USD height axis is Y)
+    position: [0.4, -0.15, 0.055]    # on table surface, left side
+    rotation: [1, 0, 0, 0]
+    scale: [0.8, 0.8, 0.8]
     physics:
       rigid_body: true
       collision: true
@@ -97,17 +99,17 @@ assets:
     randomize:
       position:
         type: absolute
-        x: [0.35, 0.50]
+        x: [0.35, 0.50]              # left half of table
         y: [-0.25, -0.05]
-        z: 0.051
+        z: 0.055
 
-  # Target placement marker (flat green pad on table)
+  # Target placement marker (flat green pad)
   - name: target_marker
     type: rigid
     source: primitive
     primitive: cube
     prim_path: "/World/TargetMarker"
-    position: [0.5, 0.15, 0.02]
+    position: [0.5, 0.15, 0.02]      # on table surface, right side
     scale: [0.06, 0.06, 0.003]       # flat pad (6cm x 6cm x 3mm)
     color: [0.0, 0.8, 0.0]           # green
     physics:
@@ -116,21 +118,21 @@ assets:
     randomize:
       position:
         type: absolute
-        x: [0.40, 0.60]
+        x: [0.40, 0.60]              # right half of table
         y: [0.05, 0.25]
         z: 0.02
 
 goal:
-  description: "Pick the tomato soup can with suction gripper and place it on the green target marker"
+  description: "Pick the DexCube with Robotiq 2F-85 gripper and place it on the green target marker"
   conditions:
-    - subject: can
+    - subject: cube
       relation: at_position
       target: target_marker
-      tolerance: 0.03
-    - subject: can
+      tolerance: 0.03                 # 3cm
+    - subject: cube
       relation: on_surface
       target: table
-      description: "Can must be placed on the table (not dropped)"
+      description: "Cube must be placed on the table (not dropped)"
 
 camera:
   prim_path: "/World/Camera"
@@ -140,10 +142,10 @@ camera:
   resolution: [1280, 720]
 
 notes:
-  - "Based on ur10_pick_place.yaml with DexCube replaced by YCB tomato soup can"
-  - "YCB 005_tomato_soup_can: diameter 6.8cm, height 10.2cm"
-  - "UR10 uses suction gripper (Long_Suction variant) — can top is flat, suitable for suction"
-  - "Can initial z=0.051m (half of 10.2cm height, upright on table)"
-  - "Pick zone: left side of table (y < 0), place zone: right side (y > 0)"
-  - "Episode 15s (UR10 slower than Franka), decimation=5, control at 20Hz"
+  - "Based on Franka PnP task but with UR10e robot (no IsaacLab UR10e pick-place template exists)"
+  - "UR10e with Gripper variant=Robotiq_2f_85 mounted at wrist_3_link"
+  - "Same scene layout as Franka PnP: table [0.5,0,0], DexCube left, marker right"
+  - "DexCube at 0.8x scale, z=0.055 on table surface"
+  - "Pick zone: left side (y<0), place zone: right side (y>0)"
+  - "Episode 15s (UR10e motion is longer than Franka for transport), dt=0.01, decimation=5"
   - "Ground plane at z=-1.05 (IsaacLab convention)"

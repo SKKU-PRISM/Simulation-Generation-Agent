@@ -1,252 +1,284 @@
 # 트러블슈팅
 
-자주 발생하는 문제와 해결책을 정리합니다.
+최근 실제 실행에서 자주 마주치는 문제를 정리합니다. 우선순위는 **IsaacLab -> Isaac Sim/MCP -> Azure/VLM -> Data Collection** 순서로 봅니다.
 
----
+## 1. IsaacLab Pipeline
 
-## IsaacLab Pipeline
+### `env_isaaclab`를 찾지 못함
 
-### `simulation_app.close()`가 무한 대기 (hang)
+증상:
 
-**증상**: IsaacLab 코드 실행 후 프로세스가 종료되지 않고 멈춤.
-
-**원인**: IsaacLab의 `SimulationApp.close()` 메서드가 특정 조건에서 무한 블로킹됨.
-
-**해결**: 이 프로젝트는 marker file 방식으로 우회합니다.
-- 생성된 `run_env.py`는 step loop 완료 후 `.success_marker` 파일을 먼저 생성
-- 그 다음 `simulation_app.close()` 호출
-- Agent는 subprocess 종료와 관계없이 marker file 존재 여부로 성공 판단
-- subprocess가 타임아웃(기본 300초)으로 강제 종료되어도 문제 없음
-
-### `AppLauncher` import 순서 에러
-
-**증상**: `run_env.py` 실행 시 segfault 또는 import error.
-
-```
-ImportError: cannot import name 'ManagerBasedRLEnv' from 'isaaclab.envs'
-```
-
-**원인**: `AppLauncher`가 초기화되기 전에 physics 관련 모듈을 import함.
-
-**해결**: `run_env.py`에서 반드시 다음 순서를 지켜야 합니다:
-
-```python
-# 1. AppLauncher 초기화 (최상단)
-from isaaclab.app import AppLauncher
-app_launcher = AppLauncher(args)
-simulation_app = app_launcher.app
-
-# 2. 이후에 physics 모듈 import
-import torch
-from isaaclab.envs import ManagerBasedRLEnv
-```
-
-LLM이 이 순서를 틀리게 생성하면 Agent가 자동으로 감지하여 에러 피드백에 포함시킵니다.
-
-### conda 환경을 찾을 수 없음
-
-**증상**:
-```
+```text
 conda run: error: argument -n: env 'env_isaaclab' not found
 ```
 
-**해결**:
+확인:
+
 ```bash
-# conda 환경 목록 확인
 conda env list
-
-# 환경 이름이 다른 경우, config에서 수정
-# configs/isaaclab_agent_config.yaml:
-isaaclab:
-  conda_env: "your_env_name"   # 실제 환경 이름으로 변경
 ```
 
-### LLM이 존재하지 않는 MDP 함수를 생성
+해결:
 
-**증상**: 생성된 코드에 `object_obs`, `cubes_stacked`, `ee_frame_pos` 같은 함수가 사용됨.
+- 실제 환경 이름을 `configs/isaaclab_agent_config.yaml`의 `isaaclab.conda_env`에 반영
+- `ISAACLAB_PATH`와 conda 환경을 함께 점검
 
-**원인**: LLM이 존재하지 않는 IsaacLab MDP 함수를 환각(hallucinate)함.
+### `isaaclab.sh`를 찾지 못함
 
-**해결**: 프롬프트에 이미 Available/Unavailable 양면 제약이 포함되어 있습니다. 계속 발생하면:
-- `prompts/isaaclab_generation.md`의 Common Mistakes 섹션에 해당 함수 추가
-- 또는 `configs/isaaclab_eval_config.yaml`의 `valid_mdp_functions` 목록 확인
+원인:
 
-### `RewTerm`에 `weight` 누락
+- `ISAACLAB_PATH`가 잘못됐거나 설치가 끝나지 않음
 
-**증상**:
+해결:
+
+```bash
+echo $ISAACLAB_PATH
+ls $ISAACLAB_PATH/isaaclab.sh
 ```
-TypeError: RewTerm.__init__() missing required keyword argument: 'weight'
-```
 
-**해결**: IsaacLab의 `RewTerm`은 `weight` 파라미터가 필수입니다:
+### `simulation_app.close()`가 hang됨
+
+현재 레포는 marker file 기반으로 우회합니다.
+
+- `run_env.py`는 성공 시 `.success_marker`를 먼저 남김
+- evaluator의 `eval_runner.py`도 `eval_results.json`과 marker를 먼저 기록
+- subprocess가 timeout되어도 marker/result 파일이 있으면 성공으로 판단 가능
+
+### `AppLauncher` import 순서 문제
+
+증상:
+
+- IsaacLab import 에러
+- physics 관련 segfault
+- 실행 직후 프로세스 비정상 종료
+
+원인:
+
+- `AppLauncher`보다 먼저 physics 모듈을 import함
+
+원칙:
 
 ```python
-# 잘못된 예
-my_reward = RewTerm(func=mdp.action_rate_l2, params={})
-
-# 올바른 예
-my_reward = RewTerm(func=mdp.action_rate_l2, weight=-0.01, params={})
+from isaaclab.app import AppLauncher
+# AppLauncher 초기화
+# 그 다음에 torch / isaaclab.envs import
 ```
 
----
+### 평가 점수가 낮은데 실행은 됨
 
-## Isaac Sim Pipeline
+대표 케이스:
 
-### 연결 거부
+- `rewards=None`: 현재 기본 설정에서는 `FAIL`이 아니라 `3/5 WARN`
+- reward가 전부 0: `reward_computation`이 `3/5 WARN`
+- custom goal 함수가 없거나 threshold가 코드에 반영되지 않음
 
-**증상**:
-```
-ConnectionRefusedError: [Errno 111] Connection refused (localhost:8766)
-```
+확인:
 
-**원인**: MCP 서버가 실행되지 않았거나 다른 포트에서 실행 중.
-
-**해결**:
 ```bash
-# 1. MCP 서버 시작
-cd ~/workspace/isaac-sim-mcp
-./run_isaac_mcp_streaming.sh 0
-
-# 2. 연결 테스트
-python3 tests/test_components.py connection
-
-# 3. 포트가 다른 경우
-python3 tests/test_components.py connection --port 8767
+cat outputs/isaaclab/<run_dir>/eval_report.json
 ```
+
+### 상대 출력 디렉토리로 evaluator 실행 시 실패
+
+예전에는 상대 `output_dir`에서 `eval_runner.py` 경로가 꼬일 수 있었습니다. 현재는 절대경로로 정규화합니다.
+
+권장:
+
+```bash
+python3 scripts/evaluate.py outputs/isaaclab/<run_dir> tasks/franka/stack/franka_stack.yaml
+```
+
+## 2. Isaac Sim / MCP
+
+### `localhost:8766` 연결 거부
+
+증상:
+
+```text
+ConnectionRefusedError: [Errno 111] Connection refused
+```
+
+해결:
+
+```bash
+python3 tests/test_components.py connection
+ss -ltnp | rg 8766
+```
+
+Isaac Sim은 MCP extension과 함께 실행되어야 합니다.
+
+### MCP 응답 파싱 실패
+
+현재 `MCPClient`는 다음을 자동 처리합니다.
+
+- newline-delimited JSON 응답
+- JSON 앞뒤에 붙은 불필요한 prefix
+- broken pipe / reset / timeout 발생 시 1회 재연결 후 재시도
+
+그래도 실패하면:
+
+- Isaac Sim 쪽 로그 확인
+- `tests/test_components.py connection`부터 다시 점검
 
 ### `execute_script` 결과가 항상 `null`
 
-**원인**: Isaac Sim MCP 확장의 `execute_script` 핸들러가 결과를 하드코딩으로 `null` 반환.
-
-**우회**: 스크립트 내에서 결과를 temp 파일에 기록하고 별도로 읽어옴.
+이 제약은 여전히 남아 있습니다. 데이터를 회수하려면 스크립트 내부에서 파일로 써야 합니다.
 
 ```python
-# 스크립트 내에서
 import json
-results = {"bbox": [1.0, 2.0, 3.0]}
 with open("/tmp/isaac_results.json", "w") as f:
-    json.dump(results, f)
+    json.dump({"ok": True}, f)
 ```
 
-### `reset_scene` 핸들러 없음
+### `reset_scene`가 동작하지 않음
 
-**원인**: MCP 확장에 씬 초기화 기능이 구현되지 않음.
+MCP extension의 제약입니다. 새 stage가 필요하면 `execute_script`에서 직접 초기화합니다.
 
-**우회**: `execute_script`로 직접 초기화:
 ```python
-# MCP execute_script로 실행
 omni.usd.get_context().new_stage()
 ```
 
----
+### 로컬 `assets/...` USD가 안 보임
 
-## LLM / Azure OpenAI
+현재 `SceneBuilder`는 `assets/...`를 **레포 루트 기준 절대경로**로 해석합니다. 특히 SO-101 로컬 자산은 이 규칙을 기대합니다.
 
-### API 키 에러
+확인:
 
-**증상**:
-```
+- 경로가 `src/assets/...`가 아니라 `assets/...`로 시작하는지
+- 파일이 실제로 존재하는지
+
+## 3. Azure / VLM
+
+### 인증 오류
+
+증상:
+
+```text
 openai.AuthenticationError: Error code: 401
 ```
 
-**해결**:
-```bash
-# .env 파일 확인
-cat .env | grep AZURE_OPENAI
-
-# 두 값 모두 설정되어 있어야 함:
-# AZURE_OPENAI_API_KEY=your-key
-# AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1/
-```
-
-주의: `AZURE_OPENAI_BASE_URL`은 `/openai/v1/`로 끝나야 합니다.
-
-### gpt-5-mini temperature 에러
-
-**증상**:
-```
-BadRequestError: temperature is not supported for this model
-```
-
-**원인**: `gpt-5-mini`는 temperature 파라미터를 지원하지 않음.
-
-**해결**: 자동으로 처리됩니다. `src/common/llm_client.py`에서 첫 호출 실패 시 temperature를 제거하고 재시도하는 fallback 로직이 구현되어 있습니다.
-
----
-
-## VLM 평가
-
-### VLM 백엔드 자동 탐지 우선순위
-
-```
-Azure OpenAI (AZURE_OPENAI_API_KEY + AZURE_OPENAI_BASE_URL)
-  → Gemini (GOOGLE_API_KEY, 무료)
-    → Claude (ANTHROPIC_API_KEY)
-      → Ollama (localhost:11434)
-        → Mock (테스트용, 실제 평가 불가)
-```
-
-어떤 백엔드가 선택되었는지 확인:
-```bash
-# VLM 평가 실행 시 로그에 "Using backend: AzureVLMEvaluator" 등이 출력됨
-python3 tests/test_components.py vlm <screenshot> <yaml>
-```
-
-### Gemini 무료 API 제한
-
-- 분당 15 요청
-- 일일 1,500 요청
-- 이미지당 최대 4MB
-
-대량 평가 시 rate limit에 걸릴 수 있습니다. Azure 백엔드를 사용하거나 요청 간 대기 시간을 설정하세요.
-
-### MockVLMEvaluator만 선택됨
-
-**증상**: 평가 실행 시 "Using MockVLMEvaluator" 경고.
-
-**원인**: 설정된 API 키가 없어 모든 실제 백엔드가 비활성화됨.
-
-**해결**: `.env` 파일에 최소 하나의 API 키를 설정:
-```bash
-# 가장 간단 (Azure가 이미 있다면)
-# AZURE_OPENAI_API_KEY와 AZURE_OPENAI_BASE_URL이 .env에 있으면 자동 사용
-
-# 무료로 시작하려면
-GOOGLE_API_KEY=your-google-api-key   # Gemini 무료 tier
-```
-
----
-
-## 일반
-
-### `outputs/` 디렉토리가 커짐
-
-생성된 코드와 에러 로그가 계속 축적됩니다.
+해결:
 
 ```bash
-# 오래된 출력물 정리
-ls -la outputs/isaaclab/
-rm -rf outputs/isaaclab/FrankaStack_20260101_*/  # 필요 없는 것만 삭제
+cat .env | rg AZURE_OPENAI
 ```
 
-`outputs/`는 `.gitignore`에 포함되어 있어 git에는 커밋되지 않습니다.
+필수:
 
-### Python import 에러
+- `AZURE_OPENAI_API_KEY`
+- `AZURE_OPENAI_BASE_URL`
 
+`AZURE_OPENAI_BASE_URL`은 `/openai/v1/`로 끝나는 값을 사용합니다.
+
+### `temperature is not supported`
+
+`gpt-5-mini` 같은 모델은 `temperature`를 지원하지 않을 수 있습니다. 현재 `src/common/llm_client.py`가 자동 fallback합니다.
+
+### `max_tokens` unsupported, `max_completion_tokens` 사용 요구
+
+증상:
+
+```text
+Unsupported parameter: 'max_tokens' is not supported with this model.
+Use 'max_completion_tokens' instead.
 ```
-ModuleNotFoundError: No module named 'src'
+
+설명:
+
+- 최신 Azure GPT-5 계열 chat deployment에서 발생 가능
+- 현재 `src/isaac_sim/vlm_evaluator.py`는 `max_completion_tokens` 우선, 구버전 deployment에는 `max_tokens` fallback으로 동작
+
+### `MockVLMEvaluator`만 선택됨
+
+원인:
+
+- 실제 VLM backend가 모두 비활성화됨
+
+해결:
+
+```bash
+cat .env | rg 'AZURE_OPENAI|ANTHROPIC|GOOGLE'
 ```
 
-**해결**: 프로젝트 루트 디렉토리에서 실행해야 합니다:
+가장 간단한 경로는 Azure 설정입니다.
+
+## 4. Isaac Sim screenshot 관련
+
+### 첫 캡처는 실패하고 다음 반복에서 성공함
+
+Isaac Sim 러너는 실제로 이런 경우를 허용합니다.
+
+- iteration 1: build 성공, screenshot 실패
+- iteration 2: screenshot 성공, VLM 평가 성공
+
+즉 1회 실패만으로 전체 파이프라인 실패라고 보지 않습니다. 최종 결과는 `run_report.json`의 `success`와 `iterations`를 기준으로 판단합니다.
+
+### 캡처 산출물이 `iter_*.png` 외에 `rgb_*.png`로 많이 생김
+
+Replicator fallback 경로에서 생기는 정상 산출물입니다. 디버깅에는 유용하지만, 최종 기준 이미지는 `iter_*.png`를 우선 봅니다.
+
+## 5. Data Collection
+
+### ADC 서브모듈 없이 실행 가능 여부
+
+가능합니다. 현재는 fallback 경로가 있습니다.
+
+- IK: IsaacLab DifferentialIK fallback
+- Judge prompt: 내장 prompt fallback
+- interpolation: 내부 fallback
+
+다만 정밀한 IK와 ADC prompt 재사용이 필요하면 submodule 초기화를 권장합니다.
+
+### Pinocchio IK가 안 붙음
+
+확인:
+
+```bash
+git submodule status
+python3 -c "from src.data_collection.adc_imports import is_adc_available; print(is_adc_available())"
+```
+
+필요 시:
+
+```bash
+git submodule update --init external/AutoDataCollector
+```
+
+또는 `ADC_PATH`를 외부 경로로 설정합니다.
+
+### Data Collection이 env 생성 단계에서 실패
+
+이 파이프라인은 내부적으로 IsaacLab env를 먼저 확보해야 합니다. 우선 아래 명령이 단독으로 성공하는지 확인합니다.
+
+```bash
+python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml --evaluate
+```
+
+그 다음 `--env-dir`로 명시해 수집 파이프라인을 좁혀서 디버깅합니다.
+
+## 6. 일반
+
+### `ModuleNotFoundError: No module named 'src'`
+
+프로젝트 루트에서 실행해야 합니다.
+
 ```bash
 cd /path/to/Simulation-Generation-Agent
 python3 scripts/run_isaac_lab.py ...
 ```
 
----
+### `outputs/`가 너무 커짐
+
+출력은 git 대상이 아니므로 주기적으로 정리합니다.
+
+```bash
+ls outputs
+```
+
+불필요한 run 디렉토리만 선택적으로 삭제합니다.
 
 ## 관련 문서
 
-- [설치 가이드](getting_started.md) — 환경 구성
-- [사용법](usage.md) — CLI 옵션
-- [평가 시스템](evaluation.md) — 평가 결과 해석
+- `docs/getting_started.md`
+- `docs/usage.md`
+- `docs/evaluation.md`

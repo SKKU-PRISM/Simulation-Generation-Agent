@@ -1,12 +1,12 @@
-# Task Document: UR10StackTray
+# Task Document: UR10eStackTray
 # Version: 1.0.0
 # Template: v2.0.0
-# Description: UR10 robot with suction gripper stacks 3 colored cubes inside a tray
-# Reference: Based on franka/stack_tray with UR10 robot config
+# Description: UR10e robot with Robotiq 2F-85 gripper stacks 3 colored cubes inside a tray
+# Reference: Based on franka/stack_tray with UR10e robot config
 
 task:
-  name: UR10StackTray
-  description: "UR10 robot with suction gripper picks and stacks three colored cubes inside a tray on the table in order: Blue (bottom) -> Red (middle) -> Green (top)"
+  name: UR10eStackTray
+  description: "UR10e robot with Robotiq 2F-85 gripper grasps and stacks three colored cubes inside a tray on the table in order: Blue (bottom) -> Red (middle) -> Green (top)"
   version: "1.0.0"
 
 simulation:
@@ -33,16 +33,17 @@ scene:
     position: [0, 0, -1.05]
 
 assets:
-  # UR10 robot (suction gripper)
+  # UR10e robot (Robotiq 2F-85 gripper)
   - name: robot
     type: articulation
     source: usd
-    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    robot_type: ur10e
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10e/ur10e.usd"
     prim_path: "/World/Robot"
     position: [0, 0, 0]
     rotation: [1, 0, 0, 0]
     variant_sets:
-      Gripper: Long_Suction
+      Gripper: Robotiq_2f_85
     initial_joints:
       shoulder_pan_joint: 0.0
       shoulder_lift_joint: -1.5707
@@ -58,8 +59,8 @@ assets:
         stiffness: 800.0
         damping: 40.0
     ee_frame:
-      body: ee_link
-      offset_position: [0.22, 0, 0]
+      body: wrist_3_link
+      offset_position: [0.0, 0.0, 0.0]
     physics:
       self_collision: false
       solver_position_iterations: 8
@@ -225,7 +226,7 @@ assets:
       min_separation: 0.08
 
 goal:
-  description: "Stack cubes inside the tray with suction gripper in order: Blue (bottom) -> Red (middle) -> Green (top)"
+  description: "Stack cubes inside the tray with Robotiq 2F-85 gripper in order: Blue (bottom) -> Red (middle) -> Green (top)"
   success_criteria:
     xy_threshold: 0.04
     height_diff: 0.0468
@@ -243,7 +244,7 @@ camera:
   resolution: [1280, 720]
 
 notes:
-  - "Based on franka/stack_tray with UR10 robot"
-  - "UR10 suction gripper (Long_Suction variant)"
+  - "Based on franka/stack_tray with UR10e robot"
+  - "UR10e Robotiq 2F-85 gripper (Robotiq_2f_85 variant)"
   - "Cubes spawn outside tray (y < -0.15), must be stacked inside"
   - "Episode 30s, dt=0.01, decimation=5 (20Hz control)"

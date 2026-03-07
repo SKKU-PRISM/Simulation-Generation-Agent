@@ -125,6 +125,7 @@ gripper:
   stiffness: 2000.0
   damping: 100.0
   ee_finger_offset: 0.1035            # m — panda_hand to finger tip (0.0584 joint + 0.045 pad)
+  close_duration: 0.5                 # s — Franka has high stiffness (2000 Nm/rad), converges fast
 
 physics:
   self_collision: true
@@ -150,16 +151,16 @@ spawn_ranges:
 cameras:
   front:
     type: fixed
-    position: [1.5, 1.2, 1.0]
-    target: [0.25, 0.0, 0.3]
+    position: [1.5, 0.0, 0.8]            # centered in front of robot, table height + slightly above
+    target: [0.25, 0.0, 0.3]             # workspace center
     resolution: [640, 480]
   wrist:
     type: body_mounted
     parent_body: panda_hand
-    offset_pos: [0.065, 0.0, -0.10]                         # camera above palm, behind wrist → finger tips at image bottom ~1/5
+    offset_pos: [0.04, 0.0, -0.04]                           # near palm center — fingers visible at image bottom ~1/5
     offset_rot: [-0.70614, 0.03701, 0.03701, -0.70614]      # wxyz, ROS conv — looks forward along finger direction
     convention: ros
-    resolution: [320, 240]
+    resolution: [640, 480]
   top:
     type: fixed
     position: [-0.1, 0.0, 1.8]         # behind robot, high up — gives near-top-down view

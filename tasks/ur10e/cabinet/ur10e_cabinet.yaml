@@ -1,12 +1,12 @@
-# Task Document: UR10Cabinet
+# Task Document: UR10eCabinet
 # Version: 1.0.0
 # Template: v2.0.0
-# Description: UR10 robot opens the top drawer of a Sektion Cabinet
-# Reference: Based on Franka cabinet task (no IsaacLab UR10 cabinet exists)
+# Description: UR10e robot opens the top drawer of a Sektion Cabinet
+# Reference: Based on Franka cabinet task (no IsaacLab UR10e cabinet template exists)
 
 task:
-  name: UR10Cabinet
-  description: "UR10 robot approaches the top drawer handle and pulls to open the drawer"
+  name: UR10eCabinet
+  description: "UR10e robot approaches the top drawer handle and pulls to open the drawer"
   version: "1.0.0"
 
 simulation:
@@ -32,17 +32,18 @@ scene:
     position: [0, 0, 0]              # GroundPlaneCfg default
 
 assets:
-  # UR10 robot
+  # UR10e robot
   - name: robot
     type: articulation
     source: usd
-    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    robot_type: ur10e
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10e/ur10e.usd"
     prim_path: "/World/Robot"
-    position: [-0.2, 0, 0]           # further back (UR10 has longer reach than Franka)
+    position: [-0.2, 0, 0]           # further back (UR10e has longer reach than Franka)
     rotation: [1, 0, 0, 0]           # wxyz quaternion
     variant_sets:
-      Gripper: Long_Suction           # activate suction gripper visual
-    initial_joints:                   # UR10_CFG default (arm folded, EE forward)
+      Gripper: Robotiq_2f_85           # activate Robotiq 2F-85 gripper visual
+    initial_joints:                   # UR10e_ROBOTIQ_2F_85_CFG default (arm folded, EE forward)
       shoulder_pan_joint: 0.0
       shoulder_lift_joint: -1.712
       elbow_joint: 1.712
@@ -57,7 +58,7 @@ assets:
         stiffness: 800.0
         damping: 40.0
     ee_frame:
-      body: ee_link
+      body: wrist_3_link
     physics:
       self_collision: false
       solver_position_iterations: 8
@@ -119,11 +120,11 @@ camera:
   resolution: [1280, 720]
 
 notes:
-  - "Based on Franka cabinet task (no IsaacLab UR10 cabinet exists)"
+  - "Based on Franka cabinet task (no IsaacLab UR10e cabinet template exists)"
   - "Same cabinet asset and layout as Franka cabinet task"
-  - "UR10_CFG default joints (arm folded, EE forward)"
-  - "UR10 with Long_Suction gripper variant for handle grasping"
-  - "Robot at [-0.2, 0, 0] — 1.0m from cabinet (UR10 longer reach than Franka)"
+  - "UR10e_ROBOTIQ_2F_85_CFG default joints (arm folded, EE forward)"
+  - "UR10e with Robotiq_2f_85 gripper variant for handle grasping"
+  - "Robot at [-0.2, 0, 0] — 1.0m from cabinet (UR10e longer reach than Franka)"
   - "Cabinet at [0.8, 0, 0.4] with 180 deg Z-rotation (front faces robot)"
   - "Target: drawer_top_joint, handle offset [0.305, 0, 0.01]"
   - "Control rate: 60Hz (decimation=1), episode: 8s, PhysX solver: TGS"

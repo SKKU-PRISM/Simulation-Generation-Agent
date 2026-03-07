@@ -122,10 +122,10 @@ cameras:
   wrist:
     type: body_mounted
     parent_body: gripper_frame_link
-    offset_pos: [0.05, 0.0, -0.08]                          # 5cm fwd, 8cm down from gripper
+    offset_pos: [0.03, 0.0, -0.02]                          # near gripper — fingers visible at image bottom ~1/5
     offset_rot: [-0.70614, 0.03701, 0.03701, -0.70614]      # wxyz, ROS conv — looks downward
     convention: ros
-    resolution: [320, 240]
+    resolution: [640, 480]
   top:
     type: fixed
     position: [-0.05, 0.0, 0.5]        # behind robot, above — SO-101 has small workspace

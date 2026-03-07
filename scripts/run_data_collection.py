@@ -145,11 +145,20 @@ def main():
         )
         # Summary
         total = len(results)
-        success = sum(1 for r in results if r.get("success"))
+        completed = sum(1 for r in results if r.get("pipeline_completed"))
+        target_met = sum(1 for r in results if r.get("target_met"))
         print(f"\n{'='*60}")
-        print(f"Batch complete: {success}/{total} tasks succeeded")
+        print(
+            f"Batch complete: {completed}/{total} completed, "
+            f"{target_met}/{total} met target"
+        )
         for r in results:
-            status = "OK" if r.get("success") else "FAIL"
+            if r.get("target_met"):
+                status = "OK"
+            elif r.get("pipeline_completed"):
+                status = "PARTIAL"
+            else:
+                status = "FAIL"
             task = r.get("task", r.get("yaml", "unknown"))
             print(f"  [{status}] {task}")
         return
@@ -172,13 +181,17 @@ def main():
     print(f"{'='*60}")
     print(f"  Task:    {result.get('task', 'unknown')}")
     print(f"  Robot:   {result.get('robot', 'unknown')}")
-    print(f"  Success: {result.get('success', False)}")
+    print(f"  Completed: {result.get('pipeline_completed', False)}")
+    print(f"  Target met: {result.get('target_met', False)}")
     print(f"  Output:  {result.get('output_dir', 'N/A')}")
 
     results_data = result.get("results", {})
     if results_data:
-        total = results_data.get("total_episodes", 0)
-        ok = results_data.get("successful_episodes", 0)
+        total = result.get("total_episodes", results_data.get("total_episodes", 0))
+        ok = result.get(
+            "successful_episodes",
+            results_data.get("successful_episodes", 0),
+        )
         print(f"  Episodes: {ok}/{total} successful")
 
     if result.get("raw_dataset"):

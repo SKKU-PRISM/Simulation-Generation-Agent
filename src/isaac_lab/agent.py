@@ -25,6 +25,7 @@ from rich.panel import Panel
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 from src.common.llm_client import AzureOpenAIClient
+from src.common.robot_names import contains_robot_name, normalize_robot_name
 
 console = Console()
 
@@ -36,38 +37,70 @@ console = Console()
 REFERENCE_MAP = {
     "stack": {
         "base": "stack/stack_env_cfg.py",
-        "robot": "stack/config/franka/stack_joint_pos_env_cfg.py",
+        "robot": {
+            "default": ["stack/config/franka/stack_joint_pos_env_cfg.py"],
+            "ur10e": [
+                "stack/config/ur10_gripper/stack_joint_pos_env_cfg.py",
+                "deploy/gear_assembly/config/ur_10e/joint_pos_env_cfg.py",
+            ],
+        },
         "mdp": ["stack/mdp/terminations.py", "stack/mdp/observations.py"],
     },
     "lift": {
         "base": "lift/lift_env_cfg.py",
-        "robot": "lift/config/franka/joint_pos_env_cfg.py",
+        "robot": {
+            "default": ["lift/config/franka/joint_pos_env_cfg.py"],
+            "openarm": ["lift/config/openarm/joint_pos_env_cfg.py"],
+            "ur10e": ["deploy/gear_assembly/config/ur_10e/joint_pos_env_cfg.py"],
+        },
         "mdp": ["lift/mdp/rewards.py", "lift/mdp/terminations.py"],
     },
     "reach": {
         "base": "reach/reach_env_cfg.py",
-        "robot": "reach/config/franka/joint_pos_env_cfg.py",
+        "robot": {
+            "default": ["reach/config/franka/joint_pos_env_cfg.py"],
+            "openarm": ["reach/config/openarm/unimanual/joint_pos_env_cfg.py"],
+            "ur10e": ["deploy/reach/config/ur_10e/joint_pos_env_cfg.py"],
+        },
         "mdp": [],
     },
     "cabinet": {
         "base": "cabinet/cabinet_env_cfg.py",
-        "robot": "cabinet/config/franka/joint_pos_env_cfg.py",
+        "robot": {
+            "default": ["cabinet/config/franka/joint_pos_env_cfg.py"],
+            "openarm": ["cabinet/config/openarm/joint_pos_env_cfg.py"],
+            "ur10e": ["deploy/gear_assembly/config/ur_10e/joint_pos_env_cfg.py"],
+        },
         "mdp": [],
     },
     # Categories without direct IsaacLab equivalent — use closest match
     "pick_place": {
         "base": "lift/lift_env_cfg.py",
-        "robot": "lift/config/franka/joint_pos_env_cfg.py",
-        "mdp": ["lift/mdp/rewards.py"],
+        "robot": {
+            "default": ["lift/config/franka/joint_pos_env_cfg.py"],
+            "openarm": ["lift/config/openarm/joint_pos_env_cfg.py"],
+            "ur10e": [
+                "deploy/gear_assembly/config/ur_10e/joint_pos_env_cfg.py",
+                "deploy/reach/config/ur_10e/joint_pos_env_cfg.py",
+            ],
+        },
+        "mdp": ["lift/mdp/rewards.py", "pick_place/mdp/observations.py", "pick_place/mdp/terminations.py"],
     },
     "sort": {
         "base": "lift/lift_env_cfg.py",
-        "robot": "lift/config/franka/joint_pos_env_cfg.py",
+        "robot": {
+            "default": ["lift/config/franka/joint_pos_env_cfg.py"],
+            "openarm": ["lift/config/openarm/joint_pos_env_cfg.py"],
+            "ur10e": ["deploy/gear_assembly/config/ur_10e/joint_pos_env_cfg.py"],
+        },
         "mdp": ["lift/mdp/rewards.py"],
     },
     "peg_insert": {
         "base": "lift/lift_env_cfg.py",
-        "robot": "lift/config/franka/joint_pos_env_cfg.py",
+        "robot": {
+            "default": ["lift/config/franka/joint_pos_env_cfg.py"],
+            "ur10e": ["deploy/gear_assembly/config/ur_10e/joint_pos_env_cfg.py"],
+        },
         "mdp": ["lift/mdp/rewards.py"],
     },
 }
@@ -122,16 +155,43 @@ class IsaacLabAgent:
                 return cat
         return "lift"  # default fallback
 
-    def _detect_robot(self, task_doc: dict) -> str:
+    def _detect_robot(self, task_doc: dict, yaml_path: str | None = None) -> str:
         """Detect robot type from task document."""
         for asset in task_doc.get("assets", []):
             if asset.get("type") == "articulation":
-                return asset.get("robot_type", "franka")
+                robot = contains_robot_name(
+                    [
+                        str(asset.get("robot_type", "")),
+                        str(asset.get("name", "")),
+                        str(asset.get("asset_path", "")),
+                    ]
+                )
+                if robot:
+                    return robot
+
+        task_meta = task_doc.get("task", {})
+        robot = contains_robot_name([str(task_meta.get("name", "")), str(task_meta.get("description", ""))])
+        if robot:
+            return robot
+
+        if yaml_path:
+            robot = normalize_robot_name(str(Path(yaml_path)))
+            if robot:
+                return robot
+
         return "franka"
 
     # ----- Reference Code Loading -----
 
-    def select_reference(self, category: str) -> str:
+    def _robot_reference_paths(self, category: str, robot: str) -> list[str]:
+        """Return ordered robot-specific reference paths."""
+        ref_info = REFERENCE_MAP.get(category, REFERENCE_MAP["lift"])
+        robot_refs = ref_info.get("robot", {})
+        if isinstance(robot_refs, str):
+            return [robot_refs]
+        return robot_refs.get(robot, robot_refs.get("default", []))
+
+    def select_reference(self, category: str, robot: str) -> str:
         """Read IsaacLab reference source files for the given task category.
 
         These are used as CODE PATTERN EXAMPLES in the LLM prompt.
@@ -146,9 +206,13 @@ class IsaacLabAgent:
             parts.append(f"### Reference: {ref_info['base']}\n```python\n{base_path.read_text()}\n```")
 
         # Robot-specific config
-        robot_path = self.reference_base / ref_info["robot"]
-        if robot_path.exists():
-            parts.append(f"### Reference: {ref_info['robot']}\n```python\n{robot_path.read_text()}\n```")
+        for robot_ref in self._robot_reference_paths(category, robot):
+            robot_path = self.reference_base / robot_ref
+            if robot_path.exists():
+                content = robot_path.read_text()
+                if len(content) > 6000:
+                    content = content[:6000] + "\n# ... (truncated)"
+                parts.append(f"### Reference: {robot_ref}\n```python\n{content}\n```")
 
         # MDP files (rewards, terminations)
         for mdp_file in ref_info.get("mdp", []):
@@ -162,14 +226,66 @@ class IsaacLabAgent:
 
         return "\n\n".join(parts)
 
+    def _build_robot_guidance(self, robot: str) -> str:
+        """Return robot-specific implementation rules to inject into the prompt."""
+        if robot != "ur10e":
+            return ""
+
+        return """## Robot-Specific Rules (UR10e + Robotiq 2F-85)
+
+- This task MUST use `UR10e_ROBOTIQ_2F_85_CFG`, not `FRANKA_PANDA_CFG`, `UR10_CFG`, or suction gripper configs.
+- Add this import when `robot_type` is `ur10e`:
+  `from isaaclab_assets.robots.universal_robots import UR10e_ROBOTIQ_2F_85_CFG`
+- Robot setup pattern:
+  ```python
+  self.scene.robot = UR10e_ROBOTIQ_2F_85_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+  ```
+- UR10e arm action should target the 6 arm joints only:
+  `["shoulder_.*", "elbow_joint", "wrist_.*"]`
+- Use `wrist_3_link` as the end-effector body for observations / frame transformers.
+- Never use `panda_hand`, `panda_link0`, `ee_link`, or `panda_finger.*` in UR10e code.
+- Prefer a binary gripper action with the Robotiq joints:
+  ```python
+  self.actions.gripper_action = mdp.BinaryJointPositionActionCfg(
+      asset_name="robot",
+      joint_names=[
+          "finger_joint",
+          "right_outer_knuckle_joint",
+          "left_inner_finger_joint",
+          "right_inner_finger_joint",
+          "left_inner_finger_knuckle_joint",
+          "right_inner_finger_knuckle_joint",
+      ],
+      open_command_expr={
+          "finger_joint": 0.0,
+          "right_outer_knuckle_joint": 0.0,
+          "left_inner_finger_joint": 0.0,
+          "right_inner_finger_joint": 0.0,
+          "left_inner_finger_knuckle_joint": 0.0,
+          "right_inner_finger_knuckle_joint": 0.0,
+      },
+      close_command_expr={
+          "finger_joint": 0.65,
+          "right_outer_knuckle_joint": 0.65,
+          "left_inner_finger_joint": -0.65,
+          "right_inner_finger_joint": 0.65,
+          "left_inner_finger_knuckle_joint": -0.65,
+          "right_inner_finger_knuckle_joint": -0.65,
+      },
+  )
+  ```
+- For UR10e observations, use `SceneEntityCfg("robot", body_names=["wrist_3_link"])`.
+"""
+
     # ----- Prompt Building -----
 
     def build_prompt(self, yaml_path: str, task_doc: dict, reference_code: str) -> str:
         """Build the user prompt with YAML content and reference code."""
         yaml_content = Path(yaml_path).read_text()
         category = self._detect_category(yaml_path)
-        robot = self._detect_robot(task_doc)
+        robot = self._detect_robot(task_doc, yaml_path)
         task_name = task_doc.get("task", {}).get("name", "UnknownTask")
+        robot_guidance = self._build_robot_guidance(robot)
 
         prompt = f"""## Task
 
@@ -193,6 +309,8 @@ Use this structure/pattern, but fill in values from the YAML above.
 
 {reference_code}
 
+{robot_guidance}
+
 ## Instructions
 
 1. Generate `env_cfg.py` containing the full environment configuration:
@@ -203,7 +321,7 @@ Use this structure/pattern, but fill in values from the YAML above.
 2. Generate `run_env.py` for validation (follow the exact AppLauncher pattern from the system prompt)
 
 3. Map ALL YAML values to IsaacLab equivalents:
-   - Robot: use pre-defined config (FRANKA_PANDA_CFG for franka)
+   - Robot: use the correct pre-defined config for the detected robot (`FRANKA_PANDA_CFG` for franka, `UR10e_ROBOTIQ_2F_85_CFG` for ur10e)
    - Objects: map asset_path, position, rotation, scale, physics properties
    - Simulation: map timestep, decimation, episode_length, physx settings
    - Randomization: convert to EventTermCfg
@@ -339,7 +457,7 @@ Use this structure/pattern, but fill in values from the YAML above.
 
     # ----- Post-Generation Validation -----
 
-    def _validate_generated_code(self, output_dir: Path) -> list[str]:
+    def _validate_generated_code(self, output_dir: Path, robot: str) -> list[str]:
         """Post-generation validation: auto-fix known mistakes before execution."""
         fixes = []
 
@@ -367,7 +485,72 @@ Use this structure/pattern, but fill in values from the YAML above.
                 py_file.write_text(text)
                 fixes.append(f"Patched {py_file.name}: env.scene → env.scene.keys()")
 
+        fixes.extend(self._apply_robot_specific_fixes(output_dir, robot))
         return fixes
+
+    def _apply_robot_specific_fixes(self, output_dir: Path, robot: str) -> list[str]:
+        """Patch predictable robot-specific mistakes from the LLM output."""
+        if robot != "ur10e":
+            return []
+
+        env_cfg_path = output_dir / "env_cfg.py"
+        if not env_cfg_path.exists():
+            return []
+
+        original = env_cfg_path.read_text()
+        content = original
+
+        replacements = [
+            (
+                "from isaaclab_assets.robots.franka import FRANKA_PANDA_CFG  # if robot_type is franka",
+                "from isaaclab_assets.robots.universal_robots import UR10e_ROBOTIQ_2F_85_CFG",
+            ),
+            (
+                "from isaaclab_assets.robots.franka import FRANKA_PANDA_CFG",
+                "from isaaclab_assets.robots.universal_robots import UR10e_ROBOTIQ_2F_85_CFG",
+            ),
+            ("FRANKA_PANDA_CFG", "UR10e_ROBOTIQ_2F_85_CFG"),
+            ('["panda_joint.*"]', '["shoulder_.*", "elbow_joint", "wrist_.*"]'),
+            (
+                '["panda_finger.*"]',
+                '["finger_joint", "right_outer_knuckle_joint", "left_inner_finger_joint", '
+                '"right_inner_finger_joint", "left_inner_finger_knuckle_joint", '
+                '"right_inner_finger_knuckle_joint"]',
+            ),
+            ('{"panda_finger_.*": 0.04}', '{"finger_joint": 0.0, "right_outer_knuckle_joint": 0.0, '
+             '"left_inner_finger_joint": 0.0, "right_inner_finger_joint": 0.0, '
+             '"left_inner_finger_knuckle_joint": 0.0, "right_inner_finger_knuckle_joint": 0.0}'),
+            ('{"panda_finger_.*": 0.0}', '{"finger_joint": 0.65, "right_outer_knuckle_joint": 0.65, '
+             '"left_inner_finger_joint": -0.65, "right_inner_finger_joint": 0.65, '
+             '"left_inner_finger_knuckle_joint": -0.65, "right_inner_finger_knuckle_joint": -0.65}'),
+            ('gripper_joint_names = ["panda_finger_.*"]',
+             'gripper_joint_names = ["finger_joint", "right_outer_knuckle_joint", '
+             '"left_inner_finger_joint", "right_inner_finger_joint", '
+             '"left_inner_finger_knuckle_joint", "right_inner_finger_knuckle_joint"]'),
+            ("gripper_open_val = 0.04", "gripper_open_val = 0.0"),
+            ("gripper_threshold = 0.005", "gripper_threshold = 0.05"),
+            ("panda_hand", "wrist_3_link"),
+            ("panda_link0", "base_link"),
+            ("ee_link", "wrist_3_link"),
+        ]
+        for source, target in replacements:
+            content = content.replace(source, target)
+
+        if "UR10e_ROBOTIQ_2F_85_CFG" in content and "from isaaclab_assets.robots.universal_robots import UR10e_ROBOTIQ_2F_85_CFG" not in content:
+            lines = content.split("\n")
+            insert_idx = 0
+            for i, line in enumerate(lines):
+                if line.startswith("from isaaclab_assets") or line.startswith("from isaaclab.markers"):
+                    insert_idx = i
+                    break
+            lines.insert(insert_idx, "from isaaclab_assets.robots.universal_robots import UR10e_ROBOTIQ_2F_85_CFG")
+            content = "\n".join(lines)
+
+        if content == original:
+            return []
+
+        env_cfg_path.write_text(content)
+        return ["Patched env_cfg.py: normalized UR10e Robotiq 2F-85 config and body/joint names"]
 
     # ----- Execution -----
 
@@ -510,7 +693,7 @@ Use this structure/pattern, but fill in values from the YAML above.
         task_doc = self.load_task_yaml(yaml_path)
         task_name = task_doc.get("task", {}).get("name", "UnknownTask")
         category = self._detect_category(yaml_path)
-        robot = self._detect_robot(task_doc)
+        robot = self._detect_robot(task_doc, yaml_path)
 
         console.print(Panel(
             f"[bold]Task[/bold]: {task_name}\n"
@@ -528,7 +711,7 @@ Use this structure/pattern, but fill in values from the YAML above.
 
         # Step 1: Load reference code (pattern examples)
         console.print("[bold]Step 1:[/bold] Loading reference code patterns...")
-        reference_code = self.select_reference(category)
+        reference_code = self.select_reference(category, robot)
 
         # Step 2: Build prompt and generate code
         console.print("[bold]Step 2:[/bold] Generating IsaacLab code via LLM...")
@@ -555,7 +738,7 @@ Use this structure/pattern, but fill in values from the YAML above.
             return {"success": True, "output_dir": str(output_dir), "attempts": 0, "error": None}
 
         # Step 3.5: Validate and auto-fix known mistakes
-        fixes = self._validate_generated_code(output_dir)
+        fixes = self._validate_generated_code(output_dir, robot)
         for fix in fixes:
             console.print(f"  [yellow]Auto-fix[/yellow]: {fix}")
 
@@ -592,7 +775,7 @@ Use this structure/pattern, but fill in values from the YAML above.
                 code_dict = self.fix_errors(code_dict, output, attempt + 1)
                 self.write_output(code_dict, output_dir)
                 # Re-validate after error fix
-                fixes = self._validate_generated_code(output_dir)
+                fixes = self._validate_generated_code(output_dir, robot)
                 for fix in fixes:
                     console.print(f"  [yellow]Auto-fix[/yellow]: {fix}")
 

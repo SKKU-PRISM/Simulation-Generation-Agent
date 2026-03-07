@@ -1,12 +1,12 @@
-# Task Document: UR10Stack
+# Task Document: UR10eStack
 # Version: 1.0.0
 # Template: v2.0.0
-# Description: UR10 robot with suction gripper stacks three colored cubes
-# Reference: IsaacLab stack/config/ur10_gripper/stack_joint_pos_env_cfg.py
+# Description: UR10e robot with Robotiq 2F-85 gripper stacks three colored cubes
+# Reference: IsaacLab stack/config/ur10_gripper/stack_joint_pos_env_cfg.py + UR10e Robotiq 2F-85 mapping
 
 task:
-  name: UR10Stack
-  description: "UR10 robot with suction gripper picks and stacks three colored cubes (blue, red, green) on the table"
+  name: UR10eStack
+  description: "UR10e robot with Robotiq 2F-85 gripper grasps and stacks three colored cubes (blue, red, green) on the table"
   version: "1.0.0"
 
 simulation:
@@ -33,16 +33,17 @@ scene:
     position: [0, 0, -1.05]          # IsaacLab convention
 
 assets:
-  # UR10 robot (UR10_CFG base, suction gripper variant in IsaacLab)
+  # UR10e robot (UR10e_ROBOTIQ_2F_85_CFG base, Robotiq 2F-85 gripper variant in IsaacLab)
   - name: robot
     type: articulation
     source: usd
-    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    robot_type: ur10e
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10e/ur10e.usd"
     prim_path: "/World/Robot"
     position: [0, 0, 0]
     rotation: [1, 0, 0, 0]           # wxyz quaternion
     variant_sets:
-      Gripper: Long_Suction           # activate suction gripper visual
+      Gripper: Robotiq_2f_85           # activate Robotiq 2F-85 gripper visual
     initial_joints:                   # stack task default pose (arm straight up, EE down)
       shoulder_pan_joint: 0.0
       shoulder_lift_joint: -1.5707    # -pi/2
@@ -58,8 +59,8 @@ assets:
         stiffness: 800.0
         damping: 40.0
     ee_frame:
-      body: ee_link
-      offset_position: [0.22, 0, 0]  # long suction gripper TCP offset
+      body: wrist_3_link
+      offset_position: [0.0, 0.0, 0.0]
     physics:
       self_collision: false
       solver_position_iterations: 8
@@ -180,9 +181,9 @@ camera:
 
 notes:
   - "Based on IsaacLab stack task (ur10_gripper/stack_joint_pos_env_cfg.py)"
-  - "UR10 with long suction gripper (SurfaceGripper at ee_link, TCP offset 0.22m)"
-  - "USD asset: /Isaac/Robots/UniversalRobots/ur10/ur10.usd with Gripper variant=Long_Suction"
-  - "Suction gripper activated via USD variant set (Long_Suction visual mesh + SurfaceGripperCfg API)"
+  - "UR10e with Robotiq 2F-85 gripper mounted at wrist_3_link"
+  - "USD asset: /Isaac/Robots/UniversalRobots/ur10e/ur10e.usd with Gripper variant=Robotiq_2f_85"
+  - "Robotiq 2F-85 gripper activated via USD variant set (Robotiq_2f_85 visual mesh + articulation)"
   - "Stack task joints: [0, -pi/2, pi/2, -pi/2, -pi/2, 0] (arm upright, EE pointing down)"
   - "Same scene layout as Franka stack: table [0.5,0,0], 3 colored blocks"
   - "Cubes: 4cm blocks (scale 1.0), z=0.0203 on table surface"

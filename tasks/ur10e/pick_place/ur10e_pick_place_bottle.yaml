@@ -1,12 +1,12 @@
-# Task Document: UR10PickPlaceBottle
+# Task Document: UR10ePickPlaceBottle
 # Version: 1.0.0
 # Template: v2.0.0
-# Description: UR10 robot with suction gripper picks a YCB mustard bottle and places it at a target
-# Reference: Based on ur10_pick_place_can.yaml with YCB mustard bottle
+# Description: UR10e robot with Robotiq 2F-85 gripper picks a YCB mustard bottle and places it at a target
+# Reference: Based on ur10e_pick_place_can.yaml with YCB mustard bottle
 
 task:
-  name: UR10PickPlaceBottle
-  description: "UR10 robot with suction gripper picks up a YCB mustard bottle from one position on the table and places it at a target position marked by a green pad"
+  name: UR10ePickPlaceBottle
+  description: "UR10e robot with Robotiq 2F-85 gripper picks up a YCB mustard bottle from one position on the table and places it at a target position marked by a green pad"
   version: "1.0.0"
 
 simulation:
@@ -33,16 +33,17 @@ scene:
     position: [0, 0, -1.05]          # IsaacLab convention
 
 assets:
-  # UR10 robot (suction gripper variant)
+  # UR10e robot (Robotiq 2F-85 gripper variant)
   - name: robot
     type: articulation
     source: usd
-    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    robot_type: ur10e
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10e/ur10e.usd"
     prim_path: "/World/Robot"
     position: [0, 0, 0]
     rotation: [1, 0, 0, 0]           # wxyz quaternion
     variant_sets:
-      Gripper: Long_Suction           # activate suction gripper visual
+      Gripper: Robotiq_2f_85           # activate Robotiq 2F-85 gripper visual
     initial_joints:
       shoulder_pan_joint: 0.0
       shoulder_lift_joint: -1.5707    # -pi/2
@@ -58,8 +59,8 @@ assets:
         stiffness: 800.0
         damping: 40.0
     ee_frame:
-      body: ee_link
-      offset_position: [0.22, 0, 0]  # long suction gripper TCP offset
+      body: wrist_3_link
+      offset_position: [0.0, 0.0, 0.0]
     physics:
       self_collision: false
       solver_position_iterations: 8
@@ -121,7 +122,7 @@ assets:
         z: 0.02
 
 goal:
-  description: "Pick the mustard bottle with suction gripper and place it on the green target marker"
+  description: "Pick the mustard bottle with Robotiq 2F-85 gripper and place it on the green target marker"
   conditions:
     - subject: bottle
       relation: at_position
@@ -140,8 +141,8 @@ camera:
   resolution: [1280, 720]
 
 notes:
-  - "Based on ur10_pick_place_can with YCB mustard bottle"
+  - "Based on ur10e_pick_place_can with YCB mustard bottle"
   - "YCB 006_mustard_bottle (Axis_Aligned_Physics): 9.6 x 19.1 x 5.8 cm"
-  - "UR10 suction gripper — bottle cap provides flat suction surface"
+  - "UR10e Robotiq 2F-85 gripper — bottle cap provides parallel-jaw grasp surface"
   - "Bottle initial z=0.096m (half of 19.1cm height)"
   - "Episode 15s, decimation=5, control at 20Hz"
