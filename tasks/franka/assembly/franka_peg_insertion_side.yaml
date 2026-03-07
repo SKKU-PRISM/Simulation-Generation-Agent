@@ -1,0 +1,247 @@
+# Task Document: FrankaPegInsertionSide
+# Version: 2.0.0
+# Template: v2.0.0
+# Description: Franka robot picks a peg lying on the table and inserts it sideways into a box with a hole
+# Reference: ManiSkill PegInsertionSide-v1 (mani_skill/envs/tasks/tabletop/peg_insertion_side.py)
+
+task:
+  name: FrankaPegInsertionSide
+  description: "Franka Panda robot picks up a two-tone peg (orange+white) lying flat on the table and inserts the orange end sideways into a box with a matching hole"
+  version: "2.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]
+  timestep: 0.01
+  decimation: 2
+  episode_length: 10.0
+  render_interval: 2
+  physx:
+    solver_type: TGS
+    bounce_threshold: 0.01
+    friction_correlation_distance: 0.00625
+    friction_offset_threshold: 0.01
+    gpu_max_rigid_contact_count: 8388608
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]
+
+assets:
+  # Franka Panda robot
+  - name: robot
+    type: articulation
+    source: usd
+    robot_type: franka
+    asset_path: "{ISAACLAB_NUCLEUS_DIR}/Robots/FrankaEmika/panda_instanceable.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]
+    initial_joints:                       # Franka ready pose (gripper pointing down)
+      panda_joint1: 0.0
+      panda_joint2: -0.7854              # -pi/4
+      panda_joint3: 0.0
+      panda_joint4: -2.3562              # -3pi/4
+      panda_joint5: 0.0
+      panda_joint6: 1.5708               # pi/2
+      panda_joint7: 0.7854               # pi/4
+      panda_finger_joint: 0.04
+    actuators:
+      shoulder:
+        joint_names: ["panda_joint1", "panda_joint2", "panda_joint3", "panda_joint4"]
+        effort_limit: 87.0
+        stiffness: 80.0
+        damping: 4.0
+      forearm:
+        joint_names: ["panda_joint5", "panda_joint6", "panda_joint7"]
+        effort_limit: 12.0
+        stiffness: 80.0
+        damping: 4.0
+      hand:
+        joint_names: ["panda_finger_joint.*"]
+        effort_limit: 200.0
+        stiffness: 2000.0
+        damping: 100.0
+    ee_frame:
+      body: panda_hand
+      offset_position: [0, 0, 0.1034]
+    physics:
+      self_collision: false
+      solver_position_iterations: 64
+      solver_velocity_iterations: 1
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # ===== Peg: two-tone, lying flat on table =====
+  # USD Cube size=1.0, scale gives full edge length in meters
+  # Peg: total length 0.10m (2 halves of 0.05m), cross-section 0.04m x 0.04m
+  # Each half: scale [0.05, 0.04, 0.04] → 5cm x 4cm x 4cm
+  # Box depth 12cm > peg total 10cm — peg fits fully inside
+
+  # Orange head (+X, for insertion)
+  - name: peg_head
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/PegHead"
+    position: [0.395, -0.15, 0.02]    # on table, right half of peg
+    rotation: [1, 0, 0, 0]
+    scale: [0.05, 0.04, 0.04]         # 5cm x 4cm x 4cm
+    color: [0.925, 0.451, 0.341]       # #EC7357 orange-red (ManiSkill)
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.05
+      solver_position_iterations: 32
+      solver_velocity_iterations: 1
+      max_depenetration_velocity: 5.0
+
+  # White tail (-X, for grasping)
+  - name: peg_tail
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/PegTail"
+    position: [0.345, -0.15, 0.02]    # on table, left half of peg (adjacent to head)
+    rotation: [1, 0, 0, 0]
+    scale: [0.05, 0.04, 0.04]         # 5cm x 4cm x 4cm
+    color: [0.929, 0.965, 0.976]       # #EDF6F9 off-white (ManiSkill)
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.05
+      solver_position_iterations: 32
+      solver_velocity_iterations: 1
+      max_depenetration_velocity: 5.0
+
+  # ===== Box with hole: 5 walls forming open-front box =====
+  # Box center at [0.55, 0.15, 0.06]
+  # ManiSkill dimensions: peg cross-section 0.04m, clearance 0.003m/side
+  # Inner hole: 0.046m x 0.046m (peg 0.04 + 2*0.003 clearance)
+  # Outer size: 0.12m per side
+  # Wall thickness: (0.12 - 0.046) / 2 = 0.037m
+  # Wall center offset: inner/2 + wall/2 = 0.023 + 0.0185 = 0.0415m
+  # Box depth (X): 0.12m
+  # Opening faces -X (toward peg)
+
+  # Wall top (+Z)
+  - name: box_wall_top
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallTop"
+    position: [0.55, 0.15, 0.1015]    # center_z(0.06) + 0.0415
+    rotation: [1, 0, 0, 0]
+    scale: [0.12, 0.12, 0.037]        # [depth, outer_width, wall_thickness]
+    color: [0.75, 0.60, 0.35]           # darker tan for visibility under dome light
+    physics:
+      rigid_body: false
+      collision: true
+
+  # Wall bottom (-Z) — on table surface
+  - name: box_wall_bottom
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallBottom"
+    position: [0.55, 0.15, 0.0185]    # center_z(0.06) - 0.0415
+    rotation: [1, 0, 0, 0]
+    scale: [0.12, 0.12, 0.037]        # [depth, outer_width, wall_thickness]
+    color: [0.75, 0.60, 0.35]
+    physics:
+      rigid_body: false
+      collision: true
+
+  # Wall left (+Y)
+  - name: box_wall_left
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallLeft"
+    position: [0.55, 0.1915, 0.06]    # center_y(0.15) + 0.0415
+    rotation: [1, 0, 0, 0]
+    scale: [0.12, 0.037, 0.046]       # [depth, wall_thickness, inner_height]
+    color: [0.75, 0.60, 0.35]
+    physics:
+      rigid_body: false
+      collision: true
+
+  # Wall right (-Y)
+  - name: box_wall_right
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallRight"
+    position: [0.55, 0.1085, 0.06]    # center_y(0.15) - 0.0415
+    rotation: [1, 0, 0, 0]
+    scale: [0.12, 0.037, 0.046]       # [depth, wall_thickness, inner_height]
+    color: [0.75, 0.60, 0.35]
+    physics:
+      rigid_body: false
+      collision: true
+
+  # Back wall (+X, closes box back)
+  - name: box_wall_back
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallBack"
+    position: [0.62, 0.15, 0.06]      # center_x(0.55) + depth/2(0.06) + wall/2(0.01)
+    rotation: [1, 0, 0, 0]
+    scale: [0.02, 0.12, 0.12]         # [wall_thickness, outer_width, outer_height]
+    color: [0.75, 0.60, 0.35]
+    physics:
+      rigid_body: false
+      collision: true
+
+constraints:
+  - name: PegFixedJoint
+    type: fixed_joint
+    parent: /World/PegHead
+    child: /World/PegTail
+    local_pos0: [-0.025, 0, 0]          # head left edge (half of scale_x 0.05)
+    local_pos1: [0.025, 0, 0]           # tail right edge
+    description: "Lock two peg halves together as a single rigid body"
+
+goal:
+  description: "Pick up the peg and insert the orange end sideways into the box hole"
+  conditions:
+    - subject: peg_head
+      relation: inserted_into
+      target: box_wall_back
+      tolerance: 0.015
+      description: "Peg orange end inserted into box hole (within 15mm of box center)"
+
+camera:
+  prim_path: "/World/Camera"
+  position: [0.2, -0.6, 0.65]        # front-left view: can see box opening (-X face) and peg
+  target: [0.50, 0.05, 0.04]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Source: ManiSkill PegInsertionSide-v1 (haosulab/ManiSkill)"
+  - "USD Cube size=1.0, scale is full edge length (not half-size)"
+  - "Peg: two-tone (orange head 5cm + white tail 5cm), cross-section 4cm x 4cm, total 10cm"
+  - "Box: 5-wall open frame, inner hole 4.6cm x 4.6cm (ManiSkill 3mm clearance), wall thickness 3.7cm, depth 12cm"
+  - "Peg lies flat on table (y<0), box on table (y>0), hole faces -X toward peg"
+  - "Franka gripper max opening 0.08m > peg cross-section 0.04m (grippable)"
+  - "Peg total 10cm < box depth 12cm — peg fits fully inside hole"
+  - "Success: peg head within 0.015m of box hole center (ManiSkill criterion)"

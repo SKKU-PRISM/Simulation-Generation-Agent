@@ -1,0 +1,289 @@
+# Task Document: OpenArmPlugCharger
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: OpenArm robot picks up a charger and inserts its prongs into a wall receptacle
+# Reference: ManiSkill PlugCharger-v1 adapted for OpenArm
+
+task:
+  name: OpenArmPlugCharger
+  description: "OpenArm unimanual robot picks up a charger (white base + two metallic prongs) and inserts the prongs into a wall-style receptacle with matching slots"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]
+  timestep: 0.01
+  decimation: 2
+  episode_length: 10.0
+  render_interval: 2
+  physx:
+    solver_type: TGS
+    bounce_threshold: 0.01
+    friction_correlation_distance: 0.00625
+    friction_offset_threshold: 0.01
+    gpu_max_rigid_contact_count: 8388608
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]
+
+assets:
+  # OpenArm Unimanual robot
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/OpenArm/openarm_unimanual/openarm_unimanual.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]
+    initial_joints:
+      openarm_joint1: 1.57
+      openarm_joint2: 0.0
+      openarm_joint3: -1.57
+      openarm_joint4: 1.57
+      openarm_joint5: 0.0
+      openarm_joint6: 0.0
+      openarm_joint7: 0.0
+      openarm_finger_joint1: 0.044
+      openarm_finger_joint2: 0.044
+    actuators:
+      arm:
+        joint_names: ["openarm_joint1", "openarm_joint2", "openarm_joint3", "openarm_joint4", "openarm_joint5", "openarm_joint6", "openarm_joint7"]
+        stiffness: 80.0
+        damping: 4.0
+        effort_limit_per_joint:
+          openarm_joint1: 40.0
+          openarm_joint2: 40.0
+          openarm_joint3: 27.0
+          openarm_joint4: 27.0
+          openarm_joint5: 7.0
+          openarm_joint6: 7.0
+          openarm_joint7: 7.0
+      gripper:
+        joint_names: ["openarm_finger_joint.*"]
+        effort_limit: 333.33
+        stiffness: 2000.0
+        damping: 100.0
+    ee_frame:
+      body: openarm_hand
+      tcp_frame: openarm_ee_tcp
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # ===== Charger (same dimensions as Franka, positioned closer) =====
+
+  - name: charger_base
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ChargerBase"
+    position: [0.30, -0.08, 0.012]
+    rotation: [1, 0, 0, 0]
+    scale: [0.04, 0.03, 0.024]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.05
+      solver_position_iterations: 32
+      solver_velocity_iterations: 1
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: relative
+        x: [-0.03, 0.03]
+        y: [-0.03, 0.03]
+        z: 0.0
+
+  - name: charger_prong_left
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ChargerProngLeft"
+    position: [0.328, -0.087, 0.012]
+    rotation: [1, 0, 0, 0]
+    scale: [0.016, 0.003, 0.0064]
+    color: [0.45, 0.45, 0.48]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.005
+
+  - name: charger_prong_right
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ChargerProngRight"
+    position: [0.328, -0.073, 0.012]
+    rotation: [1, 0, 0, 0]
+    scale: [0.016, 0.003, 0.0064]
+    color: [0.45, 0.45, 0.48]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.005
+
+  # ===== Receptacle (positioned closer for OpenArm reach) =====
+
+  - name: receptacle_back
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ReceptBack"
+    position: [0.423, 0.08, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [0.014, 0.10, 0.10]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: receptacle_frame_bottom
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ReceptFBot"
+    position: [0.413, 0.08, 0.0205]
+    rotation: [1, 0, 0, 0]
+    scale: [0.006, 0.10, 0.041]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: receptacle_frame_top
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ReceptFTop"
+    position: [0.413, 0.08, 0.0795]
+    rotation: [1, 0, 0, 0]
+    scale: [0.006, 0.10, 0.041]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: receptacle_frame_mid
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ReceptFMid"
+    position: [0.413, 0.08, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [0.006, 0.008, 0.018]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: receptacle_frame_left
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ReceptFLeft"
+    position: [0.413, 0.050, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [0.006, 0.040, 0.018]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: receptacle_frame_right
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ReceptFRight"
+    position: [0.413, 0.110, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [0.006, 0.040, 0.018]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: slot_fill_left
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/SlotFillLeft"
+    position: [0.4175, 0.073, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [0.003, 0.006, 0.018]
+    color: [0.05, 0.05, 0.08]
+    physics:
+      rigid_body: false
+      collision: false
+
+  - name: slot_fill_right
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/SlotFillRight"
+    position: [0.4175, 0.087, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [0.003, 0.006, 0.018]
+    color: [0.05, 0.05, 0.08]
+    physics:
+      rigid_body: false
+      collision: false
+
+constraints:
+  - name: ChargerProngLeftJoint
+    type: fixed_joint
+    parent: /World/ChargerBase
+    child: /World/ChargerProngLeft
+    local_pos0: [0.02, -0.007, 0]
+    local_pos1: [-0.008, 0, 0]
+    description: "Lock left prong to charger base"
+  - name: ChargerProngRightJoint
+    type: fixed_joint
+    parent: /World/ChargerBase
+    child: /World/ChargerProngRight
+    local_pos0: [0.02, 0.007, 0]
+    local_pos1: [-0.008, 0, 0]
+    description: "Lock right prong to charger base"
+
+goal:
+  description: "Pick up the charger and insert its prongs into the receptacle slots"
+  conditions:
+    - subject: charger_base
+      relation: inserted_into
+      target: receptacle_back
+      tolerance: 0.005
+      description: "Charger prongs fully inserted into receptacle (within 5mm)"
+
+camera:
+  prim_path: "/World/Camera"
+  position: [0.10, -0.25, 0.25]
+  target: [0.36, 0.0, 0.03]
+  fov: 50
+  resolution: [1280, 720]
+
+notes:
+  - "Source: ManiSkill PlugCharger-v1 adapted for OpenArm"
+  - "OpenArm reach 0.60m — charger at x=0.30, receptacle at x=0.42"
+  - "Charger: white base (4cm x 3cm) + 2 prongs, base width 3cm < gripper 8.8cm"
+  - "Charger position randomized ±3cm in XY"

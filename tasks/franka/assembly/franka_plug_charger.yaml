@@ -1,0 +1,309 @@
+# Task Document: FrankaPlugCharger
+# Version: 3.0.0
+# Template: v2.0.0
+# Description: Franka robot picks up a charger and inserts its prongs into a wall receptacle
+# Reference: ManiSkill PlugCharger-v1 (mani_skill/envs/tasks/tabletop/plug_charger.py)
+
+task:
+  name: FrankaPlugCharger
+  description: "Franka Panda robot picks up a charger (white base + two metallic prongs) and inserts the prongs into a wall-style receptacle with matching slots"
+  version: "3.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]
+  timestep: 0.01
+  decimation: 2
+  episode_length: 10.0
+  render_interval: 2
+  physx:
+    solver_type: TGS
+    bounce_threshold: 0.01
+    friction_correlation_distance: 0.00625
+    friction_offset_threshold: 0.01
+    gpu_max_rigid_contact_count: 8388608
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]
+
+assets:
+  # Franka Panda robot
+  - name: robot
+    type: articulation
+    source: usd
+    robot_type: franka
+    asset_path: "{ISAACLAB_NUCLEUS_DIR}/Robots/FrankaEmika/panda_instanceable.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]
+    initial_joints:                       # Franka ready pose (gripper pointing down)
+      panda_joint1: 0.0
+      panda_joint2: -0.7854              # -pi/4
+      panda_joint3: 0.0
+      panda_joint4: -2.3562              # -3pi/4
+      panda_joint5: 0.0
+      panda_joint6: 1.5708               # pi/2
+      panda_joint7: 0.7854               # pi/4
+      panda_finger_joint: 0.04
+    actuators:
+      shoulder:
+        joint_names: ["panda_joint1", "panda_joint2", "panda_joint3", "panda_joint4"]
+        effort_limit: 87.0
+        stiffness: 80.0
+        damping: 4.0
+      forearm:
+        joint_names: ["panda_joint5", "panda_joint6", "panda_joint7"]
+        effort_limit: 12.0
+        stiffness: 80.0
+        damping: 4.0
+      hand:
+        joint_names: ["panda_finger_joint.*"]
+        effort_limit: 200.0
+        stiffness: 2000.0
+        damping: 100.0
+    ee_frame:
+      body: panda_hand
+      offset_position: [0, 0, 0.1034]
+    physics:
+      self_collision: false
+      solver_position_iterations: 64
+      solver_velocity_iterations: 1
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # ===== Charger (ManiSkill exact dimensions) =====
+  # ManiSkill half-sizes: base [0.02, 0.015, 0.012], peg [0.008, 0.00075, 0.0032]
+  # Full sizes: base 4cm x 3cm x 2.4cm, peg 1.6cm x 0.15cm x 0.64cm
+  # Peg gap: 7mm center-to-center, clearance: 0.5mm/side
+  # Charger on table, prongs pointing +X toward receptacle
+  # Base center Z = half_height = 0.012m
+
+  # Charger base (white)
+  - name: charger_base
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ChargerBase"
+    position: [0.40, -0.10, 0.012]     # on table, Z = half-height
+    rotation: [1, 0, 0, 0]
+    scale: [0.04, 0.03, 0.024]         # 4cm x 3cm x 2.4cm (ManiSkill exact)
+    color: [1.0, 1.0, 1.0]            # white (ManiSkill)
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.05
+      solver_position_iterations: 32
+      solver_velocity_iterations: 1
+      max_depenetration_velocity: 5.0
+
+  # Left prong (metallic, -Y offset from center by slot_gap/2 = 0.007)
+  # Prong center X = base_front + prong_half_length = 0.02 + 0.008 = 0.028 from base center
+  # Prongs 14mm apart in Y to match || slot spacing on receptacle
+  - name: charger_prong_left
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ChargerProngLeft"
+    position: [0.428, -0.107, 0.012]   # base_x+0.028, Y=base_y-0.007, Z=base center
+    rotation: [1, 0, 0, 0]
+    scale: [0.016, 0.003, 0.0064]      # 1.6cm x 0.3cm x 0.64cm
+    color: [0.45, 0.45, 0.48]          # darker metallic for contrast on white base
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.005
+
+  # Right prong (metallic, +Y offset from center by slot_gap/2 = 0.007)
+  - name: charger_prong_right
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ChargerProngRight"
+    position: [0.428, -0.093, 0.012]   # base_x+0.028, Y=base_y+0.007, Z=base center
+    rotation: [1, 0, 0, 0]
+    scale: [0.016, 0.003, 0.0064]      # same as left prong
+    color: [0.45, 0.45, 0.48]          # darker metallic for contrast
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.005
+
+  # ===== Receptacle (multi-box frame with visible slot holes) =====
+  # ManiSkill body: 2cm x 10cm x 10cm, face toward -X
+  # Built as frame construction to create visible 110V outlet-style slot openings
+  # Visual slots: two vertical slits side by side (|| pattern, 110V US outlet)
+  # Each slot: 6mm wide (Y) x 18mm tall (Z), 14mm apart in Y (center-to-center)
+  # Center: [0.55, 0.10, 0.05], front face at X=0.54
+
+  # Back section (solid, behind frame openings)
+  - name: receptacle_back
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ReceptBack"
+    position: [0.553, 0.10, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [0.014, 0.10, 0.10]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: false
+      collision: true
+
+  # Front frame - bottom (below both slots, Z: 0.0 to 0.041)
+  - name: receptacle_frame_bottom
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ReceptFBot"
+    position: [0.543, 0.10, 0.0205]
+    rotation: [1, 0, 0, 0]
+    scale: [0.006, 0.10, 0.041]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: false
+      collision: true
+
+  # Front frame - top (above both slots, Z: 0.059 to 0.10)
+  - name: receptacle_frame_top
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ReceptFTop"
+    position: [0.543, 0.10, 0.0795]
+    rotation: [1, 0, 0, 0]
+    scale: [0.006, 0.10, 0.041]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: false
+      collision: true
+
+  # Front frame - middle bar (between two || slots, Y: 0.096 to 0.104)
+  - name: receptacle_frame_mid
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ReceptFMid"
+    position: [0.543, 0.10, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [0.006, 0.008, 0.018]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: false
+      collision: true
+
+  # Front frame - far left (Y: 0.05 to 0.090, full slot height)
+  - name: receptacle_frame_left
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ReceptFLeft"
+    position: [0.543, 0.070, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [0.006, 0.040, 0.018]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: false
+      collision: true
+
+  # Front frame - far right (Y: 0.110 to 0.15, full slot height)
+  - name: receptacle_frame_right
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ReceptFRight"
+    position: [0.543, 0.130, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [0.006, 0.040, 0.018]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: false
+      collision: true
+
+  # Dark slot fill - left vertical slit (6mm wide x 18mm tall)
+  - name: slot_fill_left
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/SlotFillLeft"
+    position: [0.5475, 0.093, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [0.003, 0.006, 0.018]
+    color: [0.05, 0.05, 0.08]
+    physics:
+      rigid_body: false
+      collision: false
+
+  # Dark slot fill - right vertical slit (6mm wide x 18mm tall)
+  - name: slot_fill_right
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/SlotFillRight"
+    position: [0.5475, 0.107, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [0.003, 0.006, 0.018]
+    color: [0.05, 0.05, 0.08]
+    physics:
+      rigid_body: false
+      collision: false
+
+constraints:
+  - name: ChargerProngLeftJoint
+    type: fixed_joint
+    parent: /World/ChargerBase
+    child: /World/ChargerProngLeft
+    local_pos0: [0.02, -0.007, 0]       # base front edge, left offset
+    local_pos1: [-0.008, 0, 0]          # prong back edge
+    description: "Lock left prong to charger base"
+  - name: ChargerProngRightJoint
+    type: fixed_joint
+    parent: /World/ChargerBase
+    child: /World/ChargerProngRight
+    local_pos0: [0.02, 0.007, 0]        # base front edge, right offset
+    local_pos1: [-0.008, 0, 0]          # prong back edge
+    description: "Lock right prong to charger base"
+
+goal:
+  description: "Pick up the charger and insert its prongs into the receptacle slots"
+  conditions:
+    - subject: charger_base
+      relation: inserted_into
+      target: receptacle_back
+      tolerance: 0.005
+      description: "Charger prongs fully inserted into receptacle (within 5mm)"
+
+camera:
+  prim_path: "/World/Camera"
+  position: [0.25, -0.30, 0.30]        # closer front-left, tight framing to show small charger/receptacle details
+  target: [0.48, 0.0, 0.03]
+  fov: 50
+  resolution: [1280, 720]
+
+notes:
+  - "Source: ManiSkill PlugCharger-v1 (haosulab/ManiSkill)"
+  - "USD Cube size=1.0, scale is full edge length (not half-size)"
+  - "Charger: white base (4cm x 3cm x 2.4cm) + 2 metallic prongs (1.6cm x 0.3cm x 0.64cm)"
+  - "Prong Y thickness doubled from ManiSkill (0.15cm→0.3cm) for visual clarity in screenshots"
+  - "Receptacle: multi-box frame (110V outlet style) with 2 dark slot openings, ManiSkill body 2cm x 10cm x 10cm"
+  - "Visual slots: || pattern (two vertical slits side by side), 6mm x 18mm each, 14mm apart in Y"
+  - "Receptacle face points -X toward charger"
+  - "Charger on table left side, receptacle on table right side"
+  - "Success: charger pose within 5mm and 0.2 rad of goal pose"

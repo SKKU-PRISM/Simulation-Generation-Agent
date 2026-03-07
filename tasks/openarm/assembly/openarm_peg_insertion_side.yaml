@@ -1,0 +1,237 @@
+# Task Document: OpenArmPegInsertionSide
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: OpenArm robot picks a peg lying on the table and inserts it sideways into a box with a hole
+# Reference: ManiSkill PegInsertionSide-v1 adapted for OpenArm (shorter reach)
+
+task:
+  name: OpenArmPegInsertionSide
+  description: "OpenArm unimanual robot picks up a two-tone peg (orange+white) lying flat on the table and inserts the orange end sideways into a box with a matching hole"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]
+  timestep: 0.01
+  decimation: 2
+  episode_length: 10.0
+  render_interval: 2
+  physx:
+    solver_type: TGS
+    bounce_threshold: 0.01
+    friction_correlation_distance: 0.00625
+    friction_offset_threshold: 0.01
+    gpu_max_rigid_contact_count: 8388608
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]
+
+assets:
+  # OpenArm Unimanual robot
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/OpenArm/openarm_unimanual/openarm_unimanual.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]
+    initial_joints:
+      openarm_joint1: 1.57
+      openarm_joint2: 0.0
+      openarm_joint3: -1.57
+      openarm_joint4: 1.57
+      openarm_joint5: 0.0
+      openarm_joint6: 0.0
+      openarm_joint7: 0.0
+      openarm_finger_joint1: 0.044
+      openarm_finger_joint2: 0.044
+    actuators:
+      arm:
+        joint_names: ["openarm_joint1", "openarm_joint2", "openarm_joint3", "openarm_joint4", "openarm_joint5", "openarm_joint6", "openarm_joint7"]
+        stiffness: 80.0
+        damping: 4.0
+        effort_limit_per_joint:
+          openarm_joint1: 40.0
+          openarm_joint2: 40.0
+          openarm_joint3: 27.0
+          openarm_joint4: 27.0
+          openarm_joint5: 7.0
+          openarm_joint6: 7.0
+          openarm_joint7: 7.0
+      gripper:
+        joint_names: ["openarm_finger_joint.*"]
+        effort_limit: 333.33
+        stiffness: 2000.0
+        damping: 100.0
+    ee_frame:
+      body: openarm_hand
+      tcp_frame: openarm_ee_tcp
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # ===== Peg: two-tone, lying flat on table =====
+  # Same dimensions as Franka version, positioned closer for OpenArm reach
+
+  # Orange head (+X, for insertion)
+  - name: peg_head
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/PegHead"
+    position: [0.295, -0.10, 0.02]
+    rotation: [1, 0, 0, 0]
+    scale: [0.05, 0.04, 0.04]
+    color: [0.925, 0.451, 0.341]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.05
+      solver_position_iterations: 32
+      solver_velocity_iterations: 1
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: relative
+        x: [-0.03, 0.03]
+        y: [-0.03, 0.03]
+        z: 0.0
+
+  # White tail (-X, for grasping)
+  - name: peg_tail
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/PegTail"
+    position: [0.245, -0.10, 0.02]
+    rotation: [1, 0, 0, 0]
+    scale: [0.05, 0.04, 0.04]
+    color: [0.929, 0.965, 0.976]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.05
+      solver_position_iterations: 32
+      solver_velocity_iterations: 1
+      max_depenetration_velocity: 5.0
+
+  # ===== Box with hole: 5 walls forming open-front box =====
+  # Inner hole: 0.046m x 0.046m, wall thickness: 0.037m, depth: 0.12m
+
+  - name: box_wall_top
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallTop"
+    position: [0.40, 0.10, 0.1015]
+    rotation: [1, 0, 0, 0]
+    scale: [0.12, 0.12, 0.037]
+    color: [0.75, 0.60, 0.35]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: box_wall_bottom
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallBottom"
+    position: [0.40, 0.10, 0.0185]
+    rotation: [1, 0, 0, 0]
+    scale: [0.12, 0.12, 0.037]
+    color: [0.75, 0.60, 0.35]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: box_wall_left
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallLeft"
+    position: [0.40, 0.1415, 0.06]
+    rotation: [1, 0, 0, 0]
+    scale: [0.12, 0.037, 0.046]
+    color: [0.75, 0.60, 0.35]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: box_wall_right
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallRight"
+    position: [0.40, 0.0585, 0.06]
+    rotation: [1, 0, 0, 0]
+    scale: [0.12, 0.037, 0.046]
+    color: [0.75, 0.60, 0.35]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: box_wall_back
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallBack"
+    position: [0.47, 0.10, 0.06]
+    rotation: [1, 0, 0, 0]
+    scale: [0.02, 0.12, 0.12]
+    color: [0.75, 0.60, 0.35]
+    physics:
+      rigid_body: false
+      collision: true
+
+constraints:
+  - name: PegFixedJoint
+    type: fixed_joint
+    parent: /World/PegHead
+    child: /World/PegTail
+    local_pos0: [-0.025, 0, 0]
+    local_pos1: [0.025, 0, 0]
+    description: "Lock two peg halves together as a single rigid body"
+
+goal:
+  description: "Pick up the peg and insert the orange end sideways into the box hole"
+  conditions:
+    - subject: peg_head
+      relation: inserted_into
+      target: box_wall_back
+      tolerance: 0.015
+      description: "Peg orange end inserted into box hole (within 15mm of box center)"
+
+camera:
+  prim_path: "/World/Camera"
+  position: [0.1, -0.5, 0.55]
+  target: [0.35, 0.0, 0.04]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Source: ManiSkill PegInsertionSide-v1 adapted for OpenArm"
+  - "OpenArm reach 0.60m — objects positioned closer (peg x~0.27, box x~0.40)"
+  - "Peg: two-tone (orange 5cm + white 5cm), cross-section 4cm x 4cm < gripper 8.8cm"
+  - "Box: 5-wall open frame, inner hole 4.6cm x 4.6cm, depth 12cm"
+  - "Peg position randomized ±3cm in XY"

@@ -62,6 +62,24 @@ class TaskAlignmentChecker:
                     mapped += 1
                 else:
                     unmapped.append(f"{rel}({subj})")
+            elif rel in ("inserted_into", "in_slot"):
+                if custom_funcs or any(
+                    token in func.lower()
+                    for func in all_funcs | {name.lower() for name in custom_names}
+                    for token in ("insert", "slot", "assembly", "target_pose", "plug", "peg")
+                ):
+                    mapped += 1
+                else:
+                    unmapped.append(f"{rel}({subj})")
+            elif rel == "upright":
+                if any(
+                    token in func.lower()
+                    for func in all_funcs | {name.lower() for name in custom_names}
+                    for token in ("upright", "orientation", "vertical")
+                ):
+                    mapped += 1
+                else:
+                    unmapped.append(f"{rel}({subj})")
             elif rel == "open":
                 # Gripper check - usually implicit
                 mapped += 1
@@ -119,7 +137,8 @@ class TaskAlignmentChecker:
 
         # If no custom functions needed (no complex goals), that's OK
         needs_custom = any(
-            g.get("relation") in ("stacked_below", "xy_aligned", "at_position", "position_above")
+            g.get("relation")
+            in ("stacked_below", "xy_aligned", "at_position", "position_above", "upright", "inserted_into", "in_slot")
             for g in self.goals
         )
 

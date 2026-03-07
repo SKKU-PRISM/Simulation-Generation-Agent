@@ -86,6 +86,8 @@ python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml \
 - `docs/usage.md`: 각 CLI 사용법과 출력 구조
 - `docs/evaluation.md`: IsaacLab 평가 체계와 결과 해석
 - `docs/task_yaml_spec.md`: task YAML 포맷과 자산 규약
+- `docs/tasks_overview.md`: 전체 task 목록과 IsaacLab/ADC 검증 상태 보드
+- `docs/task_descriptions_ko.md`: task 이름, 한글 설명, ADC 검증 여부 빠른 참고용 문서
 - `docs/troubleshooting.md`: 자주 발생하는 런타임/VLM/MCP 문제
 
 ## 프로젝트 구조
@@ -99,7 +101,7 @@ Simulation-Generation-Agent/
 ├── src/task_search/         # task YAML 카탈로그/검색 메타데이터
 ├── scripts/                 # CLI 진입점
 ├── configs/                 # agent/pipeline/eval/robot profile 설정
-├── tasks/                   # 62개 task YAML
+├── tasks/                   # 78개 task YAML
 ├── docs/                    # 사용자 문서
 ├── assets/                  # 로컬 USD 자산 (예: SO-101)
 └── external/AutoDataCollector/  # ADC 서브모듈, read-only
@@ -107,12 +109,13 @@ Simulation-Generation-Agent/
 
 ## 지원 로봇과 태스크
 
-- **Franka Panda**: stack, lift, pick_place, cabinet, sort, peg_insert
-- **OpenArm**: stack, lift, pick_place, reach, cabinet, sort
+- **Franka Panda**: assembly, stack, lift, pick_place, cabinet, sort, peg_insert
+- **OpenArm**: assembly, stack, lift, pick_place, reach, cabinet, sort
+- **UR10**: assembly
 - **UR10e**: stack, cabinet, pick_place, reach
-- **SO-101**: stack, lift, pick_place, reach, sort
+- **SO-101**: assembly, stack, lift, pick_place, reach, sort
 
-총 task YAML 수는 현재 `62`개입니다.
+총 task YAML 수는 현재 `78`개입니다.
 
 ## 참고
 

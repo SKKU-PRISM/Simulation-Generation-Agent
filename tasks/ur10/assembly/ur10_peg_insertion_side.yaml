@@ -1,0 +1,221 @@
+# Task Document: UR10PegInsertionSide
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: UR10 robot with suction gripper picks a peg and inserts it sideways into a box with a hole
+# Reference: ManiSkill PegInsertionSide-v1 adapted for UR10
+
+task:
+  name: UR10PegInsertionSide
+  description: "UR10 robot with suction gripper picks up a two-tone peg (orange+white) lying flat on the table and inserts the orange end sideways into a box with a matching hole"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]
+  timestep: 0.01
+  decimation: 2
+  episode_length: 10.0
+  render_interval: 2
+  physx:
+    solver_type: TGS
+    bounce_threshold: 0.01
+    friction_correlation_distance: 0.00625
+    friction_offset_threshold: 0.01
+    gpu_max_rigid_contact_count: 8388608
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]
+
+assets:
+  # UR10 robot with Long Suction gripper
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]
+    variant_sets:
+      Gripper: Long_Suction
+    initial_joints:
+      shoulder_pan_joint: 0.0
+      shoulder_lift_joint: -1.5707
+      elbow_joint: 1.5707
+      wrist_1_joint: -1.5707
+      wrist_2_joint: -1.5707
+      wrist_3_joint: 0.0
+    actuators:
+      arm:
+        joint_names: ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
+                      "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"]
+        effort_limit: 87.0
+        stiffness: 800.0
+        damping: 40.0
+    ee_frame:
+      body: ee_link
+      offset_position: [0.22, 0, 0]
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # ===== Peg: two-tone, lying flat on table =====
+  # Same dimensions and positions as Franka version (UR10 has longer reach)
+
+  - name: peg_head
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/PegHead"
+    position: [0.395, -0.15, 0.02]
+    rotation: [1, 0, 0, 0]
+    scale: [0.05, 0.04, 0.04]
+    color: [0.925, 0.451, 0.341]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.05
+      solver_position_iterations: 32
+      solver_velocity_iterations: 1
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: relative
+        x: [-0.05, 0.05]
+        y: [-0.05, 0.05]
+        z: 0.0
+
+  - name: peg_tail
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/PegTail"
+    position: [0.345, -0.15, 0.02]
+    rotation: [1, 0, 0, 0]
+    scale: [0.05, 0.04, 0.04]
+    color: [0.929, 0.965, 0.976]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.05
+      solver_position_iterations: 32
+      solver_velocity_iterations: 1
+      max_depenetration_velocity: 5.0
+
+  # ===== Box with hole: 5 walls =====
+
+  - name: box_wall_top
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallTop"
+    position: [0.55, 0.15, 0.1015]
+    rotation: [1, 0, 0, 0]
+    scale: [0.12, 0.12, 0.037]
+    color: [0.75, 0.60, 0.35]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: box_wall_bottom
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallBottom"
+    position: [0.55, 0.15, 0.0185]
+    rotation: [1, 0, 0, 0]
+    scale: [0.12, 0.12, 0.037]
+    color: [0.75, 0.60, 0.35]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: box_wall_left
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallLeft"
+    position: [0.55, 0.1915, 0.06]
+    rotation: [1, 0, 0, 0]
+    scale: [0.12, 0.037, 0.046]
+    color: [0.75, 0.60, 0.35]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: box_wall_right
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallRight"
+    position: [0.55, 0.1085, 0.06]
+    rotation: [1, 0, 0, 0]
+    scale: [0.12, 0.037, 0.046]
+    color: [0.75, 0.60, 0.35]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: box_wall_back
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallBack"
+    position: [0.62, 0.15, 0.06]
+    rotation: [1, 0, 0, 0]
+    scale: [0.02, 0.12, 0.12]
+    color: [0.75, 0.60, 0.35]
+    physics:
+      rigid_body: false
+      collision: true
+
+constraints:
+  - name: PegFixedJoint
+    type: fixed_joint
+    parent: /World/PegHead
+    child: /World/PegTail
+    local_pos0: [-0.025, 0, 0]
+    local_pos1: [0.025, 0, 0]
+    description: "Lock two peg halves together as a single rigid body"
+
+goal:
+  description: "Pick up the peg and insert the orange end sideways into the box hole"
+  conditions:
+    - subject: peg_head
+      relation: inserted_into
+      target: box_wall_back
+      tolerance: 0.015
+      description: "Peg orange end inserted into box hole (within 15mm of box center)"
+
+camera:
+  prim_path: "/World/Camera"
+  position: [0.2, -0.6, 0.65]
+  target: [0.50, 0.05, 0.04]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Source: ManiSkill PegInsertionSide-v1 adapted for UR10"
+  - "UR10 reach 1.30m — same object positions as Franka (well within reach)"
+  - "Suction gripper picks peg from flat top surface"
+  - "Peg position randomized ±5cm in XY"

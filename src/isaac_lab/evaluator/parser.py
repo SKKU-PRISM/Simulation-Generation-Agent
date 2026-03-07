@@ -332,8 +332,24 @@ class EnvCfgParser:
         spawn = kw.get("spawn")
         if isinstance(spawn, dict):
             info["usd_path"] = spawn.get("usd_path", "")
-            info["scale"] = spawn.get("scale")
             info["spawn_type"] = spawn.get("_call_name", "")
+            if spawn.get("scale") is not None:
+                info["scale"] = spawn.get("scale")
+            elif spawn.get("size") is not None:
+                info["scale"] = spawn.get("size")
+            elif spawn.get("radius") is not None and spawn.get("height") is not None:
+                radius = spawn.get("radius")
+                height = spawn.get("height")
+                if isinstance(radius, (int, float)) and isinstance(height, (int, float)):
+                    info["scale"] = [2 * radius, height, 2 * radius]
+            elif spawn.get("radius") is not None:
+                radius = spawn.get("radius")
+                if isinstance(radius, (int, float)):
+                    info["scale"] = [2 * radius, 2 * radius, 2 * radius]
+
+            visual_material = spawn.get("visual_material")
+            if isinstance(visual_material, dict):
+                info["color"] = visual_material.get("diffuse_color")
 
         return info
 

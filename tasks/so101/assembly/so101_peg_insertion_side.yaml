@@ -1,0 +1,226 @@
+# Task Document: SO101PegInsertionSide
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: SO-101 robot picks a small peg and inserts it sideways into a box with a hole
+# Reference: ManiSkill PegInsertionSide-v1 adapted for SO-101 (scaled down for small desktop)
+
+task:
+  name: SO101PegInsertionSide
+  description: "SO-101 follower arm picks up a small two-tone peg (orange+white) lying flat on the desktop and inserts the orange end sideways into a box with a matching hole"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]
+  timestep: 0.01
+  decimation: 2
+  episode_length: 10.0
+  render_interval: 2
+  physx:
+    solver_type: TGS
+    bounce_threshold: 0.01
+    friction_correlation_distance: 0.00625
+    friction_offset_threshold: 0.01
+    gpu_max_rigid_contact_count: 8388608
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]
+
+assets:
+  # SO-101 Follower Arm
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "assets/robots/so101/so101.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]
+    initial_joints:
+      shoulder_pan: 0.0
+      shoulder_lift: -1.57
+      elbow_flex: 1.57
+      wrist_flex: 0.0
+      wrist_roll: 0.0
+      gripper: 1.0
+    actuators:
+      arm:
+        joint_names: ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"]
+        effort_limit: 10.0
+        stiffness: 17.8
+        damping: 0.60
+      hand:
+        joint_names: ["gripper"]
+        effort_limit: 10.0
+        stiffness: 200.0
+        damping: 10.0
+    ee_frame:
+      body: gripper_frame_link
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # Small desktop table
+  - name: table
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Table"
+    position: [0.15, 0.0, -0.015]
+    scale: [0.30, 0.30, 0.03]
+    color: [0.6, 0.5, 0.4]
+    physics:
+      rigid_body: false
+      collision: true
+
+  # ===== Peg: scaled to 50% of Franka version =====
+  # Peg total 5cm (2 halves of 2.5cm), cross-section 2cm x 2cm
+  # Box inner hole 2.3cm x 2.3cm, depth 6cm
+
+  - name: peg_head
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/PegHead"
+    position: [0.17, -0.05, 0.01]
+    rotation: [1, 0, 0, 0]
+    scale: [0.025, 0.02, 0.02]
+    color: [0.925, 0.451, 0.341]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.02
+      solver_position_iterations: 32
+      solver_velocity_iterations: 1
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: relative
+        x: [-0.02, 0.02]
+        y: [-0.03, 0.03]
+        z: 0.0
+
+  - name: peg_tail
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/PegTail"
+    position: [0.145, -0.05, 0.01]
+    rotation: [1, 0, 0, 0]
+    scale: [0.025, 0.02, 0.02]
+    color: [0.929, 0.965, 0.976]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.02
+      solver_position_iterations: 32
+      solver_velocity_iterations: 1
+      max_depenetration_velocity: 5.0
+
+  # ===== Box with hole: 5 walls (scaled 50%) =====
+  # Inner hole: 2.3cm x 2.3cm, wall thickness: 1.85cm, depth: 6cm
+
+  - name: box_wall_top
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallTop"
+    position: [0.22, 0.05, 0.0508]
+    rotation: [1, 0, 0, 0]
+    scale: [0.06, 0.06, 0.0185]
+    color: [0.75, 0.60, 0.35]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: box_wall_bottom
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallBottom"
+    position: [0.22, 0.05, 0.0093]
+    rotation: [1, 0, 0, 0]
+    scale: [0.06, 0.06, 0.0185]
+    color: [0.75, 0.60, 0.35]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: box_wall_left
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallLeft"
+    position: [0.22, 0.0708, 0.03]
+    rotation: [1, 0, 0, 0]
+    scale: [0.06, 0.0185, 0.023]
+    color: [0.75, 0.60, 0.35]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: box_wall_right
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallRight"
+    position: [0.22, 0.0293, 0.03]
+    rotation: [1, 0, 0, 0]
+    scale: [0.06, 0.0185, 0.023]
+    color: [0.75, 0.60, 0.35]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: box_wall_back
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/BoxWallBack"
+    position: [0.255, 0.05, 0.03]
+    rotation: [1, 0, 0, 0]
+    scale: [0.01, 0.06, 0.06]
+    color: [0.75, 0.60, 0.35]
+    physics:
+      rigid_body: false
+      collision: true
+
+constraints:
+  - name: PegFixedJoint
+    type: fixed_joint
+    parent: /World/PegHead
+    child: /World/PegTail
+    local_pos0: [-0.0125, 0, 0]
+    local_pos1: [0.0125, 0, 0]
+    description: "Lock two peg halves together as a single rigid body"
+
+goal:
+  description: "Pick up the peg and insert the orange end sideways into the box hole"
+  conditions:
+    - subject: peg_head
+      relation: inserted_into
+      target: box_wall_back
+      tolerance: 0.01
+      description: "Peg orange end inserted into box hole (within 10mm of box center)"
+
+camera:
+  prim_path: "/World/Camera"
+  position: [0.40, 0.30, 0.30]
+  target: [0.12, 0.0, 0.02]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Source: ManiSkill PegInsertionSide-v1 adapted for SO-101"
+  - "SO-101 reach ~0.27m — all objects scaled to 50% and positioned within [0.08, 0.22]"
+  - "Peg: 5cm total (2.5+2.5), cross-section 2cm x 2cm < gripper ~5cm opening"
+  - "Box: inner hole 2.3cm x 2.3cm, depth 6cm"
+  - "Small desktop table 30cm x 30cm"

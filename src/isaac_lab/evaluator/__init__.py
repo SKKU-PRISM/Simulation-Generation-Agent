@@ -23,6 +23,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from src.common.task_docs import load_task_document
+
 from .parser import _check, GoalNormalizer, EnvCfgParser
 from .scene_fidelity import SceneFidelityChecker
 from .mdp_correctness import MDPCorrectnessChecker
@@ -52,8 +54,7 @@ class IsaacLabEvaluator:
         yaml_path = str(Path(yaml_path).resolve())
 
         # Load inputs
-        with open(yaml_path) as f:
-            yaml_doc = yaml.safe_load(f)
+        yaml_doc = load_task_document(yaml_path)
 
         env_cfg_path = output_dir / "env_cfg.py"
         if not env_cfg_path.exists():

@@ -60,7 +60,7 @@ class SceneFidelityChecker:
         return _check(self.CAT, "asset_completeness", score, 10, details)
 
     def check_asset_config(self) -> dict:
-        """(8 pts) USD paths, positions, rotations match YAML."""
+        """(8 pts) Key asset attributes (path/pose/scale/color) match YAML."""
         tol = self.cfg.get("position_tolerance", 0.02)
         correct = 0
         total = 0
@@ -97,6 +97,24 @@ class SceneFidelityChecker:
                     correct += 1
                 else:
                     issues.append(f"{asset['name']} path mismatch")
+
+            yaml_scale = asset.get("scale")
+            cfg_scale = entity.get("scale")
+            if yaml_scale and cfg_scale:
+                total += 1
+                if self._pos_match(yaml_scale, cfg_scale, 0.001):
+                    correct += 1
+                else:
+                    issues.append(f"{asset['name']} scale mismatch: yaml={yaml_scale} cfg={cfg_scale}")
+
+            yaml_color = asset.get("color")
+            cfg_color = entity.get("color")
+            if yaml_color and cfg_color:
+                total += 1
+                if self._pos_match(yaml_color, cfg_color, 0.05):
+                    correct += 1
+                else:
+                    issues.append(f"{asset['name']} color mismatch: yaml={yaml_color} cfg={cfg_color}")
 
         score = round(8 * correct / total) if total else 8
         details = f"{correct}/{total} attributes match"
@@ -138,6 +156,11 @@ class SceneFidelityChecker:
 
         robot_type = robot_asset.get("robot_type", "franka")
         expected = self._expected_robot_cfg(robot_type)
+
+        if expected is None:
+            if any("Articulation" in str(e.get("type", "")) for e in self.scene_entities.values()):
+                return _check(self.CAT, "robot_config", 4, 4, f"Robot entity exists for {robot_type}")
+            return _check(self.CAT, "robot_config", 0, 4, f"No robot entity found for {robot_type}")
 
         if expected and expected in self.parser.source:
             return _check(self.CAT, "robot_config", 4, 4, f"{expected} found")

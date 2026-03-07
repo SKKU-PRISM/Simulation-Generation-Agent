@@ -1,0 +1,277 @@
+# Task Document: UR10PlugCharger
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: UR10 robot with suction gripper picks up a charger and inserts its prongs into a wall receptacle
+# Reference: ManiSkill PlugCharger-v1 adapted for UR10
+
+task:
+  name: UR10PlugCharger
+  description: "UR10 robot with suction gripper picks up a charger (white base + two metallic prongs) and inserts the prongs into a wall-style receptacle with matching slots"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]
+  timestep: 0.01
+  decimation: 2
+  episode_length: 10.0
+  render_interval: 2
+  physx:
+    solver_type: TGS
+    bounce_threshold: 0.01
+    friction_correlation_distance: 0.00625
+    friction_offset_threshold: 0.01
+    gpu_max_rigid_contact_count: 8388608
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]
+
+assets:
+  # UR10 robot with Long Suction gripper
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]
+    variant_sets:
+      Gripper: Long_Suction
+    initial_joints:
+      shoulder_pan_joint: 0.0
+      shoulder_lift_joint: -1.5707
+      elbow_joint: 1.5707
+      wrist_1_joint: -1.5707
+      wrist_2_joint: -1.5707
+      wrist_3_joint: 0.0
+    actuators:
+      arm:
+        joint_names: ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
+                      "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"]
+        effort_limit: 87.0
+        stiffness: 800.0
+        damping: 40.0
+    ee_frame:
+      body: ee_link
+      offset_position: [0.22, 0, 0]
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # ===== Charger (same as Franka version) =====
+
+  - name: charger_base
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ChargerBase"
+    position: [0.40, -0.10, 0.012]
+    rotation: [1, 0, 0, 0]
+    scale: [0.04, 0.03, 0.024]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.05
+      solver_position_iterations: 32
+      solver_velocity_iterations: 1
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: relative
+        x: [-0.05, 0.05]
+        y: [-0.05, 0.05]
+        z: 0.0
+
+  - name: charger_prong_left
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ChargerProngLeft"
+    position: [0.428, -0.107, 0.012]
+    rotation: [1, 0, 0, 0]
+    scale: [0.016, 0.003, 0.0064]
+    color: [0.45, 0.45, 0.48]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.005
+
+  - name: charger_prong_right
+    type: rigid
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ChargerProngRight"
+    position: [0.428, -0.093, 0.012]
+    rotation: [1, 0, 0, 0]
+    scale: [0.016, 0.003, 0.0064]
+    color: [0.45, 0.45, 0.48]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.005
+
+  # ===== Receptacle (same as Franka version) =====
+
+  - name: receptacle_back
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ReceptBack"
+    position: [0.553, 0.10, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [0.014, 0.10, 0.10]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: receptacle_frame_bottom
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ReceptFBot"
+    position: [0.543, 0.10, 0.0205]
+    rotation: [1, 0, 0, 0]
+    scale: [0.006, 0.10, 0.041]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: receptacle_frame_top
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ReceptFTop"
+    position: [0.543, 0.10, 0.0795]
+    rotation: [1, 0, 0, 0]
+    scale: [0.006, 0.10, 0.041]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: receptacle_frame_mid
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ReceptFMid"
+    position: [0.543, 0.10, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [0.006, 0.008, 0.018]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: receptacle_frame_left
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ReceptFLeft"
+    position: [0.543, 0.070, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [0.006, 0.040, 0.018]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: receptacle_frame_right
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/ReceptFRight"
+    position: [0.543, 0.130, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [0.006, 0.040, 0.018]
+    color: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: false
+      collision: true
+
+  - name: slot_fill_left
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/SlotFillLeft"
+    position: [0.5475, 0.093, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [0.003, 0.006, 0.018]
+    color: [0.05, 0.05, 0.08]
+    physics:
+      rigid_body: false
+      collision: false
+
+  - name: slot_fill_right
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/SlotFillRight"
+    position: [0.5475, 0.107, 0.05]
+    rotation: [1, 0, 0, 0]
+    scale: [0.003, 0.006, 0.018]
+    color: [0.05, 0.05, 0.08]
+    physics:
+      rigid_body: false
+      collision: false
+
+constraints:
+  - name: ChargerProngLeftJoint
+    type: fixed_joint
+    parent: /World/ChargerBase
+    child: /World/ChargerProngLeft
+    local_pos0: [0.02, -0.007, 0]
+    local_pos1: [-0.008, 0, 0]
+    description: "Lock left prong to charger base"
+  - name: ChargerProngRightJoint
+    type: fixed_joint
+    parent: /World/ChargerBase
+    child: /World/ChargerProngRight
+    local_pos0: [0.02, 0.007, 0]
+    local_pos1: [-0.008, 0, 0]
+    description: "Lock right prong to charger base"
+
+goal:
+  description: "Pick up the charger and insert its prongs into the receptacle slots"
+  conditions:
+    - subject: charger_base
+      relation: inserted_into
+      target: receptacle_back
+      tolerance: 0.005
+      description: "Charger prongs fully inserted into receptacle (within 5mm)"
+
+camera:
+  prim_path: "/World/Camera"
+  position: [0.25, -0.30, 0.30]
+  target: [0.48, 0.0, 0.03]
+  fov: 50
+  resolution: [1280, 720]
+
+notes:
+  - "Source: ManiSkill PlugCharger-v1 adapted for UR10"
+  - "UR10 reach 1.30m — same object positions as Franka"
+  - "Suction gripper picks charger from flat top surface"
+  - "Charger position randomized ±5cm in XY"

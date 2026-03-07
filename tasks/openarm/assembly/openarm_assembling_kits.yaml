@@ -1,0 +1,262 @@
+# Task Document: OpenArmAssemblingKits
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: OpenArm robot picks up a misplaced shape and inserts it into the correct cutout slot on a kit tray
+# Reference: ManiSkill AssemblingKits-v1 adapted for OpenArm
+
+task:
+  name: OpenArmAssemblingKits
+  description: "OpenArm unimanual robot picks up a misplaced colored shape piece and inserts it into the matching cutout slot on a kit tray board"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]
+  timestep: 0.01
+  decimation: 2
+  episode_length: 10.0
+  render_interval: 2
+  physx:
+    solver_type: TGS
+    bounce_threshold: 0.01
+    friction_correlation_distance: 0.00625
+    friction_offset_threshold: 0.01
+    gpu_max_rigid_contact_count: 8388608
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]
+
+episode:
+  kit_id: "kit_303"
+  obj_to_place_candidates: [9, 11, 12, 15, 17]
+  object_scale: [0.003, 0.003, 0.001]
+  kit_objects:
+    - object_id: 9
+      pos: [-0.0495, 0.0844, 0.0]
+      rot: 3.280
+    - object_id: 15
+      pos: [-0.1002, -0.1191, 0.0]
+      rot: 4.214
+    - object_id: 12
+      pos: [0.0553, 0.1616, 0.0]
+      rot: 5.114
+    - object_id: 11
+      pos: [0.0287, -0.0286, 0.0]
+      rot: 2.860
+    - object_id: 17
+      pos: [0.0356, -0.1666, 0.0]
+      rot: 0.735
+
+assets:
+  # OpenArm Unimanual robot
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/OpenArm/openarm_unimanual/openarm_unimanual.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]
+    initial_joints:
+      openarm_joint1: 1.57
+      openarm_joint2: 0.0
+      openarm_joint3: -1.57
+      openarm_joint4: 1.57
+      openarm_joint5: 0.0
+      openarm_joint6: 0.0
+      openarm_joint7: 0.0
+      openarm_finger_joint1: 0.044
+      openarm_finger_joint2: 0.044
+    actuators:
+      arm:
+        joint_names: ["openarm_joint1", "openarm_joint2", "openarm_joint3", "openarm_joint4", "openarm_joint5", "openarm_joint6", "openarm_joint7"]
+        stiffness: 80.0
+        damping: 4.0
+        effort_limit_per_joint:
+          openarm_joint1: 40.0
+          openarm_joint2: 40.0
+          openarm_joint3: 27.0
+          openarm_joint4: 27.0
+          openarm_joint5: 7.0
+          openarm_joint6: 7.0
+          openarm_joint7: 7.0
+      gripper:
+        joint_names: ["openarm_finger_joint.*"]
+        effort_limit: 333.33
+        stiffness: 2000.0
+        damping: 100.0
+    ee_frame:
+      body: openarm_hand
+      tcp_frame: openarm_ee_tcp
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # Kit tray (positioned closer for OpenArm reach)
+  - name: kit_tray
+    type: static
+    source: usd
+    asset_path: "assets/assembling_kits/kit_303.usd"
+    prim_path: "/World/KitTray"
+    position: [0.35, 0.0, 0.01]
+    rotation: [0.7071, 0, 0, 0.7071]
+    scale: [1.0, 1.0, 1.0]
+    color: [0.278, 0.209, 0.169]
+    physics:
+      collision: true
+      rigid_body: false
+      collision_mesh: triangle
+
+  # In-place shapes (4 static) + 1 misplaced (rigid)
+  - name: shape_09
+    type: static
+    source: usd
+    asset_path: "assets/assembling_kits/shape_09.usd"
+    prim_path: "/World/Shape09"
+    object_id: 9
+    shape_name: "cloud"
+    slot_position_local: [-0.0495, 0.0844, -0.01]
+    slot_rotation_z: 3.280
+    position: [0.2656, -0.0495, 0.0]
+    rotation: [-0.7543, 0, 0, 0.6565]
+    scale: [0.003, 0.003, 0.001]
+    color: [0.306, 0.475, 0.655]
+    physics:
+      collision: false
+      rigid_body: false
+
+  - name: shape_11
+    type: static
+    source: usd
+    asset_path: "assets/assembling_kits/shape_11.usd"
+    prim_path: "/World/Shape11"
+    object_id: 11
+    shape_name: "circle"
+    slot_position_local: [0.0287, -0.0286, -0.01]
+    slot_rotation_z: 2.860
+    position: [0.3786, 0.0287, 0.0]
+    rotation: [-0.6009, 0, 0, 0.7993]
+    scale: [0.003, 0.003, 0.001]
+    color: [0.95, 0.95, 0.95]
+    physics:
+      collision: false
+      rigid_body: false
+
+  - name: shape_12
+    type: rigid
+    source: usd
+    asset_path: "assets/assembling_kits/shape_12.usd"
+    prim_path: "/World/Shape12"
+    object_id: 12
+    shape_name: "G_letter"
+    slot_position_local: [0.0553, 0.1616, -0.01]
+    slot_rotation_z: 5.114
+    position: [0.35, -0.18, 0.0]
+    rotation: [-0.9799, 0, 0, -0.1995]
+    scale: [0.003, 0.003, 0.001]
+    color: [0.690, 0.478, 0.631]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.02
+    randomize:
+      position:
+        type: relative
+        x: [-0.05, 0.05]
+        y: [-0.05, 0.05]
+        z: 0.0
+
+  - name: shape_15
+    type: static
+    source: usd
+    asset_path: "assets/assembling_kits/shape_15.usd"
+    prim_path: "/World/Shape15"
+    object_id: 15
+    shape_name: "triangle"
+    slot_position_local: [-0.1002, -0.1191, -0.01]
+    slot_rotation_z: 4.214
+    position: [0.4691, -0.1002, 0.0]
+    rotation: [-0.9691, 0, 0, 0.2466]
+    scale: [0.003, 0.003, 0.001]
+    color: [0.929, 0.788, 0.282]
+    physics:
+      collision: false
+      rigid_body: false
+
+  - name: shape_17
+    type: static
+    source: usd
+    asset_path: "assets/assembling_kits/shape_17.usd"
+    prim_path: "/World/Shape17"
+    object_id: 17
+    shape_name: "pentagon"
+    slot_position_local: [0.0356, -0.1666, -0.01]
+    slot_rotation_z: 0.735
+    position: [0.5166, 0.0356, 0.0]
+    rotation: [0.4058, 0, 0, 0.9139]
+    scale: [0.003, 0.003, 0.001]
+    color: [0.349, 0.663, 0.310]
+    physics:
+      collision: false
+      rigid_body: false
+
+shape_to_place_config:
+  spawn_z: 0.02
+  physics:
+    rigid_body: true
+    collision: true
+    mass: 0.02
+    solver_position_iterations: 32
+    solver_velocity_iterations: 1
+    max_depenetration_velocity: 5.0
+  randomize:
+    position:
+      type: relative
+      x: [-0.08, 0.08]
+      y: [-0.08, 0.08]
+      z: 0.0
+    orientation:
+      yaw: [-3.14159, 3.14159]
+
+goal:
+  description: "Pick up the randomly misplaced shape and insert it into the matching cutout slot on the kit tray"
+  conditions:
+    - subject: shape_to_place
+      relation: in_slot
+      target: matching_cutout
+      tolerance: 0.02
+      description: "Misplaced shape inserted into its correct cutout (XY within 2cm, Z flush with tray)"
+
+camera:
+  prim_path: "/World/Camera"
+  position: [0.20, 0.25, 0.45]
+  target: [0.35, -0.01, 0.01]
+  fov: 50
+  resolution: [1280, 720]
+
+notes:
+  - "Source: ManiSkill AssemblingKits-v1 adapted for OpenArm"
+  - "OpenArm reach 0.60m — kit tray at x=0.35 (closer than Franka x=0.45)"
+  - "Uses same mesh assets as Franka version (kit_303 + shapes)"
+  - "Shape positions recalculated for tray at x=0.35"
+  - "Misplaced shape position randomized ±5cm in XY"

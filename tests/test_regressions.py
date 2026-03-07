@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from src.common.task_docs import load_task_document
 from src.data_collection.config import load_robot_config
 from src.isaac_lab.agent import IsaacLabAgent
 from src.isaac_lab.evaluator.mdp_correctness import MDPCorrectnessChecker
@@ -124,6 +125,30 @@ class EnvCfg(ManagerBasedRLEnvCfg):
         self.assertIn("/Simulation-Generation-Agent/assets/robots/so101/so101.usd", resolved)
         self.assertNotIn("/Simulation-Generation-Agent/src/assets/", resolved)
 
+    def test_task_doc_resolves_franka_assembly_assets_and_slot_target(self):
+        doc = load_task_document("tasks/franka/assembly/franka_assembling_kits.yaml")
+        assets = {asset["name"]: asset for asset in doc["assets"]}
+        goal = doc["goal"]["conditions"][0]
+
+        self.assertEqual(assets["kit_tray"]["asset_path"], "assets/assembling_kits/kit_303.usd")
+        self.assertEqual(goal["subject"], "shape_12")
+        self.assertEqual(goal["target"], "kit_tray")
+        self.assertEqual(goal["resolved_target_object_id"], 12)
+        self.assertIn("target_position", goal)
+        self.assertIn("target_rotation", goal)
+        self.assertAlmostEqual(assets["shape_12"]["position"][2], 0.02, places=4)
+        self.assertIn("orientation", assets["shape_12"]["randomize"])
+
+    def test_task_doc_canonicalizes_ur10_assembly_to_ur10e(self):
+        doc = load_task_document("tasks/ur10/assembly/ur10_plug_charger.yaml")
+        robot = next(asset for asset in doc["assets"] if asset.get("type") == "articulation")
+
+        self.assertEqual(robot["robot_type"], "ur10e")
+        self.assertIn("/ur10e/ur10e.usd", robot["asset_path"])
+        self.assertEqual(robot["variant_sets"]["Gripper"], "Robotiq_2f_85")
+        self.assertEqual(robot["ee_frame"]["body"], "wrist_3_link")
+        self.assertTrue(doc["task"]["name"].startswith("UR10e"))
+
     def test_reward_structure_allows_none_rewards_when_enabled(self):
         checker = MDPCorrectnessChecker(
             yaml_doc={"assets": []},
@@ -182,6 +207,34 @@ class EnvCfg(ManagerBasedRLEnvCfg):
             result = checker.check_robot_config()
             self.assertEqual(result["score"], 4)
             self.assertEqual(result["status"], "PASS")
+
+    def test_parser_extracts_primitive_scale_and_color(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_cfg_path = Path(tmpdir) / "env_cfg.py"
+            env_cfg_path.write_text(
+                """
+from isaaclab.scene import InteractiveSceneCfg
+from isaaclab.utils import configclass
+from isaaclab.assets import RigidObjectCfg
+import isaaclab.sim as sim_utils
+
+@configclass
+class SceneCfg(InteractiveSceneCfg):
+    peg = RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/Peg",
+        init_state=RigidObjectCfg.InitialStateCfg(pos=[0.1, 0.2, 0.3]),
+        spawn=sim_utils.CuboidCfg(
+            size=(0.12, 0.05, 0.05),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.69, 0.055, 0.055)),
+        ),
+    )
+""".strip()
+            )
+            parser = EnvCfgParser(env_cfg_path)
+            entities = parser.extract_scene_entities()
+
+            self.assertEqual(entities["peg"]["scale"], [0.12, 0.05, 0.05])
+            self.assertEqual(entities["peg"]["color"], [0.69, 0.055, 0.055])
 
     def test_load_robot_config_maps_ur10_alias_to_ur10e_profile(self):
         cfg = load_robot_config("ur10")

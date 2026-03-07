@@ -412,6 +412,17 @@ AVAILABLE termination functions:
 
 For task-specific success criteria (e.g., stacking, placing), generate custom termination functions in `mdp/terminations.py`.
 
+### 9.1 Assembly Tasks
+
+For `assembly` category tasks:
+- Preserve `scale`, `color`, `primitive`, `asset_path`, and `rotation` from YAML exactly.
+- `constraints` with `type: fixed_joint` mean multiple rigid bodies must behave as one assembled object. Preserve that behavior in the generated environment.
+- If a goal condition includes `target_position` / `target_rotation`, use those resolved values directly in the custom termination function.
+- `relation: upright` requires a custom orientation-based check against world +Z using the YAML tolerance.
+- `relation: inserted_into` and `relation: in_slot` require custom pose-alignment success logic; do not reduce them to a generic timeout-only task.
+- If `physics.collision_mesh: triangle` appears on a USD asset, keep hole/cutout geometry semantics instead of replacing it with a convex approximation.
+- Repo-local assets like `assets/assembling_kits/*.usd` are valid. Resolve them relative to the repository root with `Path(__file__).resolve()` if needed.
+
 ### 10. End-Effector Frame
 
 ```python
@@ -540,7 +551,7 @@ success = DoneTerm(func=mdp.cubes_stacked, params={"xy_threshold": 0.04, ...})
 2. DO NOT import physics modules before `AppLauncher` initialization in run_env.py
 3. DO NOT use `gym.make()` — use direct `ManagerBasedRLEnv(cfg=...)` instantiation
 4. DO NOT leave `MISSING` sentinel values unset — all MISSING fields must be assigned
-5. DO NOT use literal asset paths — always use `ISAAC_NUCLEUS_DIR` or `ISAACLAB_NUCLEUS_DIR` constants
+5. DO NOT use literal Nucleus asset paths — use `ISAAC_NUCLEUS_DIR` / `ISAACLAB_NUCLEUS_DIR`; repo-local `assets/...` paths may be resolved with `Path(__file__).resolve()`
 6. DO NOT forget `{ENV_REGEX_NS}` prefix for prim_paths of per-environment assets
 7. The `@configclass` decorator is from `isaaclab.utils`, NOT from `dataclasses`
 8. Position and rotation in YAML are in meters and wxyz quaternion respectively — use as-is

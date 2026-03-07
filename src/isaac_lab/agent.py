@@ -26,6 +26,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 from src.common.llm_client import AzureOpenAIClient
 from src.common.robot_names import contains_robot_name, normalize_robot_name
+from src.common.task_docs import dump_task_document, load_task_document
 
 console = Console()
 
@@ -103,6 +104,16 @@ REFERENCE_MAP = {
         },
         "mdp": ["lift/mdp/rewards.py"],
     },
+    "assembly": {
+        "base": "deploy/gear_assembly/gear_assembly_env_cfg.py",
+        "robot": {
+            "default": ["lift/config/franka/joint_pos_env_cfg.py"],
+            "openarm": ["lift/config/openarm/joint_pos_env_cfg.py"],
+            "so101": ["lift/config/openarm/joint_pos_env_cfg.py"],
+            "ur10e": ["deploy/gear_assembly/config/ur_10e/joint_pos_env_cfg.py"],
+        },
+        "mdp": ["deploy/mdp/terminations.py", "deploy/mdp/events.py"],
+    },
 }
 
 
@@ -138,8 +149,7 @@ class IsaacLabAgent:
 
     def load_task_yaml(self, yaml_path: str) -> dict:
         """Load and return parsed YAML task document."""
-        with open(yaml_path) as f:
-            return yaml.safe_load(f)
+        return load_task_document(yaml_path)
 
     def _detect_category(self, yaml_path: str) -> str:
         """Detect task category from path (tasks/{robot}/{category}/...)."""
@@ -277,15 +287,46 @@ class IsaacLabAgent:
 - For UR10e observations, use `SceneEntityCfg("robot", body_names=["wrist_3_link"])`.
 """
 
+    @staticmethod
+    def _build_assembly_guidance(task_doc: dict) -> str:
+        """Return assembly-specific instructions for grounded code generation."""
+        conditions = task_doc.get("goal", {}).get("conditions", [])
+        has_constraints = bool(task_doc.get("constraints"))
+        has_tri_mesh = any(
+            asset.get("physics", {}).get("collision_mesh") == "triangle"
+            for asset in task_doc.get("assets", [])
+        )
+
+        guidance = [
+            "## Assembly-Specific Rules",
+            "",
+            "- Preserve the YAML `scale`, `color`, `primitive`, and `asset_path` values exactly.",
+            "- If the YAML contains `target_position` / `target_rotation`, use those resolved values directly in custom termination logic.",
+            "- Generate custom `mdp/terminations.py` for assembly goals such as `upright`, `inserted_into`, and `in_slot`.",
+            "- For `inserted_into` / `in_slot`, compare the subject pose against the resolved target pose, not just a generic object distance.",
+            "- For `upright`, implement a custom orientation-based check against world +Z using the YAML tolerance.",
+            "- Keep local asset paths like `assets/assembling_kits/*.usd` as repo-local paths in the generated code.",
+        ]
+
+        if has_constraints:
+            guidance.append("- The YAML `constraints` define rigid bodies that must behave as a single assembled object; preserve that semantics in the generated environment.")
+        if has_tri_mesh:
+            guidance.append("- `physics.collision_mesh: triangle` is required for cutout-hole geometry; preserve that instead of replacing it with a convex proxy.")
+        if any(cond.get("relation") == "in_slot" for cond in conditions):
+            guidance.append("- For assembling-kits tasks, the resolved `subject` is the active misplaced shape and the slot target pose is already attached to the goal condition.")
+
+        return "\n".join(guidance) + "\n"
+
     # ----- Prompt Building -----
 
     def build_prompt(self, yaml_path: str, task_doc: dict, reference_code: str) -> str:
         """Build the user prompt with YAML content and reference code."""
-        yaml_content = Path(yaml_path).read_text()
+        yaml_content = dump_task_document(task_doc)
         category = self._detect_category(yaml_path)
         robot = self._detect_robot(task_doc, yaml_path)
         task_name = task_doc.get("task", {}).get("name", "UnknownTask")
         robot_guidance = self._build_robot_guidance(robot)
+        assembly_guidance = self._build_assembly_guidance(task_doc) if category == "assembly" else ""
 
         prompt = f"""## Task
 
@@ -310,6 +351,7 @@ Use this structure/pattern, but fill in values from the YAML above.
 {reference_code}
 
 {robot_guidance}
+{assembly_guidance}
 
 ## Instructions
 

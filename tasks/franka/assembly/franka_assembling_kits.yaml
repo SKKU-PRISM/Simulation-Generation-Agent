@@ -1,0 +1,277 @@
+# Task Document: FrankaAssemblingKits
+# Version: 3.0.0
+# Template: v2.0.0
+# Description: Franka robot picks up a misplaced shape and inserts it into the correct cutout slot on a kit tray
+# Reference: ManiSkill AssemblingKits-v1 (mani_skill/envs/tasks/tabletop/assembling_kits.py)
+
+task:
+  name: FrankaAssemblingKits
+  description: "Franka Panda robot picks up a misplaced colored shape piece and inserts it into the matching cutout slot on a kit tray board"
+  version: "3.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]
+  timestep: 0.01
+  decimation: 2
+  episode_length: 10.0
+  render_interval: 2
+  physx:
+    solver_type: TGS
+    bounce_threshold: 0.01
+    friction_correlation_distance: 0.00625
+    friction_offset_threshold: 0.01
+    gpu_max_rigid_contact_count: 8388608
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]
+
+# Episode configuration (ManiSkill episode 1461, kit_303)
+# Any of the 5 shapes can be randomly selected as the misplaced piece each episode
+episode:
+  kit_id: "kit_303"
+  obj_to_place_candidates: [9, 11, 12, 15, 17]   # one randomly selected per episode
+  object_scale: [0.003, 0.003, 0.001]   # XY scale 0.003, Z scale 0.001
+  kit_objects:                    # from kit_303.json
+    - object_id: 9
+      pos: [-0.0495, 0.0844, 0.0]
+      rot: 3.280
+    - object_id: 15
+      pos: [-0.1002, -0.1191, 0.0]
+      rot: 4.214
+    - object_id: 12
+      pos: [0.0553, 0.1616, 0.0]
+      rot: 5.114
+    - object_id: 11
+      pos: [0.0287, -0.0286, 0.0]
+      rot: 2.860
+    - object_id: 17
+      pos: [0.0356, -0.1666, 0.0]
+      rot: 0.735
+  # spawn position computed at build time from selected shape's slot_position + randomize offset
+
+assets:
+  # Franka Panda robot
+  - name: robot
+    type: articulation
+    source: usd
+    robot_type: franka
+    asset_path: "{ISAACLAB_NUCLEUS_DIR}/Robots/FrankaEmika/panda_instanceable.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]
+    initial_joints:                       # Franka ready pose (gripper pointing down)
+      panda_joint1: 0.0
+      panda_joint2: -0.7854              # -pi/4
+      panda_joint3: 0.0
+      panda_joint4: -2.3562              # -3pi/4
+      panda_joint5: 0.0
+      panda_joint6: 1.5708               # pi/2
+      panda_joint7: 0.7854               # pi/4
+      panda_finger_joint: 0.04
+    actuators:
+      shoulder:
+        joint_names: ["panda_joint1", "panda_joint2", "panda_joint3", "panda_joint4"]
+        effort_limit: 87.0
+        stiffness: 80.0
+        damping: 4.0
+      forearm:
+        joint_names: ["panda_joint5", "panda_joint6", "panda_joint7"]
+        effort_limit: 12.0
+        stiffness: 80.0
+        damping: 4.0
+      hand:
+        joint_names: ["panda_finger_joint.*"]
+        effort_limit: 200.0
+        stiffness: 2000.0
+        damping: 100.0
+    ee_frame:
+      body: panda_hand
+      offset_position: [0, 0, 0.1034]
+    physics:
+      self_collision: false
+      solver_position_iterations: 64
+      solver_velocity_iterations: 1
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # ===== Kit Tray (ManiSkill mesh with actual cutout holes) =====
+  # Converted from kit_303.obj → kit_303.usd
+  # OBJ bounding box: X=[-0.15,0.15], Y=[-0.2427,0.2427], Z=[-0.01,0.01]
+  # Rotated 90° Z so long axis aligns with scene X
+  # In-place shapes are children of KitTray (inherit transform)
+  - name: kit_tray
+    type: static
+    source: usd
+    asset_path: "assets/assembling_kits/kit_303.usd"
+    prim_path: "/World/KitTray"
+    position: [0.45, 0.0, 0.01]
+    rotation: [0.7071, 0, 0, 0.7071]   # 90° Z rotation
+    scale: [1.0, 1.0, 1.0]
+    color: [0.278, 0.209, 0.169]        # ManiSkill brown
+    physics:
+      collision: true
+      rigid_body: false
+      collision_mesh: triangle    # triangle mesh collision to preserve cutout holes
+
+  # ===== Kit shapes (all 5) =====
+  # At build time: randomly selected shape → dynamic rigid body (randomized position)
+  #                remaining 4 shapes → static children of KitTray (in slots)
+  # Shape meshes: Z=[0,20]*0.001 = [0,0.02]m; local Z=-0.01 for flush alignment
+  # World coords for dynamic: scene_x = 0.45 - local_y, scene_y = local_x, scene_z = 0.02
+  # NOTE: scene_builder loads these as world-space USD refs; MCP post-processing
+  #       re-parents in-place shapes under /World/KitTray with local coords
+
+  - name: shape_09
+    type: static
+    source: usd
+    asset_path: "assets/assembling_kits/shape_09.usd"
+    prim_path: "/World/Shape09"
+    object_id: 9
+    shape_name: "cloud"
+    slot_position_local: [-0.0495, 0.0844, -0.01]
+    slot_rotation_z: 3.280
+    position: [0.3656, -0.0495, 0.0]    # world: flush with tray (Z=0 to 0.02)
+    rotation: [-0.7543, 0, 0, 0.6565]   # tray_rot(90°Z) * slot_rot(3.280 rad Z)
+    scale: [0.003, 0.003, 0.001]
+    color: [0.306, 0.475, 0.655]               # blue
+    physics:
+      collision: false
+      rigid_body: false
+
+  - name: shape_11
+    type: static
+    source: usd
+    asset_path: "assets/assembling_kits/shape_11.usd"
+    prim_path: "/World/Shape11"
+    object_id: 11
+    shape_name: "circle"
+    slot_position_local: [0.0287, -0.0286, -0.01]
+    slot_rotation_z: 2.860
+    position: [0.4786, 0.0287, 0.0]
+    rotation: [-0.6009, 0, 0, 0.7993]   # tray_rot * slot_rot(2.860 rad Z)
+    scale: [0.003, 0.003, 0.001]
+    color: [0.95, 0.95, 0.95]                  # white
+    physics:
+      collision: false
+      rigid_body: false
+
+  - name: shape_12
+    type: rigid
+    source: usd
+    asset_path: "assets/assembling_kits/shape_12.usd"
+    prim_path: "/World/Shape12"
+    object_id: 12
+    shape_name: "G_letter"
+    slot_position_local: [0.0553, 0.1616, -0.01]
+    slot_rotation_z: 5.114
+    position: [0.45, -0.20, 0.0]        # misplaced: on table surface
+    rotation: [-0.9799, 0, 0, -0.1995]  # tray_rot * slot_rot(5.114 rad Z)
+    scale: [0.003, 0.003, 0.001]
+    color: [0.690, 0.478, 0.631]               # purple/lavender
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.02
+
+  - name: shape_15
+    type: static
+    source: usd
+    asset_path: "assets/assembling_kits/shape_15.usd"
+    prim_path: "/World/Shape15"
+    object_id: 15
+    shape_name: "triangle"
+    slot_position_local: [-0.1002, -0.1191, -0.01]
+    slot_rotation_z: 4.214
+    position: [0.5691, -0.1002, 0.0]
+    rotation: [-0.9691, 0, 0, 0.2466]   # tray_rot * slot_rot(4.214 rad Z)
+    scale: [0.003, 0.003, 0.001]
+    color: [0.929, 0.788, 0.282]               # yellow
+    physics:
+      collision: false
+      rigid_body: false
+
+  - name: shape_17
+    type: static
+    source: usd
+    asset_path: "assets/assembling_kits/shape_17.usd"
+    prim_path: "/World/Shape17"
+    object_id: 17
+    shape_name: "pentagon"
+    slot_position_local: [0.0356, -0.1666, -0.01]
+    slot_rotation_z: 0.735
+    position: [0.6166, 0.0356, 0.0]
+    rotation: [0.4058, 0, 0, 0.9139]    # tray_rot * slot_rot(0.735 rad Z)
+    scale: [0.003, 0.003, 0.001]
+    color: [0.349, 0.663, 0.310]               # green
+    physics:
+      collision: false
+      rigid_body: false
+
+
+# Dynamic shape placement config (applied to whichever shape is randomly selected)
+shape_to_place_config:
+  spawn_z: 0.02                               # table surface height
+  physics:
+    rigid_body: true
+    collision: true
+    mass: 0.02
+    solver_position_iterations: 32
+    solver_velocity_iterations: 1
+    max_depenetration_velocity: 5.0
+  randomize:
+    position:
+      type: relative
+      x: [-0.10, 0.10]                       # ±10cm X range on table
+      y: [-0.10, 0.10]                       # ±10cm Y range on table
+      z: 0.0
+    orientation:
+      yaw: [-3.14159, 3.14159]               # full random Z rotation
+
+goal:
+  description: "Pick up the randomly misplaced shape and insert it into the matching cutout slot on the kit tray"
+  conditions:
+    - subject: shape_to_place
+      relation: in_slot
+      target: matching_cutout
+      tolerance: 0.02
+      description: "Misplaced shape inserted into its correct cutout (XY within 2cm, Z flush with tray)"
+
+camera:
+  prim_path: "/World/Camera"
+  position: [0.30, 0.30, 0.50]
+  target: [0.45, -0.01, 0.01]
+  fov: 50
+  resolution: [1280, 720]
+
+notes:
+  - "Source: ManiSkill AssemblingKits-v1 (haosulab/ManiSkill)"
+  - "v3.0.0: Uses actual ManiSkill mesh assets (kit_303 + shape OBJs converted to USD)"
+  - "Kit tray mesh has real cutout holes matching shape outlines"
+  - "Episode randomization: any of 5 shapes can be the misplaced piece (remaining 4 stay in slots)"
+  - "Original ManiSkill ep1461 had to_place=12(G-letter), now generalized to all candidates"
+  - "object_scale [0.003, 0.003, 0.001] — OBJ models in ~mm, scaled to meters"
+  - "Kit OBJ rotated 90° Z in scene; in-place shapes as children inherit transform"
+  - "Misplaced shape uses world coords (table-relative Z)"
+  - "In-place shapes at local Z=-0.01 for flush alignment with tray surface"
+  - "Assembly verified: G-shape fits cutout exactly (size_match=pass, flush=yes, centered=yes)"
+  - "GT score: 81/100 (gpt-4.1) — shapes in correct slots, colors slightly lighter"
+  - "Assets downloaded from: https://storage1.ucsd.edu/datasets/ManiSkill2022-assets/assembling_kits_v1.zip"

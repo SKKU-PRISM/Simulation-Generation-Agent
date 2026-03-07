@@ -1,0 +1,251 @@
+# Task Document: SO101AssemblingKits
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: SO-101 robot picks up a misplaced shape and inserts it into the kit tray
+# Reference: ManiSkill AssemblingKits-v1 adapted for SO-101 (scaled down for small desktop)
+
+task:
+  name: SO101AssemblingKits
+  description: "SO-101 follower arm picks up a misplaced colored shape piece and inserts it into the matching cutout slot on a kit tray board"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]
+  timestep: 0.01
+  decimation: 2
+  episode_length: 10.0
+  render_interval: 2
+  physx:
+    solver_type: TGS
+    bounce_threshold: 0.01
+    friction_correlation_distance: 0.00625
+    friction_offset_threshold: 0.01
+    gpu_max_rigid_contact_count: 8388608
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]
+
+episode:
+  kit_id: "kit_303"
+  obj_to_place_candidates: [9, 11, 12, 15, 17]
+  object_scale: [0.0015, 0.0015, 0.001]
+  kit_objects:
+    - object_id: 9
+      pos: [-0.0495, 0.0844, 0.0]
+      rot: 3.280
+    - object_id: 15
+      pos: [-0.1002, -0.1191, 0.0]
+      rot: 4.214
+    - object_id: 12
+      pos: [0.0553, 0.1616, 0.0]
+      rot: 5.114
+    - object_id: 11
+      pos: [0.0287, -0.0286, 0.0]
+      rot: 2.860
+    - object_id: 17
+      pos: [0.0356, -0.1666, 0.0]
+      rot: 0.735
+
+assets:
+  # SO-101 Follower Arm
+  - name: robot
+    type: articulation
+    source: usd
+    asset_path: "assets/robots/so101/so101.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]
+    initial_joints:
+      shoulder_pan: 0.0
+      shoulder_lift: -1.57
+      elbow_flex: 1.57
+      wrist_flex: 0.0
+      wrist_roll: 0.0
+      gripper: 1.0
+    actuators:
+      arm:
+        joint_names: ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"]
+        effort_limit: 10.0
+        stiffness: 17.8
+        damping: 0.60
+      hand:
+        joint_names: ["gripper"]
+        effort_limit: 10.0
+        stiffness: 200.0
+        damping: 10.0
+    ee_frame:
+      body: gripper_frame_link
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # Small desktop table
+  - name: table
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/Table"
+    position: [0.15, 0.0, -0.015]
+    scale: [0.30, 0.30, 0.03]
+    color: [0.6, 0.5, 0.4]
+    physics:
+      rigid_body: false
+      collision: true
+
+  # Kit tray (scaled 50% XY to fit desktop, positioned closer)
+  - name: kit_tray
+    type: static
+    source: usd
+    asset_path: "assets/assembling_kits/kit_303.usd"
+    prim_path: "/World/KitTray"
+    position: [0.20, 0.0, 0.005]
+    rotation: [1, 0, 0, 0]
+    scale: [0.5, 0.5, 1.0]
+    color: [0.278, 0.209, 0.169]
+    physics:
+      collision: true
+      rigid_body: false
+      collision_mesh: triangle
+
+  - name: shape_09
+    type: static
+    source: usd
+    asset_path: "assets/assembling_kits/shape_09.usd"
+    prim_path: "/World/Shape09"
+    object_id: 9
+    shape_name: "cloud"
+    slot_position_local: [-0.0495, 0.0844, -0.01]
+    slot_rotation_z: 3.280
+    position: [0.1752, 0.0422, 0.0]
+    rotation: [-0.0692, 0, 0, 0.9976]
+    scale: [0.0015, 0.0015, 0.001]
+    color: [0.306, 0.475, 0.655]
+    physics:
+      collision: false
+      rigid_body: false
+
+  - name: shape_11
+    type: static
+    source: usd
+    asset_path: "assets/assembling_kits/shape_11.usd"
+    prim_path: "/World/Shape11"
+    object_id: 11
+    shape_name: "circle"
+    slot_position_local: [0.0287, -0.0286, -0.01]
+    slot_rotation_z: 2.860
+    position: [0.2144, -0.0143, 0.0]
+    rotation: [0.1403, 0, 0, 0.9901]
+    scale: [0.0015, 0.0015, 0.001]
+    color: [0.95, 0.95, 0.95]
+    physics:
+      collision: false
+      rigid_body: false
+
+  - name: shape_12
+    type: rigid
+    source: usd
+    asset_path: "assets/assembling_kits/shape_12.usd"
+    prim_path: "/World/Shape12"
+    object_id: 12
+    shape_name: "G_letter"
+    slot_position_local: [0.0553, 0.1616, -0.01]
+    slot_rotation_z: 5.114
+    position: [0.16, 0.06, 0.0]
+    rotation: [-0.8340, 0, 0, 0.5518]
+    scale: [0.0015, 0.0015, 0.001]
+    color: [0.690, 0.478, 0.631]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.01
+    randomize:
+      position:
+        type: relative
+        x: [-0.03, 0.03]
+        y: [-0.03, 0.03]
+        z: 0.0
+
+  - name: shape_15
+    type: static
+    source: usd
+    asset_path: "assets/assembling_kits/shape_15.usd"
+    prim_path: "/World/Shape15"
+    object_id: 15
+    shape_name: "triangle"
+    slot_position_local: [-0.1002, -0.1191, -0.01]
+    slot_rotation_z: 4.214
+    position: [0.1499, -0.0596, 0.0]
+    rotation: [-0.5109, 0, 0, 0.8596]
+    scale: [0.0015, 0.0015, 0.001]
+    color: [0.929, 0.788, 0.282]
+    physics:
+      collision: false
+      rigid_body: false
+
+  - name: shape_17
+    type: static
+    source: usd
+    asset_path: "assets/assembling_kits/shape_17.usd"
+    prim_path: "/World/Shape17"
+    object_id: 17
+    shape_name: "pentagon"
+    slot_position_local: [0.0356, -0.1666, -0.01]
+    slot_rotation_z: 0.735
+    position: [0.2178, -0.0833, 0.0]
+    rotation: [0.9332, 0, 0, 0.3593]
+    scale: [0.0015, 0.0015, 0.001]
+    color: [0.349, 0.663, 0.310]
+    physics:
+      collision: false
+      rigid_body: false
+
+shape_to_place_config:
+  spawn_z: 0.01
+  physics:
+    rigid_body: true
+    collision: true
+    mass: 0.01
+    solver_position_iterations: 32
+    solver_velocity_iterations: 1
+    max_depenetration_velocity: 5.0
+  randomize:
+    position:
+      type: relative
+      x: [-0.03, 0.03]
+      y: [-0.03, 0.03]
+      z: 0.0
+    orientation:
+      yaw: [-3.14159, 3.14159]
+
+goal:
+  description: "Pick up the randomly misplaced shape and insert it into the matching cutout slot on the kit tray"
+  conditions:
+    - subject: shape_to_place
+      relation: in_slot
+      target: matching_cutout
+      tolerance: 0.015
+      description: "Misplaced shape inserted into its correct cutout (XY within 1.5cm, Z flush)"
+
+camera:
+  prim_path: "/World/Camera"
+  position: [0.40, 0.30, 0.30]
+  target: [0.12, 0.0, 0.005]
+  fov: 55
+  resolution: [1280, 720]
+
+notes:
+  - "Source: ManiSkill AssemblingKits-v1 adapted for SO-101"
+  - "SO-101 reach ~0.27m — kit tray at x=0.15, object_scale halved to [0.0015, 0.0015, 0.001]"
+  - "Kit tray scaled 50% in XY to fit 30cm desktop"
+  - "Uses same mesh assets as Franka version (kit_303 + shapes)"
+  - "Misplaced shape position randomized ±3cm in XY"
