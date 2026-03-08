@@ -1,7 +1,10 @@
 # Task Overview
 
-이 문서는 `tasks/` 아래 전체 **78개** task YAML과 현재까지 확인된 실행 상태를 한 곳에 모아 둔 상태 보드입니다.
-여기서 **ADC 검증**은 `run_data_collection.py` 경로를 실제로 실행했는지를 뜻하며, **dataset_generated**는 `raw_dataset/` 생성 기준입니다.
+대상: corpus 상태와 검증 evidence를 확인하는 사용자/기여자  
+이 문서가 다루는 것: task별 상태 보드와 실행 evidence  
+Task 설명과 추천 shortlist: `docs/task_descriptions_ko.md`
+
+이 문서는 `tasks/` corpus의 **상태 보드 source-of-truth**다. task가 무엇을 하는지는 `docs/task_descriptions_ko.md`, 분류/집계는 `docs/task_taxonomy.md`를 본다.
 
 ## Status Legend
 
@@ -27,107 +30,10 @@
 | `so101` | 13 | assembly (4), lift (1), pick_place (3), reach (1), sort (3), stack (1) | 1 | 1 | 1 | 0 |
 | `ur10e` | 17 | assembly (4), cabinet (3), pick_place (7), reach (1), stack (2) | 1 | 1 | 1 | 0 |
 
-## Task Descriptions
+## 관련 문서
 
-task 이름과 실제 목표를 빠르게 훑어볼 수 있는 섹션입니다. 여기의 `ADC verified`는 해당 task를 데이터 수집 파이프라인까지 실제로 실행해 봤는지 표시합니다.
-
-### franka
-
-| Category | Task | What it does | ADC verified | YAML |
-| --- | --- | --- | --- | --- |
-| `assembly` | `FrankaAssemblingKits` | Pick up the randomly misplaced shape and insert it into the matching cutout slot on the kit tray | `unknown` | `tasks/franka/assembly/franka_assembling_kits.yaml` |
-| `assembly` | `FrankaLiftPegUpright` | Lift the two-tone peg from lying flat to an upright vertical position on the table | `unknown` | `tasks/franka/assembly/franka_lift_peg_upright.yaml` |
-| `assembly` | `FrankaPegInsertionSide` | Pick up the peg and insert the orange end sideways into the box hole | `unknown` | `tasks/franka/assembly/franka_peg_insertion_side.yaml` |
-| `assembly` | `FrankaPlugCharger` | Pick up the charger and insert its prongs into the receptacle slots | `unknown` | `tasks/franka/assembly/franka_plug_charger.yaml` |
-| `cabinet` | `FrankaCabinet` | Open the top drawer of the cabinet by grasping the handle and pulling | `unknown` | `tasks/franka/cabinet/franka_cabinet.yaml` |
-| `cabinet` | `FrankaCabinetBlocks` | Pick all 3 colored blocks from cabinet top and place them on the target zone | `unknown` | `tasks/franka/cabinet/franka_cabinet_blocks.yaml` |
-| `cabinet` | `FrankaCabinetYCB` | Pick all 3 YCB objects from cabinet top and place them on the target zone | `unknown` | `tasks/franka/cabinet/franka_cabinet_ycb.yaml` |
-| `lift` | `FrankaLift` | Lift the cube to the commanded target pose above the table | `unknown` | `tasks/franka/lift/franka_lift.yaml` |
-| `lift` | `FrankaLiftSugarBox` | Lift the sugar box to the commanded target pose above the table | `unknown` | `tasks/franka/lift/franka_lift_sugar_box.yaml` |
-| `peg_insert` | `FrankaFactoryPegInsert` | Insert the 8mm peg into the 8mm hole socket on the table | `unknown` | `tasks/franka/peg_insert/franka_peg_insert.yaml` |
-| `pick_place` | `FrankaMultiPickPlace` | Collect all three colored blocks onto the gold collection zone | `unknown` | `tasks/franka/pick_place/franka_multi_pick_place.yaml` |
-| `pick_place` | `FrankaPickPlace` | Pick the DexCube and place it on the green target marker | `unknown` | `tasks/franka/pick_place/franka_pick_place.yaml` |
-| `pick_place` | `FrankaPickPlaceBottle` | Pick the mustard bottle and place it on the green target marker | `unknown` | `tasks/franka/pick_place/franka_pick_place_bottle.yaml` |
-| `pick_place` | `FrankaPickPlaceBox` | Pick the sugar box and place it on the green target marker | `unknown` | `tasks/franka/pick_place/franka_pick_place_box.yaml` |
-| `pick_place` | `FrankaPickPlaceCan` | Pick the tomato soup can and place it on the green target marker | `unknown` | `tasks/franka/pick_place/franka_pick_place_can.yaml` |
-| `pick_place` | `FrankaPickPlaceDrawer` | Pick the DexCube from the table and place it on top of the small drawer box (green marker) | `unknown` | `tasks/franka/pick_place/franka_pick_place_drawer.yaml` |
-| `pick_place` | `FrankaPickPlaceGears` | Pick all gears and the nut from the table and place them into the tray | `unknown` | `tasks/franka/pick_place/franka_pick_place_gears.yaml` |
-| `pick_place` | `FrankaPickPlaceMug` | Pick the mug and place it on the green target marker | `unknown` | `tasks/franka/pick_place/franka_pick_place_mug.yaml` |
-| `pick_place` | `FrankaPickPlaceTuna` | Pick the tuna fish can and place it on the green target marker | `unknown` | `tasks/franka/pick_place/franka_pick_place_tuna.yaml` |
-| `sort` | `FrankaColorSort` | Sort each colored block onto its matching colored zone: blue block -> blue zone, red block -> red zone, green block -> green zone | `unknown` | `tasks/franka/sort/franka_color_sort.yaml` |
-| `sort` | `FrankaLineArrange` | Arrange blocks in a line at x=0.55: blue (y=-0.06), red (y=0.0), green (y=0.06) | `unknown` | `tasks/franka/sort/franka_line_arrange.yaml` |
-| `sort` | `FrankaShapeSort` | Sort objects by shape: place cubes on the purple bin, spheres on the rose bin | `unknown` | `tasks/franka/sort/franka_shape_sort.yaml` |
-| `stack` | `FrankaStack` | Stack cubes in order: Cube_1/Blue (bottom) -> Cube_2/Red (middle) -> Cube_3/Green (top) | `yes` | `tasks/franka/stack/franka_stack.yaml` |
-| `stack` | `FrankaStackTray` | Stack cubes inside the tray in order: Blue (bottom) -> Red (middle) -> Green (top) | `unknown` | `tasks/franka/stack/franka_stack_tray.yaml` |
-
-### openarm
-
-| Category | Task | What it does | ADC verified | YAML |
-| --- | --- | --- | --- | --- |
-| `assembly` | `OpenArmAssemblingKits` | Pick up the randomly misplaced shape and insert it into the matching cutout slot on the kit tray | `unknown` | `tasks/openarm/assembly/openarm_assembling_kits.yaml` |
-| `assembly` | `OpenArmLiftPegUpright` | Lift the two-tone peg from lying flat to an upright vertical position on the table | `unknown` | `tasks/openarm/assembly/openarm_lift_peg_upright.yaml` |
-| `assembly` | `OpenArmPegInsertionSide` | Pick up the peg and insert the orange end sideways into the box hole | `unknown` | `tasks/openarm/assembly/openarm_peg_insertion_side.yaml` |
-| `assembly` | `OpenArmPlugCharger` | Pick up the charger and insert its prongs into the receptacle slots | `unknown` | `tasks/openarm/assembly/openarm_plug_charger.yaml` |
-| `cabinet` | `OpenArmCabinet` | Open the bottom drawer of the cabinet by grasping the handle and pulling | `unknown` | `tasks/openarm/cabinet/openarm_cabinet.yaml` |
-| `cabinet` | `OpenArmCabinetBlocks` | Pick all 3 colored blocks from cabinet top and place them on the target zone | `unknown` | `tasks/openarm/cabinet/openarm_cabinet_blocks.yaml` |
-| `cabinet` | `OpenArmCabinetYCB` | Pick all 3 YCB objects from cabinet top and place them on the target zone | `unknown` | `tasks/openarm/cabinet/openarm_cabinet_ycb.yaml` |
-| `lift` | `OpenArmLift` | Lift the cube to the commanded target pose above the table | `unknown` | `tasks/openarm/lift/openarm_lift.yaml` |
-| `lift` | `OpenArmLiftSugarBox` | Lift the sugar box to the commanded target pose above the table | `unknown` | `tasks/openarm/lift/openarm_lift_sugar_box.yaml` |
-| `pick_place` | `OpenArmMultiPickPlace` | Collect all three colored blocks onto the gold collection zone | `unknown` | `tasks/openarm/pick_place/openarm_multi_pick_place.yaml` |
-| `pick_place` | `OpenArmPickPlace` | Pick the DexCube and place it on the green target marker | `unknown` | `tasks/openarm/pick_place/openarm_pick_place.yaml` |
-| `pick_place` | `OpenArmPickPlaceBottle` | Pick the mustard bottle and place it on the green target marker | `unknown` | `tasks/openarm/pick_place/openarm_pick_place_bottle.yaml` |
-| `pick_place` | `OpenArmPickPlaceBox` | Pick the sugar box and place it on the green target marker | `unknown` | `tasks/openarm/pick_place/openarm_pick_place_box.yaml` |
-| `pick_place` | `OpenArmPickPlaceCan` | Pick the tomato soup can and place it on the green target marker | `unknown` | `tasks/openarm/pick_place/openarm_pick_place_can.yaml` |
-| `pick_place` | `OpenArmPickPlaceDrawer` | Pick the DexCube from the table and place it on top of the small drawer box (green marker) | `unknown` | `tasks/openarm/pick_place/openarm_pick_place_drawer.yaml` |
-| `pick_place` | `OpenArmPickPlaceGears` | Pick all gears and the nut from the table and place them into the tray | `unknown` | `tasks/openarm/pick_place/openarm_pick_place_gears.yaml` |
-| `pick_place` | `OpenArmPickPlaceMug` | Pick the mug and place it on the green target marker | `unknown` | `tasks/openarm/pick_place/openarm_pick_place_mug.yaml` |
-| `pick_place` | `OpenArmPickPlaceTuna` | Pick the tuna fish can and place it on the green target marker | `unknown` | `tasks/openarm/pick_place/openarm_pick_place_tuna.yaml` |
-| `reach` | `OpenArmReach` | Track the commanded end-effector pose (position + orientation) in 6D workspace | `unknown` | `tasks/openarm/reach/openarm_reach.yaml` |
-| `sort` | `OpenArmColorSort` | Sort each colored block onto its matching colored zone: blue block -> blue zone, red block -> red zone, green block -> green zone | `unknown` | `tasks/openarm/sort/openarm_color_sort.yaml` |
-| `sort` | `OpenArmLineArrange` | Arrange blocks in a line at x=0.42: blue (y=-0.06), red (y=0.0), green (y=0.06) | `unknown` | `tasks/openarm/sort/openarm_line_arrange.yaml` |
-| `sort` | `OpenArmShapeSort` | Sort objects by shape: place cubes on the purple bin, spheres on the rose bin | `unknown` | `tasks/openarm/sort/openarm_shape_sort.yaml` |
-| `stack` | `OpenArmStack` | Stack cubes in order: Cube_1/Blue (bottom) -> Cube_2/Red (middle) -> Cube_3/Green (top) | `yes` | `tasks/openarm/stack/openarm_stack.yaml` |
-| `stack` | `OpenArmStackTray` | Stack cubes inside the tray in order: Blue (bottom) -> Red (middle) -> Green (top) | `unknown` | `tasks/openarm/stack/openarm_stack_tray.yaml` |
-
-### so101
-
-| Category | Task | What it does | ADC verified | YAML |
-| --- | --- | --- | --- | --- |
-| `assembly` | `SO101AssemblingKits` | Pick up the randomly misplaced shape and insert it into the matching cutout slot on the kit tray | `unknown` | `tasks/so101/assembly/so101_assembling_kits.yaml` |
-| `assembly` | `SO101LiftPegUpright` | Lift the two-tone peg from lying flat to an upright vertical position on the desktop | `unknown` | `tasks/so101/assembly/so101_lift_peg_upright.yaml` |
-| `assembly` | `SO101PegInsertionSide` | Pick up the peg and insert the orange end sideways into the box hole | `unknown` | `tasks/so101/assembly/so101_peg_insertion_side.yaml` |
-| `assembly` | `SO101PlugCharger` | Pick up the charger and insert its prongs into the receptacle slots | `unknown` | `tasks/so101/assembly/so101_plug_charger.yaml` |
-| `lift` | `SO101Lift` | Lift the cube to the commanded target pose above the desktop | `unknown` | `tasks/so101/lift/so101_lift.yaml` |
-| `pick_place` | `SO101MultiPickPlace` | Collect all three colored cubes onto the gold collection zone | `unknown` | `tasks/so101/pick_place/so101_multi_pick_place.yaml` |
-| `pick_place` | `SO101PickPlace` | Pick the cube and place it on the green target marker | `unknown` | `tasks/so101/pick_place/so101_pick_place.yaml` |
-| `pick_place` | `SO101PickPlaceCylinder` | Pick the cylinder and place it on the green target marker | `unknown` | `tasks/so101/pick_place/so101_pick_place_cylinder.yaml` |
-| `reach` | `SO101Reach` | Track the commanded end-effector pose (position + orientation) in 6D workspace | `unknown` | `tasks/so101/reach/so101_reach.yaml` |
-| `sort` | `SO101ColorSort` | Sort each colored cube onto its matching colored zone: blue -> blue zone, red -> red zone, green -> green zone | `unknown` | `tasks/so101/sort/so101_color_sort.yaml` |
-| `sort` | `SO101LineArrange` | Arrange cubes in a line at x=0.18: blue (y=-0.04), red (y=0.0), green (y=0.04) | `unknown` | `tasks/so101/sort/so101_line_arrange.yaml` |
-| `sort` | `SO101ShapeSort` | Sort objects by shape: place cubes on the purple bin, spheres on the rose bin | `unknown` | `tasks/so101/sort/so101_shape_sort.yaml` |
-| `stack` | `SO101Stack` | Stack cubes in order: Cube_1/Blue (bottom) -> Cube_2/Red (middle) -> Cube_3/Green (top) | `yes` | `tasks/so101/stack/so101_stack.yaml` |
-
-### ur10e
-
-| Category | Task | What it does | ADC verified | YAML |
-| --- | --- | --- | --- | --- |
-| `assembly` | `UR10eAssemblingKits` | Pick up the randomly misplaced shape and insert it into the matching cutout slot on the kit tray | `unknown` | `tasks/ur10e/assembly/ur10e_assembling_kits.yaml` |
-| `assembly` | `UR10eLiftPegUpright` | Lift the two-tone peg from lying flat to an upright vertical position on the table | `unknown` | `tasks/ur10e/assembly/ur10e_lift_peg_upright.yaml` |
-| `assembly` | `UR10ePegInsertionSide` | Pick up the peg and insert the orange end sideways into the box hole | `unknown` | `tasks/ur10e/assembly/ur10e_peg_insertion_side.yaml` |
-| `assembly` | `UR10ePlugCharger` | Pick up the charger and insert its prongs into the receptacle slots | `unknown` | `tasks/ur10e/assembly/ur10e_plug_charger.yaml` |
-| `cabinet` | `UR10eCabinet` | Open the top drawer of the cabinet by pulling the handle | `unknown` | `tasks/ur10e/cabinet/ur10e_cabinet.yaml` |
-| `cabinet` | `UR10eCabinetBlocks` | Pick all 3 colored blocks from cabinet top and place them on the target zone | `unknown` | `tasks/ur10e/cabinet/ur10e_cabinet_blocks.yaml` |
-| `cabinet` | `UR10eCabinetYCB` | Pick all 3 YCB objects from cabinet top and place them on the target zone | `unknown` | `tasks/ur10e/cabinet/ur10e_cabinet_ycb.yaml` |
-| `pick_place` | `UR10ePickPlace` | Pick the DexCube with Robotiq 2F-85 gripper and place it on the green target marker | `unknown` | `tasks/ur10e/pick_place/ur10e_pick_place.yaml` |
-| `pick_place` | `UR10ePickPlaceBottle` | Pick the mustard bottle with Robotiq 2F-85 gripper and place it on the green target marker | `unknown` | `tasks/ur10e/pick_place/ur10e_pick_place_bottle.yaml` |
-| `pick_place` | `UR10ePickPlaceBox` | Pick the sugar box with the Robotiq 2F-85 gripper and place it on the green target marker | `unknown` | `tasks/ur10e/pick_place/ur10e_pick_place_box.yaml` |
-| `pick_place` | `UR10ePickPlaceCan` | Pick the tomato soup can with the Robotiq 2F-85 gripper and place it on the green target marker | `unknown` | `tasks/ur10e/pick_place/ur10e_pick_place_can.yaml` |
-| `pick_place` | `UR10ePickPlaceDrawer` | Pick the DexCube with Robotiq 2F-85 gripper and place it on top of the small drawer box (green marker) | `unknown` | `tasks/ur10e/pick_place/ur10e_pick_place_drawer.yaml` |
-| `pick_place` | `UR10ePickPlaceMug` | Pick the mug with the Robotiq 2F-85 gripper and place it on the green target marker | `unknown` | `tasks/ur10e/pick_place/ur10e_pick_place_mug.yaml` |
-| `pick_place` | `UR10ePickPlaceTuna` | Pick the tuna fish can with Robotiq 2F-85 gripper and place it on the green target marker | `unknown` | `tasks/ur10e/pick_place/ur10e_pick_place_tuna.yaml` |
-| `reach` | `UR10eReach` | Move the UR10e end-effector to the red target marker position | `unknown` | `tasks/ur10e/reach/ur10e_reach.yaml` |
-| `stack` | `UR10eStack` | Stack the three cubes (blue on bottom, red in middle, green on top) | `yes` | `tasks/ur10e/stack/ur10e_stack.yaml` |
-| `stack` | `UR10eStackTray` | Stack cubes inside the tray with Robotiq 2F-85 gripper in order: Blue (bottom) -> Red (middle) -> Green (top) | `unknown` | `tasks/ur10e/stack/ur10e_stack_tray.yaml` |
+- `docs/task_descriptions_ko.md`
+- `docs/task_taxonomy.md`
 
 ## Task Board
 
@@ -157,7 +63,7 @@ task 이름과 실제 목표를 빠르게 훑어볼 수 있는 섹션입니다. 
 | `sort` | `FrankaColorSort` | `tasks/franka/sort/franka_color_sort.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
 | `sort` | `FrankaLineArrange` | `tasks/franka/sort/franka_line_arrange.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
 | `sort` | `FrankaShapeSort` | `tasks/franka/sort/franka_shape_sort.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
-| `stack` | `FrankaStack` | `tasks/franka/stack/franka_stack.yaml` | `pass` | `yes` | `yes` | `yes` | IsaacLab eval 96/100. Latest ADC verified run reached target_met=true and produced raw_dataset. | `outputs/isaaclab/frankastack_20260307_102915/eval_report.json`<br>`outputs/data_collection/FrankaStack_20260307_110013/collection_results.json` |
+| `stack` | `FrankaStack` | `tasks/franka/stack/franka_stack.yaml` | `pass` | `yes` | `yes` | `yes` | IsaacLab eval 96/100. ADC verified run reached `target_met=true`, produced `raw_dataset/`, and was later reused for export/preprocess verification. | `outputs/isaaclab/frankastack_20260307_102915/eval_report.json`<br>`outputs/data_collection/FrankaStack_20260308_083022/collection_results.json` |
 | `stack` | `FrankaStackTray` | `tasks/franka/stack/franka_stack_tray.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
 
 ### openarm
@@ -186,7 +92,7 @@ task 이름과 실제 목표를 빠르게 훑어볼 수 있는 섹션입니다. 
 | `sort` | `OpenArmColorSort` | `tasks/openarm/sort/openarm_color_sort.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
 | `sort` | `OpenArmLineArrange` | `tasks/openarm/sort/openarm_line_arrange.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
 | `sort` | `OpenArmShapeSort` | `tasks/openarm/sort/openarm_shape_sort.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
-| `stack` | `OpenArmStack` | `tasks/openarm/stack/openarm_stack.yaml` | `pass` | `yes` | `yes` | `yes` | Source-level generator fixes now let `run_isaac_lab.py --evaluate` pass without manual env edits. Differential IK motion reaches the stack waypoints and deterministic ADC fallback completes the full stack task. | `outputs/isaaclab/openarmstack_20260307_182545/eval_report.json`<br>`outputs/motion_eval/OpenArmStack_20260307_191640/motion_report.json`<br>`outputs/data_collection/OpenArmStack_20260307_191829/collection_results.json` |
+| `stack` | `OpenArmStack` | `tasks/openarm/stack/openarm_stack.yaml` | `pass` | `yes` | `yes` | `yes` | Source-level generator fixes let `run_isaac_lab.py --evaluate` pass without manual env edits. Differential IK motion reaches the stack waypoints, and at least one verified ADC run completed the full stack task. A later dataset-schema rerun produced raw data but did not meet the target again. | `outputs/isaaclab/openarmstack_20260307_182545/eval_report.json`<br>`outputs/motion_eval/OpenArmStack_20260307_191640/motion_report.json`<br>`outputs/data_collection/OpenArmStack_20260307_191829/collection_results.json` |
 | `stack` | `OpenArmStackTray` | `tasks/openarm/stack/openarm_stack_tray.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
 
 ### so101
@@ -205,7 +111,7 @@ task 이름과 실제 목표를 빠르게 훑어볼 수 있는 섹션입니다. 
 | `sort` | `SO101ColorSort` | `tasks/so101/sort/so101_color_sort.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
 | `sort` | `SO101LineArrange` | `tasks/so101/sort/so101_line_arrange.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
 | `sort` | `SO101ShapeSort` | `tasks/so101/sort/so101_shape_sort.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
-| `stack` | `SO101Stack` | `tasks/so101/stack/so101_stack.yaml` | `pass` | `yes` | `yes` | `no` | IsaacLab generation/evaluation, motion sanity, and ADC smoke all run without manual env edits. The remaining blocker is not action delivery: EE tracking is now within about 2 mm at grasp, but the claw still closes without lifting the cube, so the failure is in grasp/contact geometry. | `outputs/isaaclab/so101stack_20260307_190110/eval_report.json`<br>`outputs/motion_eval/SO101Stack_20260307_193751/motion_report.json`<br>`outputs/data_collection/SO101Stack_20260307_193930/collection_results.json` |
+| `stack` | `SO101Stack` | `tasks/so101/stack/so101_stack.yaml` | `pass` | `yes` | `yes` | `no` | IsaacLab generation/evaluation, motion sanity, and ADC smoke all run without manual env edits. The remaining blocker is not action delivery: EE tracking is within a few mm at grasp, but the claw still closes without lifting the cube, so the failure is in grasp/contact geometry. | `outputs/isaaclab/so101stack_20260307_190110/eval_report.json`<br>`outputs/motion_eval/SO101Stack_20260307_193751/motion_report.json`<br>`outputs/data_collection/SO101Stack_20260308_083356/collection_results.json` |
 
 ### ur10e
 

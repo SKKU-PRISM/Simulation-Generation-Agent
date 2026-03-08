@@ -171,7 +171,7 @@ if __name__ == "__main__":
         isaaclab_path = Path(
             self.cfg.get("isaaclab_path")
             or os.environ.get("ISAACLAB_PATH")
-            or os.path.expanduser("~/workspace/IsaacLab")
+            or str((PROJECT_ROOT.parent / "IsaacLab").resolve())
         ).expanduser().resolve()
         conda_env = self.cfg.get("conda_env", "env_isaaclab")
         launcher = (isaaclab_path / "isaaclab.sh").resolve()

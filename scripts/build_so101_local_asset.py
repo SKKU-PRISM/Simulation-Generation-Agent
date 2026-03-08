@@ -38,6 +38,19 @@ SO101_MOVING_PAD_CENTER = (0.0281, -0.0085, 0.0747)
 SO101_MOVING_PAD_HALF_SIZE = (0.008, 0.0025, 0.010)
 
 
+def _sanitize_converter_config(config_path: Path, output_dir: Path) -> None:
+    if not config_path.exists():
+        return
+    sanitized_lines = []
+    for line in config_path.read_text().splitlines():
+        if line.startswith("asset_path:"):
+            line = 'asset_path: "{ADC_URDF_DIR}/so101_robot3.urdf"'
+        elif line.startswith("usd_dir:"):
+            line = f'usd_dir: {output_dir.relative_to(PROJECT_ROOT)}'
+        sanitized_lines.append(line)
+    config_path.write_text("\n".join(sanitized_lines) + "\n")
+
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--urdf", type=Path, default=DEFAULT_URDF, help="Source SO-101 URDF")
 parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR, help="Directory for the converted USD")
@@ -111,8 +124,31 @@ def _postprocess_so101_usd(usd_path: Path) -> list[str]:
             SO101_MOVING_PAD_HALF_SIZE,
         ),
     ]
+    stage.GetRootLayer().documentation = ""
     stage.Save()
     return added
+
+
+def _rewrite_layer_as_clean_usdc(usd_path: Path) -> None:
+    """Rewrite the USD layer through a fresh crate file to drop stale provenance strings."""
+    from pxr import Sdf, Usd
+
+    stage = Usd.Stage.Open(str(usd_path))
+    if stage is None:
+        raise RuntimeError(f"Failed to reopen USD for sanitization: {usd_path}")
+
+    layer = stage.GetRootLayer()
+    layer.documentation = ""
+    layer.comment = ""
+    sanitized_path = usd_path.with_suffix(".sanitized.usd")
+    if sanitized_path.exists():
+        sanitized_path.unlink()
+    sanitized = Sdf.Layer.CreateNew(str(sanitized_path), args={"format": "usdc"})
+    sanitized.TransferContent(layer)
+    sanitized.documentation = ""
+    sanitized.comment = ""
+    sanitized.Save()
+    sanitized_path.replace(usd_path)
 
 
 def main() -> int:
@@ -161,7 +197,9 @@ def main() -> int:
         finally:
             os.chdir(prev_cwd)
         usd_path = Path(converter.usd_path).resolve()
+        _sanitize_converter_config(output_dir / "config.yaml", output_dir)
         added = _postprocess_so101_usd(usd_path)
+        _rewrite_layer_as_clean_usdc(usd_path)
         print(f"Built local SO-101 asset: {usd_path}")
         for path in added:
             print(f"  added collision proxy: {path}")

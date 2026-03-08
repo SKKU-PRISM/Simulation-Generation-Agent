@@ -791,6 +791,7 @@ class SimSkills:
         *,
         approach_offset: float,
         grasp_offset: Optional[float] = None,
+        approach_direction_world: Optional[np.ndarray] = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Compute grasp/approach targets in world frame for the current robot."""
         obj_pos = np.asarray(object_position, dtype=np.float64).copy()
@@ -798,23 +799,44 @@ class SimSkills:
         tcp_targeting = bool(self.cfg.ee_frame_offset_position)
         lateral_bias = float(getattr(self.cfg, "grasp_lateral_bias", 0.0) or 0.0)
         claw_grasp_z_bias = 0.0 if self.cfg.gripper_type == "claw" else 0.0
+        approach_direction = None
+        if approach_direction_world is not None:
+            approach_direction = np.asarray(approach_direction_world, dtype=np.float64).reshape(-1)
+            norm = np.linalg.norm(approach_direction)
+            if norm > 1e-9:
+                approach_direction = approach_direction / norm
+            else:
+                approach_direction = None
 
         if self.cfg.arm_dofs == 6:
             grasp_pos = obj_pos.copy()
-            grasp_pos[2] += grasp_offset
+            if approach_direction is None:
+                grasp_pos[2] += grasp_offset
+            else:
+                grasp_pos += approach_direction * grasp_offset
             approach_pos = grasp_pos.copy()
-            approach_pos[2] += approach_offset
+            if approach_direction is None:
+                approach_pos[2] += approach_offset
+            else:
+                approach_pos += approach_direction * approach_offset
             return grasp_pos, approach_pos
 
         grasp_pos = obj_pos.copy()
-        grasp_pos[2] += (0.0 if tcp_targeting else grasp_offset) + claw_grasp_z_bias
+        directed_offset = (0.0 if tcp_targeting else grasp_offset) + claw_grasp_z_bias
+        if approach_direction is None:
+            grasp_pos[2] += directed_offset
+        else:
+            grasp_pos += approach_direction * directed_offset
         if lateral_bias:
             grasp_pos = self._apply_local_tool_offset(
                 grasp_pos,
                 local_offset=np.array([0.0, lateral_bias, 0.0], dtype=np.float64),
             )
         approach_pos = grasp_pos.copy()
-        approach_pos[2] += approach_offset
+        if approach_direction is None:
+            approach_pos[2] += approach_offset
+        else:
+            approach_pos += approach_direction * approach_offset
         return grasp_pos, approach_pos
 
     def _compute_place_targets(
@@ -823,6 +845,7 @@ class SimSkills:
         *,
         approach_offset: float,
         drop_offset: float,
+        approach_direction_world: Optional[np.ndarray] = None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Compute place/approach targets in world frame for the current robot."""
         target_position = np.asarray(target_position, dtype=np.float64).copy()
@@ -830,23 +853,44 @@ class SimSkills:
         tcp_targeting = bool(self.cfg.ee_frame_offset_position)
         lateral_bias = float(getattr(self.cfg, "grasp_lateral_bias", 0.0) or 0.0)
         claw_release_z_bias = 0.0 if self.cfg.gripper_type == "claw" else 0.0
+        approach_direction = None
+        if approach_direction_world is not None:
+            approach_direction = np.asarray(approach_direction_world, dtype=np.float64).reshape(-1)
+            norm = np.linalg.norm(approach_direction)
+            if norm > 1e-9:
+                approach_direction = approach_direction / norm
+            else:
+                approach_direction = None
 
         if self.cfg.arm_dofs == 6:
             place_pos = target_position.copy()
-            place_pos[2] += drop_offset + finger_offset
+            if approach_direction is None:
+                place_pos[2] += drop_offset + finger_offset
+            else:
+                place_pos += approach_direction * (drop_offset + finger_offset)
             approach_pos = place_pos.copy()
-            approach_pos[2] += approach_offset
+            if approach_direction is None:
+                approach_pos[2] += approach_offset
+            else:
+                approach_pos += approach_direction * approach_offset
             return place_pos, approach_pos
 
         place_pos = target_position.copy()
-        place_pos[2] += drop_offset + claw_release_z_bias + (0.0 if tcp_targeting else finger_offset)
+        directed_offset = drop_offset + claw_release_z_bias + (0.0 if tcp_targeting else finger_offset)
+        if approach_direction is None:
+            place_pos[2] += directed_offset
+        else:
+            place_pos += approach_direction * directed_offset
         if lateral_bias:
             place_pos = self._apply_local_tool_offset(
                 place_pos,
                 local_offset=np.array([0.0, lateral_bias, 0.0], dtype=np.float64),
             )
         approach_pos = place_pos.copy()
-        approach_pos[2] += approach_offset
+        if approach_direction is None:
+            approach_pos[2] += approach_offset
+        else:
+            approach_pos += approach_direction * approach_offset
         return place_pos, approach_pos
 
     def _world_target_to_ik_target(
@@ -1054,6 +1098,13 @@ class SimSkills:
         self._local_frame_offset = np.eye(3)  # default: no offset
 
         if not getattr(self.ik, "supports_offline_fk", True):
+            if self.cfg.name == "openarm":
+                logger.info(
+                    "Palm-down init using default world-down rotation for OpenArm "
+                    "backend=%s",
+                    getattr(self.ik, "backend_name", "unknown"),
+                )
+                return
             try:
                 _, ee_quat = self.robot.read_ee_pose()
                 self.PALM_DOWN_ROTATION = self._quat_to_rotation_matrix(ee_quat)
@@ -1295,6 +1346,7 @@ class SimSkills:
         target_xyz: np.ndarray,
         target_rotation: np.ndarray,
         duration: Optional[float] = None,
+        allow_position_only_fallback: bool = True,
     ) -> bool:
         """
         Move end-effector to target [x,y,z] + orientation via 6-DOF IK.
@@ -1354,7 +1406,7 @@ class SimSkills:
                     break
 
         # Last resort: 3-DOF position-only IK
-        if not ik_success:
+        if not ik_success and allow_position_only_fallback:
             logger.warning(
                 f"IK (6-DOF + tilts) all failed for pos={target_xyz}. "
                 f"Falling back to 3-DOF position-only IK."
@@ -1363,6 +1415,12 @@ class SimSkills:
                 target_base, current_arm_joints
             )
             target_arm_joints = self._normalize_arm_joint_targets(target_arm_joints, current_arm_joints)
+        elif not ik_success:
+            logger.warning(
+                "IK (6-DOF + tilts) failed for pos=%s with strict orientation enabled",
+                target_xyz,
+            )
+            return False
 
         goal_xyz_world = self._compute_goal_tcp_world_xyzrpy(target_arm_joints)
         goal_xyz_world = (
@@ -1510,7 +1568,21 @@ class SimSkills:
 
     # ---- Composite Skills ----
 
-    def _move_palm_down(self, target_xyz, duration=None):
+    def _approach_rotation(self, approach_angle_deg: float | None = None) -> np.ndarray:
+        """Return the world-frame grasp rotation for the requested approach angle."""
+
+        rotation = np.asarray(self.PALM_DOWN_ROTATION, dtype=np.float64)
+        if approach_angle_deg is None:
+            return rotation
+        return rotation @ self._rot_y(np.radians(float(approach_angle_deg)))
+
+    def _move_palm_down(
+        self,
+        target_xyz,
+        duration=None,
+        approach_angle_deg: float | None = None,
+        allow_position_only_fallback: bool = True,
+    ):
         """Move EE to target while maintaining palm-down orientation.
 
         Selects the appropriate IK strategy based on robot DOF:
@@ -1520,12 +1592,23 @@ class SimSkills:
         - 7+ DOF: Full 6-DOF pose IK with PALM_DOWN_ROTATION
         - 4-5 DOF: Position IK with wrist lock
         """
+        target_rotation = self._approach_rotation(approach_angle_deg)
         if getattr(self.ik, "backend_name", "") == "differential_ik":
-            # Position-first control is more robust for OpenArm than forcing the
-            # ready-pose orientation through every reach target.
+            if self.cfg.arm_dofs >= 7:
+                return self.move_to_pose(
+                    target_xyz,
+                    target_rotation,
+                    duration=duration,
+                    allow_position_only_fallback=allow_position_only_fallback,
+                )
             return self.move_to_position(target_xyz, duration=duration)
         if self.cfg.arm_dofs >= 7:
-            return self.move_to_pose(target_xyz, self.PALM_DOWN_ROTATION, duration=duration)
+            return self.move_to_pose(
+                target_xyz,
+                target_rotation,
+                duration=duration,
+                allow_position_only_fallback=allow_position_only_fallback,
+            )
         elif self.cfg.arm_dofs == 6 and self._palm_down_pitch is not None:
             # 4-DOF IK: 3D position + pitch constraint.
             # Joints 0-3 free (4 DOF), joints 4,5 locked at ready values.
@@ -1537,6 +1620,31 @@ class SimSkills:
             return self.move_to_position(
                 target_xyz, duration=duration, lock_orientation=True
             )
+
+    def _move_with_target_rotation(
+        self,
+        target_xyz: np.ndarray,
+        *,
+        duration: Optional[float] = None,
+        target_rotation_world: Optional[np.ndarray] = None,
+        approach_angle_deg: float | None = None,
+        allow_position_only_fallback: bool = True,
+    ) -> bool:
+        """Move to a target pose using an explicit world rotation when provided."""
+
+        if target_rotation_world is None:
+            return self._move_palm_down(
+                target_xyz,
+                duration=duration,
+                approach_angle_deg=approach_angle_deg,
+                allow_position_only_fallback=allow_position_only_fallback,
+            )
+        return self.move_to_pose(
+            target_xyz,
+            np.asarray(target_rotation_world, dtype=np.float64),
+            duration=duration,
+            allow_position_only_fallback=allow_position_only_fallback,
+        )
 
     def _move_cartesian_steps(
         self,
@@ -1610,6 +1718,50 @@ class SimSkills:
             2 * (y * z - x * w),
             1 - 2 * (x * x + y * y),
         ])
+
+    def _verify_tool_axis_alignment(
+        self,
+        expected_axis_world: Optional[np.ndarray],
+        *,
+        tolerance_deg: float = 25.0,
+        label: str = "tool-axis",
+    ) -> tuple[bool, Optional[float], Optional[np.ndarray]]:
+        """Verify that the EE hand-Z axis aligns with an expected world axis."""
+
+        if expected_axis_world is None:
+            return True, None, None
+
+        try:
+            _, ee_quat = self.robot.read_ee_pose()
+        except Exception as exc:
+            logger.warning("Unable to read EE pose for %s alignment check: %s", label, exc)
+            return False, None, None
+
+        expected = np.asarray(expected_axis_world, dtype=np.float64).reshape(-1)
+        expected_norm = np.linalg.norm(expected)
+        if expected_norm < 1e-9:
+            logger.warning("Skipping %s alignment check: expected axis is zero-length", label)
+            return False, None, None
+        expected = expected / expected_norm
+
+        hand_z = self._quat_to_hand_z(np.asarray(ee_quat, dtype=np.float64))
+        hand_norm = np.linalg.norm(hand_z)
+        if hand_norm < 1e-9:
+            logger.warning("Skipping %s alignment check: actual hand axis is zero-length", label)
+            return False, None, None
+        actual = hand_z / hand_norm
+        angle_deg = float(np.degrees(np.arccos(np.clip(np.dot(actual, expected), -1.0, 1.0))))
+        aligned = angle_deg <= float(tolerance_deg)
+        if not aligned:
+            logger.warning(
+                "%s alignment failed: angle=%.1fdeg actual=%s expected=%s tolerance=%.1fdeg",
+                label,
+                angle_deg,
+                np.round(actual, 3),
+                np.round(expected, 3),
+                tolerance_deg,
+            )
+        return aligned, angle_deg, actual
 
     @staticmethod
     def _quat_to_rotation_matrix(quat_wxyz: np.ndarray) -> np.ndarray:
@@ -1758,6 +1910,12 @@ class SimSkills:
         object_name: str,
         approach_offset: float = 0.10,
         grasp_offset: Optional[float] = None,
+        approach_angle_deg: float | None = None,
+        target_rotation_world: Optional[np.ndarray] = None,
+        approach_direction_world: Optional[np.ndarray] = None,
+        required_tool_axis_world: Optional[np.ndarray] = None,
+        required_tool_axis_tolerance_deg: float = 25.0,
+        allow_position_only_fallback: bool = True,
         skill_description: str | None = None,
     ) -> bool:
         """
@@ -1792,10 +1950,16 @@ class SimSkills:
             obj_pos,
             approach_offset=approach_offset,
             grasp_offset=grasp_offset,
+            approach_direction_world=approach_direction_world,
         )
 
         if self.cfg.arm_dofs == 6:
-            reached = self._move_palm_down(approach_pos)
+            reached = self._move_with_target_rotation(
+                approach_pos,
+                target_rotation_world=target_rotation_world,
+                approach_angle_deg=approach_angle_deg,
+                allow_position_only_fallback=allow_position_only_fallback,
+            )
             if not reached:
                 logger.warning(f"Failed to reach approach position for {object_name}")
 
@@ -1803,12 +1967,22 @@ class SimSkills:
             # joint discontinuities on low-inertia wrist joints.
             self._move_cartesian_steps(approach_pos, grasp_pos, max_step=0.015)
         else:
-            reached = self._move_palm_down(approach_pos)
+            reached = self._move_with_target_rotation(
+                approach_pos,
+                target_rotation_world=target_rotation_world,
+                approach_angle_deg=approach_angle_deg,
+                allow_position_only_fallback=allow_position_only_fallback,
+            )
             if not reached:
                 logger.warning(f"Failed to reach approach position for {object_name}")
 
             # Descend to grasp
-            self._move_palm_down(grasp_pos)
+            self._move_with_target_rotation(
+                grasp_pos,
+                target_rotation_world=target_rotation_world,
+                approach_angle_deg=approach_angle_deg,
+                allow_position_only_fallback=allow_position_only_fallback,
+            )
 
         # Verify EE reached grasp position; recovery if not converged
         ee_pos, ee_quat = self.robot.read_ee_pose()
@@ -1817,14 +1991,56 @@ class SimSkills:
             logger.info(
                 f"Grasp not converged ({grasp_error:.3f}m), re-solving IK..."
             )
-            self._move_palm_down(grasp_pos)
+            self._move_with_target_rotation(
+                grasp_pos,
+                target_rotation_world=target_rotation_world,
+                approach_angle_deg=approach_angle_deg,
+                allow_position_only_fallback=allow_position_only_fallback,
+            )
             ee_pos, ee_quat = self.robot.read_ee_pose()
             grasp_error = np.linalg.norm(ee_pos - grasp_pos)
+
+        aligned, axis_error_deg, aligned_axis = self._verify_tool_axis_alignment(
+            required_tool_axis_world,
+            tolerance_deg=required_tool_axis_tolerance_deg,
+            label=f"pre-grasp:{object_name}",
+        )
+        if required_tool_axis_world is not None and not aligned:
+            logger.info(
+                "Retrying %s pre-grasp pose to recover tool-axis alignment",
+                object_name,
+            )
+            self._move_with_target_rotation(
+                grasp_pos,
+                target_rotation_world=target_rotation_world,
+                approach_angle_deg=approach_angle_deg,
+                allow_position_only_fallback=allow_position_only_fallback,
+            )
+            ee_pos, ee_quat = self.robot.read_ee_pose()
+            grasp_error = np.linalg.norm(ee_pos - grasp_pos)
+            aligned, axis_error_deg, aligned_axis = self._verify_tool_axis_alignment(
+                required_tool_axis_world,
+                tolerance_deg=required_tool_axis_tolerance_deg,
+                label=f"pre-grasp:{object_name}",
+            )
+            if not aligned:
+                logger.warning(
+                    "Aborting pick '%s' because the top-down tool axis never aligned (angle=%s)",
+                    object_name,
+                    "n/a" if axis_error_deg is None else f"{axis_error_deg:.1f}deg",
+                )
+                return False
 
         hand_z = self._quat_to_hand_z(ee_quat)
         print(f"  PRE-GRASP '{object_name}': EE={np.round(ee_pos, 4)}, "
               f"hand_z={np.round(hand_z, 3)}, obj_z={obj_pos[2]:.4f}, "
               f"grasp_err={grasp_error:.4f}m")
+        if axis_error_deg is not None and aligned_axis is not None:
+            print(
+                f"  TOOL-AXIS '{object_name}': actual={np.round(aligned_axis, 3)}, "
+                f"target={np.round(np.asarray(required_tool_axis_world, dtype=np.float64), 3)}, "
+                f"angle={axis_error_deg:.1f}deg"
+            )
         if self.cfg.name == "so101":
             try:
                 from src.data_collection.so101_patches import summarize_so101_pad_alignment_from_stage
@@ -1868,7 +2084,12 @@ class SimSkills:
                 fixed_joints=list(self._orientation_lock_joints),
             )
         else:
-            self._move_palm_down(approach_pos)
+            self._move_with_target_rotation(
+                approach_pos,
+                target_rotation_world=target_rotation_world,
+                approach_angle_deg=approach_angle_deg,
+                allow_position_only_fallback=allow_position_only_fallback,
+            )
 
         # Verify object was lifted
         lifted, z_delta = self._verify_object_lifted(object_name, pre_z)
@@ -1884,6 +2105,13 @@ class SimSkills:
         approach_offset: float = 0.05,
         drop_offset: float = 0.005,
         _placed_object: Optional[str] = None,
+        _held_xy_offset_world: Optional[np.ndarray] = None,
+        approach_angle_deg: float | None = None,
+        target_rotation_world: Optional[np.ndarray] = None,
+        approach_direction_world: Optional[np.ndarray] = None,
+        required_tool_axis_world: Optional[np.ndarray] = None,
+        required_tool_axis_tolerance_deg: float = 25.0,
+        allow_position_only_fallback: bool = True,
         skill_description: str | None = None,
     ) -> bool:
         """
@@ -1898,20 +2126,79 @@ class SimSkills:
             return f"{skill_description} ({default})" if skill_description else default
 
         target_position = np.asarray(target_position, dtype=np.float64)
+        place_reference = target_position.copy()
+        if _held_xy_offset_world is not None:
+            held_xy_offset = np.asarray(_held_xy_offset_world, dtype=np.float64).reshape(-1)
+            if held_xy_offset.size >= 2 and np.all(np.isfinite(held_xy_offset[:2])):
+                # Compensate for objects grasped off-center while keeping the semantic
+                # placement target unchanged for post-release verification.
+                place_reference[:2] -= held_xy_offset[:2]
+
         place_pos, approach_pos = self._compute_place_targets(
-            target_position,
+            place_reference,
             approach_offset=approach_offset,
             drop_offset=drop_offset,
+            approach_direction_world=approach_direction_world,
         )
 
         # Move to approach
-        self._move_palm_down(approach_pos)
+        self._move_with_target_rotation(
+            approach_pos,
+            target_rotation_world=target_rotation_world,
+            approach_angle_deg=approach_angle_deg,
+            allow_position_only_fallback=allow_position_only_fallback,
+        )
 
         # Descend via Cartesian steps (6-DOF) or single move (7+)
         if self.cfg.arm_dofs == 6:
             self._move_cartesian_steps(approach_pos, place_pos, max_step=0.015)
         else:
-            self._move_palm_down(place_pos)
+            self._move_with_target_rotation(
+                place_pos,
+                target_rotation_world=target_rotation_world,
+                approach_angle_deg=approach_angle_deg,
+                allow_position_only_fallback=allow_position_only_fallback,
+            )
+
+        aligned, axis_error_deg, aligned_axis = self._verify_tool_axis_alignment(
+            required_tool_axis_world,
+            tolerance_deg=required_tool_axis_tolerance_deg,
+            label=f"pre-place:{_placed_object or 'held_object'}",
+        )
+        if required_tool_axis_world is not None and not aligned:
+            logger.info("Retrying pre-place pose to recover tool-axis alignment")
+            self._move_with_target_rotation(
+                place_pos,
+                target_rotation_world=target_rotation_world,
+                approach_angle_deg=approach_angle_deg,
+                allow_position_only_fallback=allow_position_only_fallback,
+            )
+            aligned, axis_error_deg, aligned_axis = self._verify_tool_axis_alignment(
+                required_tool_axis_world,
+                tolerance_deg=required_tool_axis_tolerance_deg,
+                label=f"pre-place:{_placed_object or 'held_object'}",
+            )
+            if not aligned:
+                logger.warning(
+                    "Aborting place '%s' because the tool axis never aligned (angle=%s)",
+                    _placed_object or "held_object",
+                    "n/a" if axis_error_deg is None else f"{axis_error_deg:.1f}deg",
+                )
+                return False
+        if axis_error_deg is not None and aligned_axis is not None:
+            print(
+                f"  PLACE-AXIS '{_placed_object or 'held_object'}': actual={np.round(aligned_axis, 3)}, "
+                f"target={np.round(np.asarray(required_tool_axis_world, dtype=np.float64), 3)}, "
+                f"angle={axis_error_deg:.1f}deg"
+            )
+
+        # Let the arm settle at the release pose before opening the gripper.
+        hold_arm = self.robot.read_arm_joint_positions().copy()
+        for _ in range(5):
+            self.robot.write_arm_joint_positions(hold_arm)
+            if self.cfg.has_gripper_joints:
+                self.robot.set_gripper(open=False)
+            self.robot.step_sim()
 
         # Open gripper
         release_name = _placed_object or "the held object"
@@ -1925,7 +2212,12 @@ class SimSkills:
             ee_pos, _ = self.robot.read_ee_pose()
             self._move_cartesian_steps(ee_pos, approach_pos, max_step=0.015)
         else:
-            self._move_palm_down(approach_pos)
+            self._move_with_target_rotation(
+                approach_pos,
+                target_rotation_world=target_rotation_world,
+                approach_angle_deg=approach_angle_deg,
+                allow_position_only_fallback=allow_position_only_fallback,
+            )
 
         # Verify object placement if object name known
         if _placed_object and self.detector:

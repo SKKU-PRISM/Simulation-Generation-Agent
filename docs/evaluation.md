@@ -1,5 +1,9 @@
 # 평가 시스템
 
+대상: evaluator 결과를 해석하거나 수정하는 기여자  
+이 문서가 다루는 것: IsaacLab 평가 구조, 점수 체계, report 해석  
+일반 실행 방법은 `docs/usage.md`
+
 이 문서는 **IsaacLab Pipeline**의 자동 평가기를 설명합니다. 이 레포의 주력 경로는 IsaacLab이며, 평가는 생성된 `env_cfg.py`가 YAML task를 얼마나 정확하게 구현했는지 점수화합니다.
 
 ## 실행 방법

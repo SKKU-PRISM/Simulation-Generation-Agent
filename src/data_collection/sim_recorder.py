@@ -309,12 +309,21 @@ class SimRecorder:
             "total_dofs": self._robot_cfg.total_dofs,
             "arm_dofs": self._robot_cfg.arm_dofs,
             "joint_names": self._robot_cfg.all_joint_names,
+            "arm_joint_names": self._robot_cfg.arm_joint_names,
+            "finger_joint_names": self._robot_cfg.finger_joint_names,
+            "gripper_type": self._robot_cfg.gripper_type,
             "fps": self._fps,
             "camera_names": self._camera_names,
+            "joint_shape_policy": "full_controllable_dofs",
             "tcp_observations": [
                 "observation.tcp.world_xyzrpy",
                 "observation.tcp.robot_xyzrpy",
             ],
+            "world_frame_definition": "sim:/World",
+            "robot_base_definition": "articulation root",
+            "tcp_definition": (
+                "ee_frame_tcp if present, else ee_frame_body + offset_position"
+            ),
             "total_episodes": len(self._completed_episodes),
             "successful_episodes": sum(
                 1 for e in self._completed_episodes if e["success"]

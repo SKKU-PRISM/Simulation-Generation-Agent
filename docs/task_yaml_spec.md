@@ -1,5 +1,9 @@
 # Task YAML 명세
 
+대상: task YAML을 작성하거나 수정하는 기여자  
+이 문서가 다루는 것: YAML 필드 규약, goal 해석, asset 경로 규칙  
+현재 corpus 상태는 `docs/tasks_overview.md`
+
 이 문서는 `tasks/{robot}/{category}/*.yaml` 형식의 task 문서를 설명합니다. 이 YAML은 **IsaacLab 생성의 입력이자**, 필요할 때 **Isaac Sim 시각 검증**과 **Data Collection**의 공통 입력으로도 사용됩니다.
 
 ## 기본 구조

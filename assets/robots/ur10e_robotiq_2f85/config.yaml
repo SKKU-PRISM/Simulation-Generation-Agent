@@ -1,5 +1,5 @@
-asset_path: /home/vpraise/workspace/isaac-sim/standalone_examples/api/isaacsim.robot.manipulators/ur10e/rmpflow/ur10e.urdf
-usd_dir: /home/vpraise/workspace/Simulation-Generation-Agent/assets/robots/ur10e_robotiq_2f85
+asset_path: "{ISAAC_SIM_DIR}/standalone_examples/api/isaacsim.robot.manipulators/ur10e/rmpflow/ur10e.urdf"
+usd_dir: assets/robots/ur10e_robotiq_2f85
 usd_file_name: ur10e_robotiq_2f85.usd
 force_usd_conversion: true
 make_instanceable: false

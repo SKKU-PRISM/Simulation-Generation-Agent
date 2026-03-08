@@ -133,7 +133,7 @@ class IsaacLabAgent:
         self.isaaclab_path = Path(
             self.config["isaaclab"].get("path")
             or os.environ.get("ISAACLAB_PATH")
-            or os.path.expanduser("~/workspace/IsaacLab")
+            or str((PROJECT_ROOT.parent / "IsaacLab").resolve())
         )
         self.reference_base = self.isaaclab_path / "source" / "isaaclab_tasks" / "isaaclab_tasks" / "manager_based" / "manipulation"
         self.output_dir = PROJECT_ROOT / self.config["agent"]["output_dir"]

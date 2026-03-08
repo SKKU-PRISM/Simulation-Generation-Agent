@@ -1,6 +1,10 @@
 # Task Taxonomy
 
-이 문서는 `.reference/task_image_gt/image (3).png`에 있는 분류 체계를 **최우선 기준**으로 삼아, 현재 `tasks/` 아래의 **78개 task spec**을 다시 분류한 결과를 정리한다.
+대상: corpus 구조와 카테고리 집계를 보는 사용자/기여자  
+이 문서가 다루는 것: task family 분류와 개수 집계  
+개별 task 상태와 evidence는 `docs/tasks_overview.md`
+
+이 문서는 `.reference/task_image_gt/image (3).png`에 있는 분류 체계를 **최우선 기준**으로 삼아, 현재 `tasks/` 아래의 **78개 task spec**을 다시 분류한 결과를 정리한다. 현재 `tasks/ur10/`는 빈 placeholder 디렉터리이고, 실제 corpus robot task는 `franka`, `openarm`, `so101`, `ur10e`에만 있다.
 
 기본 원칙은 다음과 같다.
 

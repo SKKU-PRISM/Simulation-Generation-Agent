@@ -25,6 +25,27 @@ ROBOT_PROFILES_DIR = PROJECT_ROOT / "configs" / "robot_profiles"
 PIPELINE_CONFIG_PATH = PROJECT_ROOT / "configs" / "data_collection_config.yaml"
 
 
+def _default_external_repo_dir(repo_name: str) -> Path:
+    """Return the conventional sibling checkout location for an external repo."""
+    return (PROJECT_ROOT.parent / repo_name).resolve()
+
+
+def get_default_isaaclab_path() -> Path:
+    """Resolve the default IsaacLab checkout path without user-specific hardcoding."""
+    raw = os.environ.get("ISAACLAB_PATH")
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return _default_external_repo_dir("IsaacLab")
+
+
+def get_default_isaac_sim_dir() -> Path:
+    """Resolve the default Isaac Sim checkout path without user-specific hardcoding."""
+    raw = os.environ.get("ISAAC_SIM_DIR")
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return _default_external_repo_dir("isaac-sim")
+
+
 @dataclass
 class CameraConfig:
     """Single camera configuration for data collection.
@@ -137,8 +158,7 @@ def _resolve_urdf_path(raw: str) -> str:
         return raw
 
     if "{ISAAC_SIM_DIR}" in raw:
-        isaac_sim_dir = os.environ.get("ISAAC_SIM_DIR", "/home/vpraise/workspace/isaac-sim")
-        raw = raw.replace("{ISAAC_SIM_DIR}", str(Path(isaac_sim_dir)))
+        raw = raw.replace("{ISAAC_SIM_DIR}", str(get_default_isaac_sim_dir()))
 
     if "{ADC_URDF_DIR}" in raw:
         try:
@@ -154,17 +174,17 @@ def _resolve_urdf_path(raw: str) -> str:
             return ""
 
     if "{ISAACLAB_URDF_DIR}" in raw:
-        isaaclab_path = os.environ.get("ISAACLAB_PATH", "/home/vpraise/workspace/IsaacLab")
+        isaaclab_path = get_default_isaaclab_path()
         urdf_dir = Path(isaaclab_path) / "source" / "isaaclab" / "isaaclab" / "controllers" / "config" / "data"
         return raw.replace("{ISAACLAB_URDF_DIR}", str(urdf_dir))
 
     if "{ISAAC_SIM_URDF_DIR}" in raw:
-        isaac_sim_dir = os.environ.get("ISAAC_SIM_DIR", "/home/vpraise/workspace/isaac-sim")
+        isaac_sim_dir = get_default_isaac_sim_dir()
         urdf_dir = Path(isaac_sim_dir) / "exts" / "isaacsim.asset.importer.urdf" / "data" / "urdf" / "robots"
         return raw.replace("{ISAAC_SIM_URDF_DIR}", str(urdf_dir))
 
     if "{ISAAC_SIM_MOTION_GEN_URDF_DIR}" in raw:
-        isaac_sim_dir = os.environ.get("ISAAC_SIM_DIR", "/home/vpraise/workspace/isaac-sim")
+        isaac_sim_dir = get_default_isaac_sim_dir()
         urdf_dir = (
             Path(isaac_sim_dir)
             / "exts"
@@ -174,7 +194,10 @@ def _resolve_urdf_path(raw: str) -> str:
         )
         return raw.replace("{ISAAC_SIM_MOTION_GEN_URDF_DIR}", str(urdf_dir))
 
-    return raw
+    resolved = Path(raw).expanduser()
+    if not resolved.is_absolute():
+        resolved = PROJECT_ROOT / resolved
+    return str(resolved.resolve())
 
 
 def load_robot_config(robot_name: str) -> RobotSimConfig:

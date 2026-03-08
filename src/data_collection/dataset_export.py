@@ -123,6 +123,7 @@ def export_sim_raw_dataset(
     robot_cfg = load_robot_config(canonical_robot)
     joint_names = tuple(metadata.get("joint_names") or robot_cfg.all_joint_names)
     norm_spec = build_joint_normalization_spec(robot_cfg, joint_names=joint_names)
+    camera_names = list(metadata.get("camera_names") or [])
 
     export_root = Path(output_dir) / f"{raw_dir.parent.name}_{raw_dir.name}_{schema}"
     if export_root.exists():
@@ -202,6 +203,8 @@ def export_sim_raw_dataset(
                 "episode_index": ep_idx,
                 "num_frames": int(T),
                 "success": bool(ep_info.get("success", False)),
+                "has_images": bool(ep_info.get("has_images", False)),
+                "task_description": str(ep_info.get("task_description", "")),
             }
         )
 
@@ -213,6 +216,7 @@ def export_sim_raw_dataset(
         norm_spec=norm_spec,
         episodes=episode_summaries,
         image_mode="frame_dirs" if link_images else "none",
+        camera_names=camera_names,
     )
     _write_json(export_root / "manifest.json", manifest)
     return export_root
@@ -320,6 +324,8 @@ def export_adc_raw_dataset(
                 "episode_index": ep_idx,
                 "num_frames": len(ep_rows),
                 "success": False,
+                "has_images": bool((adc_root / "videos").exists()),
+                "task_description": "",
             }
         )
 
@@ -335,6 +341,7 @@ def export_adc_raw_dataset(
         norm_spec=norm_spec,
         episodes=episode_summaries,
         image_mode="lerobot_videos" if link_images and (adc_root / "videos").exists() else "none",
+        camera_names=["front"] if link_images and (adc_root / "videos").exists() else [],
     )
     _write_json(export_root / "manifest.json", manifest)
     return export_root
@@ -458,7 +465,29 @@ def build_export_manifest(
     norm_spec: JointNormalizationSpec,
     episodes: list[dict[str, Any]],
     image_mode: str,
+    camera_names: list[str],
 ) -> dict[str, Any]:
+    if schema == ADC_COMPATIBLE_SCHEMA:
+        field_semantics = {
+            "observation.state": "normalized full controllable joint state in ADC-compatible range [-100, 100]",
+            "action": "normalized full controllable joint target in ADC-compatible range [-100, 100]",
+            "skill.goal_position.joint": "normalized full controllable joint goal in ADC-compatible range [-100, 100]",
+            "skill.goal_position.gripper": "normalized scalar gripper goal in ADC-compatible range [-100, 100]",
+            "skill.goal_position.world_xyzrpy": "ADC legacy world target semantics (world xyz + robot-frame rpy)",
+            "skill.goal_position.robot_xyzrpy": "robot-base TCP target pose [x,y,z,roll,pitch,yaw]",
+        }
+    else:
+        field_semantics = {
+            "observation.state": "normalized full controllable joint state in range [-100, 100]",
+            "action": "normalized full controllable joint target in range [-100, 100]",
+            "skill.goal_position.joint": "normalized full controllable joint goal in range [-100, 100]",
+            "skill.goal_position.gripper": "normalized scalar gripper goal in range [-100, 100]",
+            "observation.tcp.world_xyzrpy": "current TCP pose in world frame [x,y,z,roll,pitch,yaw]",
+            "observation.tcp.robot_xyzrpy": "current TCP pose in robot-base frame [x,y,z,roll,pitch,yaw]",
+            "skill.goal_position.tcp.world_xyzrpy": "target TCP pose in world frame [x,y,z,roll,pitch,yaw]",
+            "skill.goal_position.tcp.robot_xyzrpy": "target TCP pose in robot-base frame [x,y,z,roll,pitch,yaw]",
+        }
+
     return {
         "schema": schema,
         "schema_version": SCHEMA_VERSION,
@@ -466,7 +495,13 @@ def build_export_manifest(
         "source_path": str(source_path.resolve()),
         "robot_name": robot_cfg.name,
         "robot_full_name": robot_cfg.full_name,
+        "arm_dofs": robot_cfg.arm_dofs,
+        "total_dofs": robot_cfg.total_dofs,
         "joint_names": list(norm_spec.joint_names),
+        "arm_joint_names": list(robot_cfg.arm_joint_names),
+        "finger_joint_names": list(robot_cfg.finger_joint_names),
+        "gripper_type": robot_cfg.gripper_type,
+        "joint_shape_policy": "full_controllable_dofs",
         "normalization_spec": {
             "range": [-100.0, 100.0],
             "joints": [
@@ -487,7 +522,12 @@ def build_export_manifest(
         "world_frame_definition": "sim:/World for sim_raw, ADC calibrated world for adc_raw",
         "robot_base_definition": "articulation root for sim_raw, calibrated base_link for adc_raw",
         "tcp_definition": "ee_frame_tcp if present, else ee_frame_body + offset_position",
+        "gripper_scalar_definition": (
+            "Normalized scalar open/close target exported separately from the full-DOF joint vector"
+        ),
+        "camera_names": camera_names,
         "image_mode": image_mode,
+        "field_semantics": field_semantics,
         "episodes": episodes,
     }
 
@@ -642,9 +682,16 @@ def _resolve_adc_local_path(raw_path: str, adc_root: Path) -> Path:
     p = Path(raw_path)
     if p.exists():
         return p
-    legacy_prefix = "/home/csi/lerobot_CaP_distillation/"
-    if raw_path.startswith(legacy_prefix):
-        return adc_root / raw_path[len(legacy_prefix) :]
+    if p.is_absolute():
+        parts = p.parts
+        for repo_marker in ("AutoDataCollector", "lerobot_CaP_distillation"):
+            if repo_marker in parts:
+                marker_idx = parts.index(repo_marker)
+                return adc_root / Path(*parts[marker_idx + 1 :])
+        for anchor in ("assets", "robot_configs", "judge", "src", "videos"):
+            if anchor in parts:
+                anchor_idx = parts.index(anchor)
+                return adc_root / Path(*parts[anchor_idx:])
     if raw_path.startswith("/"):
         return Path(raw_path)
     return adc_root / raw_path

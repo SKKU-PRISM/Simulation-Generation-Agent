@@ -29,15 +29,14 @@ from .config import (
     PROJECT_ROOT,
     DataCollectionConfig,
     RobotSimConfig,
+    get_default_isaaclab_path,
     load_pipeline_config,
     load_robot_config,
 )
 
 logger = logging.getLogger(__name__)
 
-ISAACLAB_PATH = os.environ.get(
-    "ISAACLAB_PATH", "/home/vpraise/workspace/IsaacLab"
-)
+ISAACLAB_PATH = str(get_default_isaaclab_path())
 CONDA_ENV = "env_isaaclab"
 
 
@@ -230,6 +229,7 @@ class DataCollectionPipeline:
             "num_envs": self.config.env_num_envs,
             "use_vlm_judge": self.config.use_vlm_judge,
             "llm_model": self.config.llm_model,
+            "skill_retry_max": self.config.skill_retry_max,
             "target_successful_episodes": target_success,
             "max_total_attempts": max_attempts,
         }
@@ -272,6 +272,63 @@ class DataCollectionPipeline:
             sys.path.insert(0, "{(PROJECT_ROOT / 'src' / 'data_collection' / 'cap_runtime').resolve()}")
 
             from isaaclab.envs import ManagerBasedRLEnv
+
+            def _patch_generated_env_cfg_source():
+                """Patch common import-time issues in generated env_cfg.py files."""
+                env_cfg_path = os.path.join("{Path(self.env_dir).resolve()}", "env_cfg.py")
+                if not os.path.exists(env_cfg_path):
+                    return
+
+                with open(env_cfg_path, "r", encoding="utf-8") as f:
+                    env_cfg_text = f.read()
+
+                def _rewrite_implicit_actuator_joint_names(content):
+                    lines = content.splitlines()
+                    patched_lines = []
+                    in_implicit_actuator = False
+                    paren_depth = 0
+                    replaced = False
+
+                    for line in lines:
+                        if "ImplicitActuatorCfg(" in line:
+                            in_implicit_actuator = True
+                            paren_depth = line.count("(") - line.count(")")
+                        elif in_implicit_actuator:
+                            paren_depth += line.count("(") - line.count(")")
+
+                        if in_implicit_actuator and "joint_names=" in line:
+                            line = line.replace("joint_names=", "joint_names_expr=")
+                            replaced = True
+
+                        patched_lines.append(line)
+
+                        if in_implicit_actuator and paren_depth <= 0:
+                            in_implicit_actuator = False
+                            paren_depth = 0
+
+                    return "\\n".join(patched_lines), replaced
+
+                patched_text = re.sub(
+                    r'^(?P<indent>\\s*)super\\(\\).__post_init__\\(\\)\\s*$',
+                    (
+                        r'\\g<indent>_base_post_init = getattr(super(), "__post_init__", None)\\n'
+                        r'\\g<indent>if callable(_base_post_init):\\n'
+                        r'\\g<indent>    _base_post_init()'
+                    ),
+                    env_cfg_text,
+                    flags=re.MULTILINE,
+                )
+                patched_text, patched_implicit_joint_names = _rewrite_implicit_actuator_joint_names(patched_text)
+
+                if patched_text != env_cfg_text:
+                    with open(env_cfg_path, "w", encoding="utf-8") as f:
+                        f.write(patched_text)
+                    patch_notes = []
+                    if "super().__post_init__()" in env_cfg_text:
+                        patch_notes.append("guarded super().__post_init__()")
+                    if patched_implicit_joint_names:
+                        patch_notes.append("rewrote ImplicitActuatorCfg joint_names -> joint_names_expr")
+                    print(f"Patched generated env_cfg.py: {{patch_notes}}")
 
             def _install_generated_mdp_stubs():
                 \"\"\"Install no-op stubs for missing custom MDP helpers in generated envs.
@@ -326,6 +383,7 @@ class DataCollectionPipeline:
                         f"done={{missing_done}}, reward={{missing_reward}}, event={{missing_event}}"
                     )
 
+            _patch_generated_env_cfg_source()
             _install_generated_mdp_stubs()
 
             # Import generated environment config
@@ -479,6 +537,7 @@ class DataCollectionPipeline:
                     if patched_actuators:
                         robot_scene_cfg.actuators = normalized_actuators
 
+                patched_event_params = []
                 disabled_event_terms = []
                 events_cfg = getattr(env_cfg, "events", None)
                 if events_cfg is not None:
@@ -488,6 +547,20 @@ class DataCollectionPipeline:
                         params = getattr(event_cfg, "params", None)
                         if not isinstance(params, dict):
                             continue
+                        removed_orientation_keys = []
+                        for orientation_key in (
+                            "orientation_range",
+                            "orientation",
+                            "rotation_range",
+                            "rotation",
+                        ):
+                            if orientation_key in params:
+                                params.pop(orientation_key, None)
+                                removed_orientation_keys.append(orientation_key)
+                        if removed_orientation_keys:
+                            patched_event_params.append(
+                                f"{{event_name}} (dropped unsupported {{removed_orientation_keys}})"
+                            )
                         if "asset_cfgs" in params:
                             setattr(events_cfg, event_name, None)
                             disabled_event_terms.append(
@@ -509,12 +582,17 @@ class DataCollectionPipeline:
                         "Normalized raw actuator dicts: "
                         f"{{patched_actuators}}"
                     )
+                if patched_event_params:
+                    print(
+                        "Patched event params: "
+                        f"{{patched_event_params}}"
+                    )
                 if disabled_event_terms:
                     print(
                         "Disabled unsupported event terms: "
                         f"{{disabled_event_terms}}"
                     )
-                return patched_terms, patched_scene_assets, patched_actuators, disabled_event_terms
+                return patched_terms, patched_scene_assets, patched_actuators, patched_event_params, disabled_event_terms
 
             def _capture_judge_images(cameras):
                 \"\"\"Capture wrist + front images for VLM judge (multi-view assessment).
@@ -958,7 +1036,11 @@ class DataCollectionPipeline:
                     from src.common.llm_client import AzureOpenAIClient
 
                     llm_client = AzureOpenAIClient(model=cfg["llm_model"])
-                    cap_generator = SimCaPGenerator(llm_client, robot_cfg)
+                    cap_generator = SimCaPGenerator(
+                        llm_client,
+                        robot_cfg,
+                        retry_max=cfg.get("skill_retry_max", 1),
+                    )
                     print(
                         f"SimCaPGenerator initialized: model={{cfg['llm_model']}}, "
                         f"skill_class={{cap_profile.class_name}}"

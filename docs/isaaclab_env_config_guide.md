@@ -1,5 +1,9 @@
 # IsaacLab 환경 설정 가이드
 
+대상: IsaacLab env config를 직접 수정하는 기여자  
+이 문서가 다루는 것: env_cfg 구조, actuator/action 설정, 구현상 주의점  
+일반 사용자 시작점은 아니다
+
 데이터 수집 파이프라인을 위한 IsaacLab `ManagerBasedRLEnv` 환경 설정 참조 문서.
 
 ---

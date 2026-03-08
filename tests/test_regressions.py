@@ -2,6 +2,8 @@
 
 import json
 import os
+import re
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,6 +16,7 @@ from src.data_collection.config import load_robot_config
 from src.data_collection.dataset_export import (
     ADC_COMPATIBLE_SCHEMA,
     CANONICAL_TRAINING_SCHEMA,
+    _resolve_adc_local_path,
     build_joint_normalization_spec,
     compose_adc_legacy_world_xyzrpy,
     compute_adc_tcp_world_xyzrpy,
@@ -21,6 +24,7 @@ from src.data_collection.dataset_export import (
     normalize_gripper_array,
     normalize_joint_matrix,
 )
+from src.data_collection.dataset_preprocess import preprocess_exported_dataset
 from src.data_collection.sim_recorder import SimRecorder, _coerce_goal_joint
 from src.data_collection.sim_robot_interface import SimRobotInterface
 from src.data_collection.sim_skills import SimSkills, create_ik_solver
@@ -159,8 +163,10 @@ class EnvCfg(ManagerBasedRLEnvCfg):
 
     def test_scene_builder_resolves_local_assets_from_repo_root(self):
         resolved = SceneBuilder._resolve_asset_path("assets/robots/so101/so101.usd")
-        self.assertIn("/Simulation-Generation-Agent/assets/robots/so101/so101.usd", resolved)
-        self.assertNotIn("/Simulation-Generation-Agent/src/assets/", resolved)
+        resolved_path = Path(resolved)
+        self.assertTrue(resolved_path.is_absolute())
+        self.assertTrue(resolved_path.as_posix().endswith("/assets/robots/so101/so101.usd"))
+        self.assertNotIn("/src/assets/", resolved_path.as_posix())
 
     def test_task_doc_resolves_franka_assembly_assets_and_slot_target(self):
         doc = load_task_document("tasks/franka/assembly/franka_assembling_kits.yaml")
@@ -332,6 +338,9 @@ class SceneCfg(InteractiveSceneCfg):
         cfg = load_robot_config("openarm")
         self.assertEqual(cfg.ee_frame_body, "openarm_hand")
         self.assertEqual(cfg.ee_frame_tcp, "openarm_ee_tcp")
+        self.assertEqual(cfg.ik_ee_frame, "openarm_hand_tcp")
+        self.assertTrue(Path(cfg.urdf_path).is_absolute())
+        self.assertTrue(Path(cfg.urdf_path).exists())
 
     def test_load_robot_config_exposes_so101_tcp_offset(self):
         cfg = load_robot_config("so101")
@@ -339,13 +348,17 @@ class SceneCfg(InteractiveSceneCfg):
         self.assertEqual(cfg.ee_frame_offset_position, [0.04, 0.0, 0.0])
         self.assertEqual(cfg.grasp_lateral_bias, 0.0)
 
-    def test_create_ik_solver_falls_back_to_differential_when_no_urdf(self):
+    def test_create_ik_solver_prefers_pinocchio_when_openarm_urdf_exists(self):
         cfg = load_robot_config("openarm")
-        dummy_robot_interface = object()
-        with patch("src.data_collection.sim_skills.DifferentialIKSolver", return_value="diff-ik") as mock_solver:
-            solver = create_ik_solver(cfg, robot_interface=dummy_robot_interface)
-        self.assertEqual(solver, "diff-ik")
-        mock_solver.assert_called_once_with(dummy_robot_interface)
+        with patch("src.data_collection.sim_skills.PinocchioIKSolver", return_value="pin-ik") as mock_solver:
+            solver = create_ik_solver(cfg)
+        self.assertEqual(solver, "pin-ik")
+        mock_solver.assert_called_once_with(
+            urdf_path=cfg.urdf_path,
+            ee_frame=cfg.ik_ee_frame or cfg.ee_frame_tcp or cfg.ee_frame_body,
+            joint_names=cfg.arm_joint_names,
+            tcp_offset=cfg.ee_frame_offset_position or None,
+        )
 
     def test_create_ik_solver_passes_so101_tcp_offset_to_pinocchio(self):
         cfg = load_robot_config("so101")
@@ -633,8 +646,151 @@ class EnvCfg(ManagerBasedRLEnvCfg):
                 / "episode_000000"
                 / "skill.goal_position.world_xyzrpy.npy"
             )
+            manifest = json.loads((export_dir / "manifest.json").read_text())
+            ep_dir = export_dir / "episodes" / "episode_000000"
 
         np.testing.assert_allclose(legacy_world, np.array([[1.0, 2.0, 3.0, 0.4, 0.5, 0.6]], dtype=np.float32))
+        self.assertEqual(manifest["schema"], ADC_COMPATIBLE_SCHEMA)
+        self.assertFalse((ep_dir / "observation.tcp.world_xyzrpy.npy").exists())
+        self.assertFalse((ep_dir / "observation.tcp.robot_xyzrpy.npy").exists())
+        self.assertFalse((ep_dir / "skill.goal_position.tcp.world_xyzrpy.npy").exists())
+        self.assertFalse((ep_dir / "skill.goal_position.tcp.robot_xyzrpy.npy").exists())
+
+    def test_export_manifest_records_full_dof_policy_and_joint_layout(self):
+        cfg = load_robot_config("openarm")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            recorder = SimRecorder(cfg, tmpdir, dataset_name="raw_dataset", fps=20)
+            recorder.start_episode("openarm stack", episode_idx=0)
+            zeros = np.zeros(cfg.total_dofs, dtype=np.float32)
+            recorder.record_step(
+                state=zeros,
+                action=zeros,
+                skill_label="stack",
+                skill_type="stack",
+                skill_progress=0.0,
+                goal_joint=zeros,
+                goal_world_xyzrpy=np.zeros(6, dtype=np.float32),
+                goal_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+                goal_gripper=0.0,
+                tcp_world_xyzrpy=np.zeros(6, dtype=np.float32),
+                tcp_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+            )
+            recorder.end_episode(success=False)
+            raw_dir = Path(recorder.finalize())
+
+            export_dir = export_sim_raw_dataset(
+                raw_dataset_dir=raw_dir,
+                schema=ADC_COMPATIBLE_SCHEMA,
+                output_dir=Path(tmpdir) / "exports",
+                link_images=False,
+            )
+            manifest = json.loads((export_dir / "manifest.json").read_text())
+
+        self.assertEqual(manifest["joint_shape_policy"], "full_controllable_dofs")
+        self.assertEqual(manifest["arm_joint_names"], cfg.arm_joint_names)
+        self.assertEqual(manifest["finger_joint_names"], cfg.finger_joint_names)
+        self.assertEqual(manifest["gripper_type"], cfg.gripper_type)
+        self.assertIn("skill.goal_position.world_xyzrpy", manifest["field_semantics"])
+        self.assertEqual(manifest["episodes"][0]["task_description"], "openarm stack")
+
+    def test_export_dataset_cli_defaults_to_adc_compatible(self):
+        script = Path(__file__).resolve().parent.parent / "scripts" / "export_dataset.py"
+        result = subprocess.run(
+            ["python3", str(script), "--help"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertIn("--schema", result.stdout)
+        self.assertIn("default: adc_compatible", result.stdout)
+
+    def test_preprocess_exported_dataset_creates_per_episode_split_manifests(self):
+        cfg = load_robot_config("franka")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            recorder = SimRecorder(cfg, tmpdir, dataset_name="raw_dataset", fps=20)
+            zeros = np.zeros(cfg.total_dofs, dtype=np.float32)
+            ones = np.ones(cfg.total_dofs, dtype=np.float32) * 0.01
+            for ep_idx, success in enumerate([True, False]):
+                recorder.start_episode(f"task {ep_idx}", episode_idx=ep_idx)
+                recorder.record_step(
+                    state=zeros,
+                    action=ones,
+                    skill_label="pick",
+                    skill_type="pick",
+                    skill_progress=0.25,
+                    goal_joint=ones,
+                    goal_world_xyzrpy=np.zeros(6, dtype=np.float32),
+                    goal_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+                    goal_gripper=0.04,
+                    tcp_world_xyzrpy=np.zeros(6, dtype=np.float32),
+                    tcp_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+                )
+                recorder.end_episode(success=success)
+            raw_dir = Path(recorder.finalize())
+
+            export_dir = export_sim_raw_dataset(
+                raw_dataset_dir=raw_dir,
+                schema=ADC_COMPATIBLE_SCHEMA,
+                output_dir=Path(tmpdir) / "exports",
+                link_images=False,
+            )
+            preprocess_dir = preprocess_exported_dataset(
+                export_dir=export_dir,
+                output_dir=Path(tmpdir) / "preprocessed",
+                train_ratio=0.5,
+                seed=7,
+            )
+
+            preprocess_manifest = json.loads((preprocess_dir / "manifest.json").read_text())
+            samples = [json.loads(line) for line in (preprocess_dir / "samples.jsonl").read_text().splitlines()]
+            train_samples = [json.loads(line) for line in (preprocess_dir / "train.jsonl").read_text().splitlines()]
+            val_samples = [json.loads(line) for line in (preprocess_dir / "val.jsonl").read_text().splitlines()]
+
+        self.assertEqual(preprocess_manifest["schema"], ADC_COMPATIBLE_SCHEMA)
+        self.assertEqual(preprocess_manifest["joint_shape_policy"], "full_controllable_dofs")
+        self.assertEqual(preprocess_manifest["num_episodes"], 2)
+        self.assertEqual(len(samples), 2)
+        self.assertEqual(len(train_samples), 1)
+        self.assertEqual(len(val_samples), 1)
+        self.assertIn("paths", samples[0])
+        self.assertIn("goal_joint", samples[0]["paths"])
+        self.assertEqual(samples[0]["robot_name"], "franka")
+
+    def test_preprocess_exported_dataset_rejects_non_adc_compatible_schema(self):
+        cfg = load_robot_config("franka")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            recorder = SimRecorder(cfg, tmpdir, dataset_name="raw_dataset", fps=20)
+            zeros = np.zeros(cfg.total_dofs, dtype=np.float32)
+            recorder.start_episode("task", episode_idx=0)
+            recorder.record_step(
+                state=zeros,
+                action=zeros,
+                skill_label="move",
+                skill_type="move",
+                skill_progress=0.0,
+                goal_joint=zeros,
+                goal_world_xyzrpy=np.zeros(6, dtype=np.float32),
+                goal_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+                goal_gripper=0.04,
+                tcp_world_xyzrpy=np.zeros(6, dtype=np.float32),
+                tcp_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+            )
+            recorder.end_episode(success=True)
+            raw_dir = Path(recorder.finalize())
+
+            export_dir = export_sim_raw_dataset(
+                raw_dataset_dir=raw_dir,
+                schema=CANONICAL_TRAINING_SCHEMA,
+                output_dir=Path(tmpdir) / "exports",
+                link_images=False,
+            )
+
+            with self.assertRaises(ValueError):
+                preprocess_exported_dataset(
+                    export_dir=export_dir,
+                    output_dir=Path(tmpdir) / "preprocessed",
+                )
 
     def test_compose_adc_legacy_world_xyzrpy_uses_world_position_and_robot_orientation(self):
         world = np.array([[0.1, 0.2, 0.3, 9.0, 9.0, 9.0]], dtype=np.float32)
@@ -686,6 +842,29 @@ class EnvCfg(ManagerBasedRLEnvCfg):
 
         np.testing.assert_allclose(tcp_world[:3], np.array([1.0, 2.1, 0.2], dtype=np.float32), atol=1e-6)
         np.testing.assert_allclose(tcp_world[3:], np.array([0.0, 0.0, yaw_90], dtype=np.float32), atol=1e-6)
+
+    def test_resolve_adc_local_path_maps_legacy_absolute_paths_by_anchor(self):
+        adc_root = Path("/tmp/adc")
+        resolved = _resolve_adc_local_path(
+            "/tmp/legacy/lerobot_CaP_distillation/assets/urdf/so101_robot3.urdf",
+            adc_root,
+        )
+        self.assertEqual(resolved, adc_root / "assets" / "urdf" / "so101_robot3.urdf")
+
+        resolved = _resolve_adc_local_path(
+            "/some/other/root/AutoDataCollector/robot_configs/robot/so101_robot3.yaml",
+            adc_root,
+        )
+        self.assertEqual(resolved, adc_root / "robot_configs" / "robot" / "so101_robot3.yaml")
+
+    def test_tracked_robot_asset_configs_do_not_embed_user_specific_paths(self):
+        for asset_cfg in (
+            Path("assets/robots/so101/config.yaml"),
+            Path("assets/robots/ur10e_robotiq_2f85/config.yaml"),
+        ):
+            text = asset_cfg.read_text()
+            self.assertIsNone(re.search(r"/home/[^/]+", text))
+            self.assertNotIn(str(Path.cwd().resolve()), text)
 
 
 if __name__ == "__main__":

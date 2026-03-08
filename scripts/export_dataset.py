@@ -34,9 +34,13 @@ def main() -> None:
     )
     parser.add_argument(
         "--schema",
-        default=CANONICAL_TRAINING_SCHEMA,
+        default=ADC_COMPATIBLE_SCHEMA,
         choices=[ADC_COMPATIBLE_SCHEMA, CANONICAL_TRAINING_SCHEMA],
-        help="Target export schema",
+        help=(
+            "Target export schema "
+            f"(default: {ADC_COMPATIBLE_SCHEMA}; use {CANONICAL_TRAINING_SCHEMA} "
+            "only for extended TCP-aware analysis)"
+        ),
     )
     parser.add_argument(
         "--output-dir",
