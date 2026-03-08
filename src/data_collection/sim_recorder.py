@@ -38,6 +38,8 @@ class SimRecorder:
         │   ├── episode_000000/
         │   │   ├── states.npy      # (T, N_dof) float32
         │   │   ├── actions.npy     # (T, N_dof) float32
+        │   │   ├── tcp_world_xyzrpy.npy  # (T, 6) float32
+        │   │   ├── tcp_robot_xyzrpy.npy  # (T, 6) float32
         │   │   ├── images/         # multi-camera:
         │   │   │   ├── front/      #   000000.png, 000001.png, ...
         │   │   │   ├── wrist/
@@ -68,6 +70,8 @@ class SimRecorder:
         # Per-episode buffers
         self._states: list[np.ndarray] = []
         self._actions: list[np.ndarray] = []
+        self._tcp_world_xyzrpy: list[np.ndarray] = []
+        self._tcp_robot_xyzrpy: list[np.ndarray] = []
         self._skills: list[dict] = []
         self._image_count: int = 0
         self._has_images: bool = False
@@ -122,6 +126,8 @@ class SimRecorder:
         # Reset buffers
         self._states.clear()
         self._actions.clear()
+        self._tcp_world_xyzrpy.clear()
+        self._tcp_robot_xyzrpy.clear()
         self._skills.clear()
         self._image_count = 0
         self._has_images = False
@@ -143,6 +149,8 @@ class SimRecorder:
         goal_world_xyzrpy: np.ndarray | None = None,
         goal_robot_xyzrpy: np.ndarray | None = None,
         goal_gripper: float = 0.0,
+        tcp_world_xyzrpy: np.ndarray | None = None,
+        tcp_robot_xyzrpy: np.ndarray | None = None,
     ) -> None:
         """Record a single simulation step.
 
@@ -159,6 +167,8 @@ class SimRecorder:
             goal_world_xyzrpy: Target EE world coordinates, (6,) float32.
             goal_robot_xyzrpy: Target EE robot base frame, (6,) float32.
             goal_gripper: Gripper target value.
+            tcp_world_xyzrpy: Current TCP pose in simulator world frame, (6,) float32.
+            tcp_robot_xyzrpy: Current TCP pose in robot base frame, (6,) float32.
         """
         if not self._recording:
             raise RuntimeError("Not recording. Call start_episode() first.")
@@ -177,6 +187,12 @@ class SimRecorder:
 
         self._states.append(state)
         self._actions.append(action)
+        self._tcp_world_xyzrpy.append(
+            self._coerce_pose_vector(tcp_world_xyzrpy, "tcp_world_xyzrpy")
+        )
+        self._tcp_robot_xyzrpy.append(
+            self._coerce_pose_vector(tcp_robot_xyzrpy, "tcp_robot_xyzrpy")
+        )
 
         # Judge-only cameras: excluded from dataset recording (VLM judge only)
         _JUDGE_ONLY_CAMERAS = {"front_cam", "front"}
@@ -245,6 +261,8 @@ class SimRecorder:
         # Flush numpy arrays
         np.save(ep_dir / "states.npy", np.stack(self._states))
         np.save(ep_dir / "actions.npy", np.stack(self._actions))
+        np.save(ep_dir / "tcp_world_xyzrpy.npy", np.stack(self._tcp_world_xyzrpy))
+        np.save(ep_dir / "tcp_robot_xyzrpy.npy", np.stack(self._tcp_robot_xyzrpy))
 
         # Flush skills metadata
         with open(ep_dir / "skills.json", "w") as f:
@@ -293,6 +311,10 @@ class SimRecorder:
             "joint_names": self._robot_cfg.all_joint_names,
             "fps": self._fps,
             "camera_names": self._camera_names,
+            "tcp_observations": [
+                "observation.tcp.world_xyzrpy",
+                "observation.tcp.robot_xyzrpy",
+            ],
             "total_episodes": len(self._completed_episodes),
             "successful_episodes": sum(
                 1 for e in self._completed_episodes if e["success"]
@@ -343,6 +365,62 @@ class SimRecorder:
                 raise RecorderStorageError(
                     f"Failed to save image to {out_path}: cv2.imwrite returned False"
                 )
+
+    @staticmethod
+    def _coerce_pose_vector(
+        pose: np.ndarray | None,
+        field_name: str,
+    ) -> np.ndarray:
+        """Normalize a pose vector to shape (6,) float32."""
+        if pose is None:
+            return np.zeros(6, dtype=np.float32)
+        pose_arr = np.asarray(pose, dtype=np.float32).ravel()
+        if pose_arr.shape != (6,):
+            raise ValueError(
+                f"{field_name} has shape {pose_arr.shape}, expected (6,)"
+            )
+        return pose_arr
+
+    def patch_skill_metadata_range(
+        self,
+        start_idx: int,
+        end_idx: int | None = None,
+        *,
+        goal_joint: np.ndarray | None = None,
+        goal_world_xyzrpy: np.ndarray | None = None,
+        goal_robot_xyzrpy: np.ndarray | None = None,
+        goal_gripper: float | None = None,
+    ) -> None:
+        """Patch already-recorded skill metadata entries in the current episode."""
+        if end_idx is None:
+            end_idx = len(self._skills)
+        start = max(0, start_idx)
+        end = max(start, min(end_idx, len(self._skills)))
+
+        goal_joint_list = None
+        if goal_joint is not None:
+            goal_joint_list = np.asarray(goal_joint, dtype=np.float32).ravel().tolist()
+        goal_world_list = None
+        if goal_world_xyzrpy is not None:
+            goal_world_list = self._coerce_pose_vector(
+                goal_world_xyzrpy, "goal_world_xyzrpy"
+            ).tolist()
+        goal_robot_list = None
+        if goal_robot_xyzrpy is not None:
+            goal_robot_list = self._coerce_pose_vector(
+                goal_robot_xyzrpy, "goal_robot_xyzrpy"
+            ).tolist()
+
+        for idx in range(start, end):
+            entry = self._skills[idx]
+            if goal_joint_list is not None:
+                entry["goal_joint"] = goal_joint_list
+            if goal_world_list is not None:
+                entry["goal_world_xyzrpy"] = goal_world_list
+            if goal_robot_list is not None:
+                entry["goal_robot_xyzrpy"] = goal_robot_list
+            if goal_gripper is not None:
+                entry["goal_gripper"] = float(goal_gripper)
 
 
 # ======================================================================
@@ -398,6 +476,14 @@ def convert_to_lerobot(
             "shape": (total_dofs,),
             "names": [metadata["joint_names"]],
         },
+        "observation.tcp.world_xyzrpy": {
+            "dtype": "float32",
+            "shape": (6,),
+        },
+        "observation.tcp.robot_xyzrpy": {
+            "dtype": "float32",
+            "shape": (6,),
+        },
         "action": {
             "dtype": "float32",
             "shape": (total_dofs,),
@@ -446,6 +532,16 @@ def convert_to_lerobot(
 
         states = np.load(ep_dir / "states.npy")  # (T, N_dof)
         actions = np.load(ep_dir / "actions.npy")  # (T, N_dof)
+        tcp_world = (
+            np.load(ep_dir / "tcp_world_xyzrpy.npy")
+            if (ep_dir / "tcp_world_xyzrpy.npy").exists()
+            else np.zeros((states.shape[0], 6), dtype=np.float32)
+        )
+        tcp_robot = (
+            np.load(ep_dir / "tcp_robot_xyzrpy.npy")
+            if (ep_dir / "tcp_robot_xyzrpy.npy").exists()
+            else np.zeros((states.shape[0], 6), dtype=np.float32)
+        )
         T = states.shape[0]
 
         with open(ep_dir / "skills.json") as f:
@@ -463,21 +559,22 @@ def convert_to_lerobot(
 
         for t in range(T):
             skill = skills[t] if t < len(skills) else {}
-            goal_joint = skill.get("goal_joint")
+            goal_joint = _coerce_goal_joint(
+                skill.get("goal_joint"),
+                total_dofs=total_dofs,
+            )
             goal_xyzrpy = skill.get("goal_world_xyzrpy")
             goal_robot_xyzrpy = skill.get("goal_robot_xyzrpy")
 
             frame: dict = {
                 "observation.state": states[t],
+                "observation.tcp.world_xyzrpy": tcp_world[t],
+                "observation.tcp.robot_xyzrpy": tcp_robot[t],
                 "action": actions[t],
                 "skill.natural_language": skill.get("label", ""),
                 "skill.type": skill.get("type", ""),
                 "skill.progress": np.float32(skill.get("progress", 0.0)),
-                "skill.goal_position.joint": (
-                    np.array(goal_joint, dtype=np.float32)
-                    if goal_joint is not None
-                    else np.zeros(total_dofs, dtype=np.float32)
-                ),
+                "skill.goal_position.joint": goal_joint,
                 "skill.goal_position.world_xyzrpy": (
                     np.array(goal_xyzrpy, dtype=np.float32)
                     if goal_xyzrpy is not None
@@ -511,3 +608,19 @@ def convert_to_lerobot(
     dataset_path = str(Path(output_root).resolve() / repo_id)
     logger.info("LeRobot dataset created at: %s", dataset_path)
     return dataset_path
+
+
+def _coerce_goal_joint(goal_joint: list[float] | None, total_dofs: int) -> np.ndarray:
+    """Normalize goal_joint arrays from raw skills.json into full-DOF vectors."""
+    if goal_joint is None:
+        return np.zeros(total_dofs, dtype=np.float32)
+
+    joint_arr = np.asarray(goal_joint, dtype=np.float32).ravel()
+    if joint_arr.shape[0] == total_dofs:
+        return joint_arr
+    if joint_arr.shape[0] > total_dofs:
+        return joint_arr[:total_dofs]
+
+    padded = np.zeros(total_dofs, dtype=np.float32)
+    padded[: joint_arr.shape[0]] = joint_arr
+    return padded

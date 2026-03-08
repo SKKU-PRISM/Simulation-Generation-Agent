@@ -230,21 +230,21 @@ Isaac Sim에서는 시각 검증에 사용되고, Data Collection은 별도로 r
 
 현재 task 수는 78개입니다.
 
-| 카테고리 | Franka | OpenArm | UR10e | SO-101 | UR10(legacy) | 합계 |
-|----------|:------:|:-------:|:-----:|:------:|:------------:|:----:|
-| assembly | 4 | 4 | - | 4 | 4 | 16 |
-| stack | 2 | 2 | 2 | 1 | - | 7 |
-| lift | 2 | 2 | - | 1 | - | 5 |
-| pick_place | 9 | 9 | 7 | 3 | - | 28 |
-| reach | - | 1 | 1 | 1 | - | 3 |
-| cabinet | 3 | 3 | 3 | - | - | 9 |
-| sort | 3 | 3 | - | 3 | - | 9 |
-| peg_insert | 1 | - | - | - | - | 1 |
-| **합계** | **24** | **24** | **13** | **13** | **4** | **78** |
+| 카테고리 | Franka | OpenArm | UR10e | SO-101 | 합계 |
+|----------|:------:|:-------:|:-----:|:------:|:----:|
+| assembly | 4 | 4 | 4 | 4 | 16 |
+| stack | 2 | 2 | 2 | 1 | 7 |
+| lift | 2 | 2 | - | 1 | 5 |
+| pick_place | 9 | 9 | 7 | 3 | 28 |
+| reach | - | 1 | 1 | 1 | 3 |
+| cabinet | 3 | 3 | 3 | - | 9 |
+| sort | 3 | 3 | - | 3 | 9 |
+| peg_insert | 1 | - | - | - | 1 |
+| **합계** | **24** | **24** | **17** | **13** | **78** |
 
 비고:
 
-- `UR10(legacy)` assembly task는 corpus에는 남아 있지만, IsaacLab 실행 시에는 내부적으로 canonical `ur10e` 표현으로 resolve될 수 있습니다.
+- corpus robot 기준으로는 `ur10e`만 공식 지원하며, free-form 입력 alias로는 `ur10`을 계속 허용합니다.
 - `assembly` category는 기존 stack/lift보다 geometry/pose semantics가 더 강하므로, goal relation과 local asset path를 명시적으로 유지하는 것이 중요합니다.
 
 ## 10. 작성 시 주의점

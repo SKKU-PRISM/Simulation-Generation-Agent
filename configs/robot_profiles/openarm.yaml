@@ -75,7 +75,7 @@ gripper:
   max_force: 333.33                    # N (effort_limit from actuator)
   stiffness: 2000.0
   damping: 100.0
-  ee_finger_offset: 0.12              # m — estimated openarm_hand to finger tip
+  ee_finger_offset: 0.0               # m — tcp_frame already points at the grasp TCP
 
 physics:
   self_collision: false
@@ -132,8 +132,8 @@ asset:
     openarm_joint5: 0.0
     openarm_joint6: 0.0
     openarm_joint7: 0.0
-    openarm_finger_joint1: 0.0
-    openarm_finger_joint2: 0.0
+    openarm_finger_joint1: 0.044
+    openarm_finger_joint2: 0.044
   default_pose:
     openarm_joint1: 1.57
     openarm_joint2: 0.0
@@ -142,5 +142,5 @@ asset:
     openarm_joint5: 0.0
     openarm_joint6: 0.0
     openarm_joint7: 0.0
-    openarm_finger_joint1: 0.0
-    openarm_finger_joint2: 0.0
+    openarm_finger_joint1: 0.044
+    openarm_finger_joint2: 0.044

@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_CLOSED_GRIPPER_ANTI_DRIFT_GAIN = 5.0
+_DEFAULT_CLOSED_GRIPPER_ANTI_DRIFT_GAIN = 5.0
 
 
 # ============================================================
@@ -131,6 +131,9 @@ class IKSolver:
     Implementation: PinocchioIKSolver (ADC KinematicsEngine).
     """
 
+    backend_name = "unknown"
+    supports_offline_fk = True
+
     def solve_position(
         self,
         target_xyz: np.ndarray,
@@ -216,7 +219,16 @@ class PinocchioIKSolver(IKSolver):
     Reuses: AutoDataCollector/src/lerobot_cap/kinematics/engine.py
     """
 
-    def __init__(self, urdf_path: str, ee_frame: str, joint_names: list[str]):
+    backend_name = "pinocchio"
+    supports_offline_fk = True
+
+    def __init__(
+        self,
+        urdf_path: str,
+        ee_frame: str,
+        joint_names: list[str],
+        tcp_offset: Optional[list[float]] = None,
+    ):
         try:
             import pinocchio  # noqa: F401
             from .adc_imports import get_kinematics_engine
@@ -229,6 +241,7 @@ class PinocchioIKSolver(IKSolver):
                 f"Error: {e}"
             )
 
+        self._tcp_offset = np.asarray(tcp_offset, dtype=np.float64) if tcp_offset else None
         self._engine = KinematicsEngine(
             urdf_path=urdf_path,
             end_effector_frame=ee_frame,
@@ -314,31 +327,181 @@ class PinocchioIKSolver(IKSolver):
         return self._engine.is_position_reachable(target_xyz)
 
 
+class DifferentialIKSolver(IKSolver):
+    """Streaming IK helper backed by IsaacLab's DifferentialIK controller."""
+
+    backend_name = "differential_ik"
+    supports_offline_fk = False
+
+    def __init__(self, robot_interface: SimRobotInterface):
+        try:
+            import torch
+            from isaaclab.controllers import DifferentialIKController, DifferentialIKControllerCfg
+            from isaaclab.utils.math import subtract_frame_transforms
+        except ImportError as e:
+            raise ImportError(
+                "DifferentialIKSolver requires IsaacLab runtime packages."
+            ) from e
+
+        self._torch = torch
+        self._subtract_frame_transforms = subtract_frame_transforms
+        self.robot = robot_interface
+        self._articulation = robot_interface.articulation
+        self._arm_indices = robot_interface.arm_joint_indices
+        self._body_idx = robot_interface.ee_body_index
+        self._device = self._articulation.device
+
+        if self._articulation.is_fixed_base:
+            self._ee_jacobian_idx = self._body_idx - 1
+        else:
+            self._ee_jacobian_idx = self._body_idx
+
+        self._pos_controller = DifferentialIKController(
+            DifferentialIKControllerCfg(
+                command_type="position",
+                use_relative_mode=False,
+                ik_method="dls",
+            ),
+            num_envs=1,
+            device=self._device,
+        )
+        self._pose_controller = DifferentialIKController(
+            DifferentialIKControllerCfg(
+                command_type="pose",
+                use_relative_mode=False,
+                ik_method="dls",
+            ),
+            num_envs=1,
+            device=self._device,
+        )
+        logger.info(
+            "DifferentialIKSolver initialized for EE body '%s' (jacobian_idx=%d)",
+            robot_interface.ee_body_name,
+            self._ee_jacobian_idx,
+        )
+
+    def _current_state_in_base(self):
+        jacobian = self._articulation.root_physx_view.get_jacobians()[
+            self.robot.env_idx : self.robot.env_idx + 1,
+            self._ee_jacobian_idx,
+            :,
+            self._arm_indices,
+        ]
+        ee_pose_w = self._articulation.data.body_pose_w[
+            self.robot.env_idx : self.robot.env_idx + 1,
+            self._body_idx,
+        ]
+        root_pose_w = self._articulation.data.root_pose_w[
+            self.robot.env_idx : self.robot.env_idx + 1
+        ]
+        joint_pos = self._articulation.data.joint_pos[
+            self.robot.env_idx : self.robot.env_idx + 1,
+            self._arm_indices,
+        ]
+        ee_pos_b, ee_quat_b = self._subtract_frame_transforms(
+            root_pose_w[:, 0:3],
+            root_pose_w[:, 3:7],
+            ee_pose_w[:, 0:3],
+            ee_pose_w[:, 3:7],
+        )
+        return ee_pos_b, ee_quat_b, jacobian, joint_pos
+
+    def current_pose_base(self) -> tuple[np.ndarray, np.ndarray]:
+        ee_pos_b, ee_quat_b, _, _ = self._current_state_in_base()
+        return (
+            ee_pos_b[0].detach().cpu().numpy(),
+            ee_quat_b[0].detach().cpu().numpy(),
+        )
+
+    def solve_position(
+        self,
+        target_xyz: np.ndarray,
+        current_joints: np.ndarray,
+        fixed_joints: Optional[list[int]] = None,
+    ) -> tuple[np.ndarray, bool]:
+        del current_joints, fixed_joints
+        ee_pos_b, ee_quat_b, jacobian, joint_pos = self._current_state_in_base()
+        command = self._torch.tensor(
+            target_xyz, dtype=self._torch.float32, device=self._device
+        ).unsqueeze(0)
+        self._pos_controller.set_command(command, ee_quat=ee_quat_b)
+        joint_pos_des = self._pos_controller.compute(ee_pos_b, ee_quat_b, jacobian, joint_pos)
+        success = bool(self._torch.isfinite(joint_pos_des).all().item())
+        return joint_pos_des[0].detach().cpu().numpy(), success
+
+    def solve_pose(
+        self,
+        target_xyz: np.ndarray,
+        target_rotation: np.ndarray,
+        current_joints: np.ndarray,
+    ) -> tuple[np.ndarray, bool]:
+        del current_joints
+        ee_pos_b, ee_quat_b, jacobian, joint_pos = self._current_state_in_base()
+        target_quat = SimSkills._rotation_matrix_to_quat(target_rotation)
+        command = self._torch.tensor(
+            [*target_xyz.tolist(), *target_quat.tolist()],
+            dtype=self._torch.float32,
+            device=self._device,
+        ).unsqueeze(0)
+        self._pose_controller.set_command(command)
+        joint_pos_des = self._pose_controller.compute(ee_pos_b, ee_quat_b, jacobian, joint_pos)
+        success = bool(self._torch.isfinite(joint_pos_des).all().item())
+        return joint_pos_des[0].detach().cpu().numpy(), success
+
+    def solve_position_with_pitch(
+        self,
+        target_xyz: np.ndarray,
+        target_pitch: float,
+        current_joints: np.ndarray,
+        fixed_joints: Optional[list[int]] = None,
+    ) -> tuple[np.ndarray, bool]:
+        del target_pitch, fixed_joints
+        return self.solve_position(target_xyz, current_joints)
+
+    def forward_kinematics(self, joints: np.ndarray) -> np.ndarray:
+        del joints
+        raise RuntimeError("DifferentialIKSolver does not support offline forward kinematics")
+
+    def forward_kinematics_pose(
+        self, joints: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        del joints
+        raise RuntimeError("DifferentialIKSolver does not support offline forward kinematics")
+
+    def is_reachable(self, target_xyz: np.ndarray) -> bool:
+        current_pos, _ = self.current_pose_base()
+        return float(np.linalg.norm(np.asarray(target_xyz) - current_pos)) < 1.0
+
+
 def create_ik_solver(
     robot_cfg: RobotSimConfig,
+    robot_interface: Optional[SimRobotInterface] = None,
     urdf_path: Optional[str] = None,
-) -> PinocchioIKSolver:
-    """Create Pinocchio IK solver from robot config.
+) -> IKSolver:
+    """Create IK solver from robot config.
 
     Args:
-        robot_cfg: Robot configuration (must have urdf_path).
+        robot_cfg: Robot configuration.
+        robot_interface: Live robot interface for DifferentialIK fallback.
         urdf_path: Override URDF path (optional).
 
     Raises:
-        RuntimeError: If no URDF path available.
-        ImportError: If pinocchio or ADC submodule not installed.
+        RuntimeError: If neither Pinocchio nor DifferentialIK can be used.
     """
     _urdf = urdf_path or robot_cfg.urdf_path
-    if not _urdf:
-        raise RuntimeError(
-            f"No URDF path for robot '{robot_cfg.name}'. "
-            "Add urdf_path to the robot profile YAML "
-            "(e.g., urdf_path: '{{ISAACLAB_URDF_DIR}}/lula_franka_gen.urdf')."
+    if _urdf:
+        return PinocchioIKSolver(
+            urdf_path=_urdf,
+            ee_frame=robot_cfg.ik_ee_frame or robot_cfg.ee_frame_tcp or robot_cfg.ee_frame_body,
+            joint_names=robot_cfg.arm_joint_names,
+            tcp_offset=robot_cfg.ee_frame_offset_position or None,
         )
-    return PinocchioIKSolver(
-        urdf_path=_urdf,
-        ee_frame=robot_cfg.ik_ee_frame or robot_cfg.ee_frame_body,
-        joint_names=robot_cfg.arm_joint_names,
+    if robot_interface is not None:
+        return DifferentialIKSolver(robot_interface)
+    raise RuntimeError(
+        f"No IK backend available for robot '{robot_cfg.name}'. "
+        "Add urdf_path to the robot profile or pass a live robot interface "
+        "to use IsaacLab DifferentialIK fallback."
     )
 
 
@@ -401,7 +564,14 @@ class SimSkills:
         if ik_solver is not None:
             self.ik = ik_solver
         else:
-            self.ik = create_ik_solver(robot_cfg)
+            self.ik = create_ik_solver(robot_cfg, robot_interface=self.robot)
+        logger.info("SimSkills IK backend: %s", getattr(self.ik, "backend_name", "unknown"))
+
+        self._closed_gripper_anti_drift_gain = _DEFAULT_CLOSED_GRIPPER_ANTI_DRIFT_GAIN
+        if self.cfg.name == "so101":
+            # SO-101 has a single wrist-roll joint. Large anti-drift gains make
+            # that joint oscillate under contact, so keep the compensation mild.
+            self._closed_gripper_anti_drift_gain = 2.0
 
         # Velocity/acceleration limits for time parameterization
         vel_limits = [v for v in robot_cfg.velocity_limits.values() if v is not None]
@@ -411,6 +581,10 @@ class SimSkills:
         # Current skill tracking (for recording)
         self._current_skill_label = ""
         self._current_skill_type = ""
+        self._current_goal_joint: Optional[np.ndarray] = None
+        self._current_goal_world_xyzrpy: Optional[np.ndarray] = None
+        self._current_goal_robot_xyzrpy: Optional[np.ndarray] = None
+        self._current_goal_gripper: float = 0.0
         self._skill_step_count = 0
         self._skill_total_steps = 0
 
@@ -428,7 +602,9 @@ class SimSkills:
         # - 6-DOF (UR10e): Lock all 3 wrist joints (idx 3,4,5).
         #   3 free DOF for 3D position. Orientation varies with position but is
         #   consistent for nearby positions. Grasp offset adapts to actual hand_z.
-        # - 4-5 DOF: Lock wrist joints at ready-pose values.
+        # - 4-5 DOF: Keep only the terminal wrist-roll joint fixed by default.
+        #   Locking the last three joints on a 5-DOF arm leaves only 2 free DOF
+        #   for 3D position IK and makes approach targets unreachable.
         # - 7+ DOF (Franka, OpenARM): Full 6-DOF pose IK.
         self._palm_down_pitch = None  # Set for 6-DOF robots
         if self.cfg.arm_dofs == 6:
@@ -441,33 +617,302 @@ class SimSkills:
                 logger.warning(f"Palm-down pitch init failed: {e}, defaulting to -pi/2")
                 self._palm_down_pitch = -np.pi / 2
         elif 4 <= self.cfg.arm_dofs <= 5:
-            self._orientation_lock_joints = [
-                self.cfg.arm_dofs - 3,
-                self.cfg.arm_dofs - 2,
-                self.cfg.arm_dofs - 1,
-            ]
+            self._orientation_lock_joints = [self.cfg.arm_dofs - 1]
             logger.info(f"Orientation lock joints: {self._orientation_lock_joints}")
         else:
             self._orientation_lock_joints = []
 
     # ---- FK-based coordinate computation ----
 
-    def _compute_goal_robot_xyzrpy(
+    def _compute_goal_tcp_robot_xyzrpy(
         self, target_arm_joints: np.ndarray
     ) -> np.ndarray | None:
-        """Compute EE pose in robot base frame via FK.
+        """Compute goal TCP pose in the robot base frame via FK.
 
         Returns:
             [x, y, z, roll, pitch, yaw] float32, or None on failure.
         """
         try:
             pos, R = self.ik.forward_kinematics_pose(target_arm_joints)
-            pos_world = pos + self._base_offset
+            if self._uses_virtual_tcp():
+                pos = pos + R @ np.asarray(self.cfg.ee_frame_offset_position, dtype=np.float64)
             roll, pitch, yaw = _rotation_matrix_to_rpy(R)
-            return np.array([*pos_world, roll, pitch, yaw], dtype=np.float32)
+            return np.array([*pos, roll, pitch, yaw], dtype=np.float32)
         except Exception:
             logger.debug("FK pose computation failed", exc_info=True)
             return None
+
+    def _compute_goal_tcp_world_xyzrpy(
+        self, target_arm_joints: np.ndarray
+    ) -> np.ndarray | None:
+        """Compute goal TCP pose in simulator world frame via FK."""
+        try:
+            pos_robot, R_robot = self.ik.forward_kinematics_pose(target_arm_joints)
+            if self._uses_virtual_tcp():
+                pos_robot = pos_robot + R_robot @ np.asarray(
+                    self.cfg.ee_frame_offset_position,
+                    dtype=np.float64,
+                )
+            quat_robot = self._rotation_matrix_to_quat(R_robot)
+            pos_world, quat_world = self.robot.robot_pose_to_world_pose(
+                pos_robot,
+                quat_robot,
+            )
+            return self._pose_to_xyzrpy(pos_world, quat_world)
+        except Exception:
+            logger.debug("FK world-pose computation failed", exc_info=True)
+            return None
+
+    def _pose_to_xyzrpy(
+        self,
+        position: np.ndarray,
+        quat_wxyz: np.ndarray,
+    ) -> np.ndarray:
+        """Convert a pose tuple into ADC-style xyzrpy."""
+        rotation = self._quat_to_rotation_matrix(quat_wxyz)
+        roll, pitch, yaw = _rotation_matrix_to_rpy(rotation)
+        return np.array([*np.asarray(position, dtype=np.float64), roll, pitch, yaw], dtype=np.float32)
+
+    def _goal_pose_world_to_robot_xyzrpy(
+        self,
+        position_world: np.ndarray,
+        rotation_world: np.ndarray,
+    ) -> np.ndarray:
+        """Convert an intended world-frame TCP goal pose into robot-base xyzrpy."""
+        quat_world = self._rotation_matrix_to_quat(rotation_world)
+        pos_robot, quat_robot = self.robot.world_pose_to_robot_pose(position_world, quat_world)
+        return self._pose_to_xyzrpy(pos_robot, quat_robot)
+
+    def _current_tcp_world_xyzrpy(self) -> np.ndarray:
+        """Read the current TCP pose in simulator world coordinates."""
+        pos_world, quat_world = self.robot.read_tcp_pose_world()
+        return self._pose_to_xyzrpy(pos_world, quat_world)
+
+    def _current_tcp_robot_xyzrpy(self) -> np.ndarray:
+        """Read the current TCP pose in robot-base coordinates."""
+        pos_robot, quat_robot = self.robot.read_tcp_pose_robot()
+        return self._pose_to_xyzrpy(pos_robot, quat_robot)
+
+    def _goal_gripper_scalar(
+        self,
+        gripper_target: Optional[float | list[float] | tuple[float, ...] | np.ndarray],
+    ) -> float:
+        """Reduce a gripper target to the canonical scalar stored in metadata."""
+        if gripper_target is None:
+            current_targets = self.robot.read_target_positions()
+            if len(current_targets) <= self.cfg.arm_dofs:
+                return 0.0
+            return float(current_targets[self.cfg.arm_dofs])
+
+        if isinstance(gripper_target, np.ndarray):
+            gripper_target = gripper_target.tolist()
+        if isinstance(gripper_target, (list, tuple)):
+            if not gripper_target:
+                return 0.0
+            return float(gripper_target[0])
+        return float(gripper_target)
+
+    def _compose_full_goal_joint(
+        self,
+        target_arm_joints: Optional[np.ndarray] = None,
+        gripper_target: Optional[float | list[float] | tuple[float, ...] | np.ndarray] = None,
+    ) -> np.ndarray:
+        """Build a full-DOF goal joint vector for dataset metadata."""
+        full_goal = self.robot.read_target_positions().astype(np.float32, copy=True)
+        if target_arm_joints is not None:
+            target_arm_joints = np.asarray(target_arm_joints, dtype=np.float32).ravel()
+            full_goal[: self.cfg.arm_dofs] = target_arm_joints[: self.cfg.arm_dofs]
+        if gripper_target is not None and self.cfg.has_gripper_joints:
+            finger_targets = self.robot.expand_gripper_target_positions(gripper_target).astype(
+                np.float32,
+                copy=False,
+            )
+            start = self.cfg.arm_dofs
+            full_goal[start : start + len(finger_targets)] = finger_targets
+        return full_goal
+
+    def _backfill_skill_goal_poses(
+        self,
+        start_idx: int,
+        *,
+        goal_world_xyzrpy: Optional[np.ndarray],
+        goal_robot_xyzrpy: Optional[np.ndarray],
+    ) -> None:
+        """Patch already-recorded frames when goal poses are only known post-hoc."""
+        if self.recorder is None or not self.recorder.is_recording:
+            return
+        self.recorder.patch_skill_metadata_range(
+            start_idx,
+            self.recorder.current_episode_steps,
+            goal_world_xyzrpy=goal_world_xyzrpy,
+            goal_robot_xyzrpy=goal_robot_xyzrpy,
+        )
+
+    def _uses_virtual_tcp(self) -> bool:
+        return bool(self.cfg.ee_frame_offset_position) and not self.cfg.ee_frame_tcp
+
+    def _target_tool_rotation(self) -> np.ndarray:
+        """Return the best available world-frame tool rotation for local target biases."""
+        try:
+            if hasattr(self, "PALM_DOWN_ROTATION") and self.PALM_DOWN_ROTATION is not None:
+                return np.asarray(self.PALM_DOWN_ROTATION, dtype=np.float64)
+        except Exception:
+            pass
+        try:
+            _, ee_quat = self.robot.read_ee_pose()
+            return self._quat_to_rotation_matrix(ee_quat)
+        except Exception:
+            return np.eye(3, dtype=np.float64)
+
+    def _apply_local_tool_offset(
+        self,
+        target_xyz_world: np.ndarray,
+        *,
+        local_offset: Optional[np.ndarray] = None,
+        rotation_world: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        """Shift a world target by a local tool-frame offset."""
+        target_xyz_world = np.asarray(target_xyz_world, dtype=np.float64)
+        if local_offset is None:
+            return target_xyz_world
+        offset_local = np.asarray(local_offset, dtype=np.float64)
+        if np.linalg.norm(offset_local) < 1e-9:
+            return target_xyz_world
+        rotation = (
+            np.asarray(rotation_world, dtype=np.float64)
+            if rotation_world is not None
+            else self._target_tool_rotation()
+        )
+        return target_xyz_world + rotation @ offset_local
+
+    def _compute_pick_targets(
+        self,
+        object_position: np.ndarray,
+        *,
+        approach_offset: float,
+        grasp_offset: Optional[float] = None,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Compute grasp/approach targets in world frame for the current robot."""
+        obj_pos = np.asarray(object_position, dtype=np.float64).copy()
+        grasp_offset = self.cfg.ee_finger_offset if grasp_offset is None else float(grasp_offset)
+        tcp_targeting = bool(self.cfg.ee_frame_offset_position)
+        lateral_bias = float(getattr(self.cfg, "grasp_lateral_bias", 0.0) or 0.0)
+        claw_grasp_z_bias = 0.0 if self.cfg.gripper_type == "claw" else 0.0
+
+        if self.cfg.arm_dofs == 6:
+            grasp_pos = obj_pos.copy()
+            grasp_pos[2] += grasp_offset
+            approach_pos = grasp_pos.copy()
+            approach_pos[2] += approach_offset
+            return grasp_pos, approach_pos
+
+        grasp_pos = obj_pos.copy()
+        grasp_pos[2] += (0.0 if tcp_targeting else grasp_offset) + claw_grasp_z_bias
+        if lateral_bias:
+            grasp_pos = self._apply_local_tool_offset(
+                grasp_pos,
+                local_offset=np.array([0.0, lateral_bias, 0.0], dtype=np.float64),
+            )
+        approach_pos = grasp_pos.copy()
+        approach_pos[2] += approach_offset
+        return grasp_pos, approach_pos
+
+    def _compute_place_targets(
+        self,
+        target_position: np.ndarray,
+        *,
+        approach_offset: float,
+        drop_offset: float,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Compute place/approach targets in world frame for the current robot."""
+        target_position = np.asarray(target_position, dtype=np.float64).copy()
+        finger_offset = self.cfg.ee_finger_offset
+        tcp_targeting = bool(self.cfg.ee_frame_offset_position)
+        lateral_bias = float(getattr(self.cfg, "grasp_lateral_bias", 0.0) or 0.0)
+        claw_release_z_bias = 0.0 if self.cfg.gripper_type == "claw" else 0.0
+
+        if self.cfg.arm_dofs == 6:
+            place_pos = target_position.copy()
+            place_pos[2] += drop_offset + finger_offset
+            approach_pos = place_pos.copy()
+            approach_pos[2] += approach_offset
+            return place_pos, approach_pos
+
+        place_pos = target_position.copy()
+        place_pos[2] += drop_offset + claw_release_z_bias + (0.0 if tcp_targeting else finger_offset)
+        if lateral_bias:
+            place_pos = self._apply_local_tool_offset(
+                place_pos,
+                local_offset=np.array([0.0, lateral_bias, 0.0], dtype=np.float64),
+            )
+        approach_pos = place_pos.copy()
+        approach_pos[2] += approach_offset
+        return place_pos, approach_pos
+
+    def _world_target_to_ik_target(
+        self,
+        target_xyz_world: np.ndarray,
+        target_rotation_world: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        """Map a TCP/world target to the IK frame used by Pinocchio.
+
+        Some robots (SO-101) expose only the gripper body in sim/URDF while ADC
+        semantics are defined at a TCP offset from that body. In those cases we
+        convert the desired TCP target into the corresponding body-frame target
+        before calling IK.
+        """
+        target_xyz_world = np.asarray(target_xyz_world, dtype=np.float64)
+        if not self._uses_virtual_tcp():
+            return target_xyz_world
+
+        offset_local = np.asarray(self.cfg.ee_frame_offset_position, dtype=np.float64)
+        if target_rotation_world is None:
+            try:
+                _, ee_quat = self.robot.read_ee_pose()
+                rotation_world = self._quat_to_rotation_matrix(ee_quat)
+            except Exception:
+                rotation_world = self.PALM_DOWN_ROTATION
+        else:
+            rotation_world = np.asarray(target_rotation_world, dtype=np.float64)
+        return target_xyz_world - rotation_world @ offset_local
+
+    def _normalize_arm_joint_targets(
+        self,
+        target_joints: np.ndarray,
+        current_joints: np.ndarray,
+    ) -> np.ndarray:
+        """Wrap/clamp IK outputs into the robot's configured joint limits.
+
+        Pinocchio may return equivalent revolute angles outside the physical
+        joint range (for example, -13rad instead of a nearby wrapped solution).
+        Sending those raw values as absolute IsaacLab targets causes large
+        spins even when the kinematic solution is otherwise reasonable.
+        """
+        normalized = np.asarray(target_joints, dtype=np.float64).copy()
+        current = np.asarray(current_joints, dtype=np.float64)
+        for idx, joint_name in enumerate(self.cfg.arm_joint_names):
+            limits = self.cfg.joint_limits.get(joint_name)
+            if not limits:
+                continue
+            lower, upper = float(limits[0]), float(limits[1])
+            candidates = [normalized[idx] + 2.0 * np.pi * k for k in range(-3, 4)]
+            valid = [cand for cand in candidates if lower - 1e-6 <= cand <= upper + 1e-6]
+            if valid:
+                best = min(valid, key=lambda cand: abs(cand - current[idx]))
+            else:
+                best = float(np.clip(normalized[idx], lower, upper))
+            if abs(best - normalized[idx]) > 1e-5:
+                logger.info(
+                    "Normalized IK joint %s from %.4f to %.4f (current=%.4f, limits=[%.4f, %.4f])",
+                    joint_name,
+                    normalized[idx],
+                    best,
+                    current[idx],
+                    lower,
+                    upper,
+                )
+            normalized[idx] = best
+        return normalized
 
     # ---- Position verification ----
 
@@ -541,8 +986,13 @@ class SimSkills:
 
     # ---- Primitive Skills ----
 
-    def move_to_ready(self, duration: float = 2.0, open_gripper: bool = True,
-                      safe_retreat: bool = False) -> bool:
+    def move_to_ready(
+        self,
+        duration: float = 2.0,
+        open_gripper: bool = True,
+        safe_retreat: bool = False,
+        skill_description: str | None = None,
+    ) -> bool:
         """Move to robot's ready pose from profile.
 
         Args:
@@ -564,7 +1014,7 @@ class SimSkills:
         return self._execute_joint_trajectory(
             target_joints=ready_joints,
             duration=duration,
-            skill_label="move_to_ready",
+            skill_label=skill_description or "move_to_ready",
             skill_type="move_initial",
             gripper_target=gripper_target,
         )
@@ -602,6 +1052,19 @@ class SimSkills:
         # To achieve world-frame target R_target in sim:
         #   R_pinocchio_target = R_target @ R_local.T
         self._local_frame_offset = np.eye(3)  # default: no offset
+
+        if not getattr(self.ik, "supports_offline_fk", True):
+            try:
+                _, ee_quat = self.robot.read_ee_pose()
+                self.PALM_DOWN_ROTATION = self._quat_to_rotation_matrix(ee_quat)
+                logger.info(
+                    "Palm-down init using live sim EE orientation for backend=%s",
+                    getattr(self.ik, "backend_name", "unknown"),
+                )
+            except Exception as e:
+                logger.warning(f"Palm-down init (live pose) failed: {e}, using defaults")
+                print(f"Palm-down init failed: {e}")
+            return
 
         try:
             ready_joints = self._pose_to_arm_array(self.cfg.ready_pose)
@@ -651,6 +1114,8 @@ class SimSkills:
         duration: Optional[float] = None,
         fixed_joints: Optional[list[int]] = None,
         lock_orientation: bool = False,
+        target_name: str | None = None,
+        skill_description: str | None = None,
     ) -> bool:
         """
         Move end-effector to target [x,y,z] position via 3-DOF IK.
@@ -666,8 +1131,23 @@ class SimSkills:
             True if EE reached within EE_POSITION_TOLERANCE of target.
         """
         target_xyz = np.asarray(target_xyz, dtype=np.float64)
-        # Convert world-frame target to robot base frame for IK
-        target_base = target_xyz - self._base_offset
+        skill_label = (
+            skill_description
+            or (f"move to {target_name}" if target_name else None)
+            or f"move_to [{target_xyz[0]:.3f}, {target_xyz[1]:.3f}, {target_xyz[2]:.3f}]"
+        )
+        if getattr(self.ik, "backend_name", "") == "differential_ik":
+            return self._execute_differential_motion(
+                target_xyz,
+                target_rotation=None,
+                duration=duration,
+                skill_label=skill_label,
+                skill_type="move",
+            )
+
+        # Convert world-frame target (TCP semantics) to the IK EE frame in base coordinates.
+        ik_target_world = self._world_target_to_ik_target(target_xyz)
+        target_base = ik_target_world - self._base_offset
         current_arm_joints = self.robot.read_arm_joint_positions()
 
         # For 6-DOF robots: lock wrist orientation joints at ready-pose values
@@ -677,13 +1157,15 @@ class SimSkills:
                 fixed_joints = list(self._orientation_lock_joints)
             else:
                 fixed_joints = list(fixed_joints) + list(self._orientation_lock_joints)
-            ready_joints = self._pose_to_arm_array(self.cfg.ready_pose)
-            for idx in self._orientation_lock_joints:
-                current_arm_joints[idx] = ready_joints[idx]
+            if self.cfg.arm_dofs == 6:
+                ready_joints = self._pose_to_arm_array(self.cfg.ready_pose)
+                for idx in self._orientation_lock_joints:
+                    current_arm_joints[idx] = ready_joints[idx]
 
         target_arm_joints, ik_success = self.ik.solve_position(
             target_base, current_arm_joints, fixed_joints=fixed_joints
         )
+        target_arm_joints = self._normalize_arm_joint_targets(target_arm_joints, current_arm_joints)
 
         if not ik_success:
             logger.warning(
@@ -691,7 +1173,12 @@ class SimSkills:
                 f"Attempting execution with best solution."
             )
 
-        goal_xyz_world = self.ik.forward_kinematics(target_arm_joints) + self._base_offset
+        goal_xyz_world = self._compute_goal_tcp_world_xyzrpy(target_arm_joints)
+        goal_xyz_world = (
+            goal_xyz_world[:3]
+            if goal_xyz_world is not None
+            else self.ik.forward_kinematics(target_arm_joints) + self._base_offset
+        )
         fk_error = np.linalg.norm(goal_xyz_world - target_xyz)
         print(
             f"IK diagnostic: target={target_xyz}, FK={goal_xyz_world}, "
@@ -701,7 +1188,7 @@ class SimSkills:
         self._execute_joint_trajectory(
             target_joints=target_arm_joints,
             duration=duration,
-            skill_label=f"move_to [{target_xyz[0]:.3f}, {target_xyz[1]:.3f}, {target_xyz[2]:.3f}]",
+            skill_label=skill_label,
             skill_type="move",
         )
 
@@ -735,8 +1222,11 @@ class SimSkills:
             True if EE reached within EE_POSITION_TOLERANCE of target.
         """
         target_xyz = np.asarray(target_xyz, dtype=np.float64)
-        # Convert world-frame target to robot base frame for IK
-        target_base = target_xyz - self._base_offset
+        if getattr(self.ik, "backend_name", "") == "differential_ik":
+            return self.move_to_position(target_xyz, duration=duration)
+
+        ik_target_world = self._world_target_to_ik_target(target_xyz)
+        target_base = ik_target_world - self._base_offset
         current_arm_joints = self.robot.read_arm_joint_positions()
 
         # Lock wrist joints at ready-pose values to prevent flipping
@@ -749,6 +1239,7 @@ class SimSkills:
             target_base, target_pitch, current_arm_joints,
             fixed_joints=self._orientation_lock_joints,
         )
+        target_arm_joints = self._normalize_arm_joint_targets(target_arm_joints, current_arm_joints)
 
         if not ik_success:
             logger.warning(
@@ -757,7 +1248,12 @@ class SimSkills:
             )
 
         # Diagnostics: position + achieved pitch
-        goal_xyz_world = self.ik.forward_kinematics(target_arm_joints) + self._base_offset
+        goal_xyz_world = self._compute_goal_tcp_world_xyzrpy(target_arm_joints)
+        goal_xyz_world = (
+            goal_xyz_world[:3]
+            if goal_xyz_world is not None
+            else self.ik.forward_kinematics(target_arm_joints) + self._base_offset
+        )
         fk_error = np.linalg.norm(goal_xyz_world - target_xyz)
         achieved_pitch = self.ik.get_gripper_pitch(target_arm_joints)
         pitch_err = abs(np.degrees(achieved_pitch - target_pitch))
@@ -820,8 +1316,17 @@ class SimSkills:
             True if EE reached within tolerance of target position.
         """
         target_xyz = np.asarray(target_xyz, dtype=np.float64)
-        # Convert world-frame target to robot base frame for IK
-        target_base = target_xyz - self._base_offset
+        if getattr(self.ik, "backend_name", "") == "differential_ik":
+            return self._execute_differential_motion(
+                target_xyz,
+                target_rotation=target_rotation,
+                duration=duration,
+                skill_label=f"move_pose [{target_xyz[0]:.3f}, {target_xyz[1]:.3f}, {target_xyz[2]:.3f}]",
+                skill_type="move",
+            )
+
+        ik_target_world = self._world_target_to_ik_target(target_xyz, target_rotation)
+        target_base = ik_target_world - self._base_offset
         current_arm_joints = self.robot.read_arm_joint_positions()
 
         # Transform target rotation from world/sim frame to Pinocchio frame.
@@ -833,6 +1338,7 @@ class SimSkills:
         target_arm_joints, ik_success = self.ik.solve_pose(
             target_base, ik_rotation, current_arm_joints
         )
+        target_arm_joints = self._normalize_arm_joint_targets(target_arm_joints, current_arm_joints)
 
         # Fallback: try tilted orientation variants
         if not ik_success:
@@ -842,6 +1348,7 @@ class SimSkills:
                 target_arm_joints, ik_success = self.ik.solve_pose(
                     target_base, tilted_rot, current_arm_joints
                 )
+                target_arm_joints = self._normalize_arm_joint_targets(target_arm_joints, current_arm_joints)
                 if ik_success:
                     logger.info(f"6-DOF IK succeeded with {tilt_deg}° Y-tilt")
                     break
@@ -855,8 +1362,14 @@ class SimSkills:
             target_arm_joints, ik_success = self.ik.solve_position(
                 target_base, current_arm_joints
             )
+            target_arm_joints = self._normalize_arm_joint_targets(target_arm_joints, current_arm_joints)
 
-        goal_xyz_world = self.ik.forward_kinematics(target_arm_joints) + self._base_offset
+        goal_xyz_world = self._compute_goal_tcp_world_xyzrpy(target_arm_joints)
+        goal_xyz_world = (
+            goal_xyz_world[:3]
+            if goal_xyz_world is not None
+            else self.ik.forward_kinematics(target_arm_joints) + self._base_offset
+        )
         fk_error = np.linalg.norm(goal_xyz_world - target_xyz)
         print(
             f"IK 6DOF: target={target_xyz}, FK={goal_xyz_world}, "
@@ -873,14 +1386,27 @@ class SimSkills:
         reached, error = self._verify_ee_position(target_xyz)
         return reached
 
-    def gripper_open(self, duration: float = 0.5) -> bool:
+    def gripper_open(
+        self,
+        duration: float = 0.5,
+        skill_description: str | None = None,
+    ) -> bool:
         """Open gripper."""
         # FK for current arm pose → robot base frame
         current_arm = self.robot.read_arm_joint_positions()
-        goal_robot_xyzrpy = self._compute_goal_robot_xyzrpy(current_arm)
+        goal_world_xyzrpy = self._current_tcp_world_xyzrpy()
+        goal_robot_xyzrpy = self._current_tcp_robot_xyzrpy()
+        goal_joint = self._compose_full_goal_joint(
+            current_arm,
+            gripper_target=self.cfg.gripper_open_position,
+        )
+        goal_gripper = self._goal_gripper_scalar(self.cfg.gripper_open_position)
         self._set_skill_meta(
-            "gripper_open", "gripper",
-            goal_robot_xyzrpy=goal_robot_xyzrpy, goal_gripper=0.0,
+            skill_description or "gripper_open", "gripper",
+            goal_joint=goal_joint,
+            goal_world_xyzrpy=goal_world_xyzrpy,
+            goal_robot_xyzrpy=goal_robot_xyzrpy,
+            goal_gripper=goal_gripper,
         )
         steps = max(1, int(duration * 20))  # 20Hz control
 
@@ -889,13 +1415,20 @@ class SimSkills:
             obs = self.robot.step_sim()
             self._record_step_if_active(
                 progress=(i + 1) / steps,
-                goal_robot_xyzrpy=goal_robot_xyzrpy, goal_gripper=0.0,
+                goal_joint=goal_joint,
+                goal_world_xyzrpy=goal_world_xyzrpy,
+                goal_robot_xyzrpy=goal_robot_xyzrpy,
+                goal_gripper=goal_gripper,
             )
 
         self._gripper_is_closed = False
         return True
 
-    def gripper_close(self, duration: float = 0.5) -> bool:
+    def gripper_close(
+        self,
+        duration: float = 0.5,
+        skill_description: str | None = None,
+    ) -> bool:
         """Close gripper while actively holding arm position.
 
         Gripper contact forces (especially Robotiq 2F-85) can push wrist joints
@@ -905,10 +1438,19 @@ class SimSkills:
         # Snapshot arm targets BEFORE closing — these are the pre-grasp positions
         # that we want to hold steady throughout gripper closure.
         hold_arm = self.robot.read_arm_joint_positions().copy()
-        goal_robot_xyzrpy = self._compute_goal_robot_xyzrpy(hold_arm)
+        goal_world_xyzrpy = self._current_tcp_world_xyzrpy()
+        goal_robot_xyzrpy = self._current_tcp_robot_xyzrpy()
+        goal_joint = self._compose_full_goal_joint(
+            hold_arm,
+            gripper_target=self.cfg.gripper_close_position,
+        )
+        goal_gripper = self._goal_gripper_scalar(self.cfg.gripper_close_position)
         self._set_skill_meta(
-            "gripper_close", "gripper",
-            goal_robot_xyzrpy=goal_robot_xyzrpy, goal_gripper=1.0,
+            skill_description or "gripper_close", "gripper",
+            goal_joint=goal_joint,
+            goal_world_xyzrpy=goal_world_xyzrpy,
+            goal_robot_xyzrpy=goal_robot_xyzrpy,
+            goal_gripper=goal_gripper,
         )
         steps = max(1, int(duration * 20))
 
@@ -925,13 +1467,16 @@ class SimSkills:
             if self._orientation_lock_joints:
                 for idx in self._orientation_lock_joints:
                     drift = actual_arm[idx] - hold_arm[idx]
-                    corrected_arm[idx] = hold_arm[idx] - _CLOSED_GRIPPER_ANTI_DRIFT_GAIN * drift
+                    corrected_arm[idx] = hold_arm[idx] - self._closed_gripper_anti_drift_gain * drift
             self.robot.write_arm_joint_positions(corrected_arm)
             self.robot.set_gripper(open=False)
             obs = self.robot.step_sim()
             self._record_step_if_active(
                 progress=(i + 1) / steps,
-                goal_robot_xyzrpy=goal_robot_xyzrpy, goal_gripper=1.0,
+                goal_joint=goal_joint,
+                goal_world_xyzrpy=goal_world_xyzrpy,
+                goal_robot_xyzrpy=goal_robot_xyzrpy,
+                goal_gripper=goal_gripper,
             )
 
         # Extra settling with anti-drift compensation
@@ -942,7 +1487,7 @@ class SimSkills:
             if self._orientation_lock_joints:
                 for idx in self._orientation_lock_joints:
                     drift = actual_arm[idx] - hold_arm[idx]
-                    corrected_arm[idx] = hold_arm[idx] - _CLOSED_GRIPPER_ANTI_DRIFT_GAIN * drift
+                    corrected_arm[idx] = hold_arm[idx] - self._closed_gripper_anti_drift_gain * drift
             self.robot.write_arm_joint_positions(corrected_arm)
             self.robot.set_gripper(open=False)
             self.robot.step_sim()
@@ -975,6 +1520,10 @@ class SimSkills:
         - 7+ DOF: Full 6-DOF pose IK with PALM_DOWN_ROTATION
         - 4-5 DOF: Position IK with wrist lock
         """
+        if getattr(self.ik, "backend_name", "") == "differential_ik":
+            # Position-first control is more robust for OpenArm than forcing the
+            # ready-pose orientation through every reach target.
+            return self.move_to_position(target_xyz, duration=duration)
         if self.cfg.arm_dofs >= 7:
             return self.move_to_pose(target_xyz, self.PALM_DOWN_ROTATION, duration=duration)
         elif self.cfg.arm_dofs == 6 and self._palm_down_pitch is not None:
@@ -1072,11 +1621,144 @@ class SimSkills:
             [2*(x*z - y*w), 2*(y*z + x*w), 1 - 2*(x*x + y*y)],
         ])
 
+    @staticmethod
+    def _rotation_matrix_to_quat(rotation: np.ndarray) -> np.ndarray:
+        """Convert a 3x3 rotation matrix to quaternion [w, x, y, z]."""
+        m = np.asarray(rotation, dtype=np.float64)
+        trace = np.trace(m)
+        if trace > 0.0:
+            s = np.sqrt(trace + 1.0) * 2.0
+            w = 0.25 * s
+            x = (m[2, 1] - m[1, 2]) / s
+            y = (m[0, 2] - m[2, 0]) / s
+            z = (m[1, 0] - m[0, 1]) / s
+        elif m[0, 0] > m[1, 1] and m[0, 0] > m[2, 2]:
+            s = np.sqrt(1.0 + m[0, 0] - m[1, 1] - m[2, 2]) * 2.0
+            w = (m[2, 1] - m[1, 2]) / s
+            x = 0.25 * s
+            y = (m[0, 1] + m[1, 0]) / s
+            z = (m[0, 2] + m[2, 0]) / s
+        elif m[1, 1] > m[2, 2]:
+            s = np.sqrt(1.0 + m[1, 1] - m[0, 0] - m[2, 2]) * 2.0
+            w = (m[0, 2] - m[2, 0]) / s
+            x = (m[0, 1] + m[1, 0]) / s
+            y = 0.25 * s
+            z = (m[1, 2] + m[2, 1]) / s
+        else:
+            s = np.sqrt(1.0 + m[2, 2] - m[0, 0] - m[1, 1]) * 2.0
+            w = (m[1, 0] - m[0, 1]) / s
+            x = (m[0, 2] + m[2, 0]) / s
+            y = (m[1, 2] + m[2, 1]) / s
+            z = 0.25 * s
+        quat = np.array([w, x, y, z], dtype=np.float64)
+        quat /= np.linalg.norm(quat)
+        return quat
+
+    def _world_rotation_to_base(self, rotation_world: np.ndarray) -> np.ndarray:
+        """Convert a world-frame rotation matrix to the robot base frame."""
+        root_pose = self.robot.articulation.data.root_pose_w[self.robot.env_idx]
+        root_quat = root_pose[3:7].cpu().numpy()
+        root_rot = self._quat_to_rotation_matrix(root_quat)
+        return root_rot.T @ rotation_world
+
+    def _execute_differential_motion(
+        self,
+        target_xyz: np.ndarray,
+        target_rotation: Optional[np.ndarray] = None,
+        duration: Optional[float] = None,
+        skill_label: str = "",
+        skill_type: str = "move",
+    ) -> bool:
+        """Stream differential-IK targets until the EE reaches the goal."""
+        target_xyz = np.asarray(target_xyz, dtype=np.float64)
+        current_xyz = self.robot.read_ee_position()
+        if duration is None:
+            duration = max(0.75, np.linalg.norm(target_xyz - current_xyz) * 6.0)
+        num_steps = max(15, int(duration * 20))
+        if target_rotation is None:
+            _, current_quat = self.robot.read_tcp_pose_world()
+            target_rotation = self._quat_to_rotation_matrix(current_quat)
+        roll, pitch, yaw = _rotation_matrix_to_rpy(target_rotation)
+        goal_world_xyzrpy = np.array([*target_xyz, roll, pitch, yaw], dtype=np.float32)
+        goal_robot_xyzrpy = self._goal_pose_world_to_robot_xyzrpy(target_xyz, target_rotation)
+        gripper_target = None
+        if self.cfg.has_gripper_joints:
+            gripper_target = (
+                self.cfg.gripper_close_position
+                if self._gripper_is_closed
+                else self.cfg.gripper_open_position
+            )
+        goal_gripper = self._goal_gripper_scalar(gripper_target)
+        self._set_skill_meta(
+            skill_label,
+            skill_type,
+            goal_joint=self._compose_full_goal_joint(
+                self.robot.read_arm_joint_positions(),
+                gripper_target=gripper_target,
+            ),
+            goal_world_xyzrpy=goal_world_xyzrpy,
+            goal_robot_xyzrpy=goal_robot_xyzrpy,
+            goal_gripper=goal_gripper,
+        )
+        self._skill_total_steps = num_steps
+
+        target_base = target_xyz - self._base_offset
+        target_base_rot = None
+        if target_rotation is not None:
+            target_base_rot = self._world_rotation_to_base(target_rotation)
+
+        success = False
+        last_error = float("inf")
+        for i in range(num_steps):
+            current_arm_joints = self.robot.read_arm_joint_positions()
+            if target_base_rot is not None:
+                target_arm_joints, ik_success = self.ik.solve_pose(
+                    target_base,
+                    target_base_rot,
+                    current_arm_joints,
+                )
+            else:
+                target_arm_joints, ik_success = self.ik.solve_position(
+                    target_base,
+                    current_arm_joints,
+                )
+
+            if not ik_success:
+                logger.warning("DifferentialIK returned non-finite joint targets")
+                break
+
+            self.robot.write_arm_joint_positions(target_arm_joints)
+            self.robot.step_sim()
+            goal_joint = self._compose_full_goal_joint(
+                target_arm_joints,
+                gripper_target=gripper_target,
+            )
+            self._record_step_if_active(
+                progress=(i + 1) / num_steps,
+                goal_joint=goal_joint,
+                goal_world_xyzrpy=goal_world_xyzrpy,
+                goal_robot_xyzrpy=goal_robot_xyzrpy,
+                goal_gripper=goal_gripper,
+            )
+
+            success, last_error = self._verify_ee_position(target_xyz)
+            if success:
+                break
+
+        if not success and np.isfinite(last_error):
+            logger.warning(
+                "Differential motion did not converge within %d steps (last_error=%.4fm)",
+                num_steps,
+                last_error,
+            )
+        return success
+
     def execute_pick(
         self,
         object_name: str,
         approach_offset: float = 0.10,
         grasp_offset: Optional[float] = None,
+        skill_description: str | None = None,
     ) -> bool:
         """
         Pick object by name using 6-DOF IK (position + palm-down orientation).
@@ -1093,30 +1775,26 @@ class SimSkills:
         if self.detector is None:
             raise RuntimeError("SimDetector required for execute_pick")
 
-        if grasp_offset is None:
-            grasp_offset = self.cfg.ee_finger_offset
-
         obj_pos = self.detector.get_object_position(object_name)
         pre_z = obj_pos[2]
+        if grasp_offset is None:
+            grasp_offset = self.cfg.ee_finger_offset
         logger.info(f"Picking '{object_name}' at {obj_pos} (grasp_offset={grasp_offset:.3f})")
 
-        self.gripper_open(duration=0.3)
+        def step_desc(default: str) -> str:
+            return f"{skill_description} ({default})" if skill_description else default
+
+        self.gripper_open(
+            duration=0.3,
+            skill_description=step_desc(f"open the gripper before grasping {object_name}"),
+        )
+        grasp_pos, approach_pos = self._compute_pick_targets(
+            obj_pos,
+            approach_offset=approach_offset,
+            grasp_offset=grasp_offset,
+        )
 
         if self.cfg.arm_dofs == 6:
-            # 6-DOF with pitch=-90° constraint: tool always points straight
-            # down in the base frame.  Use VERTICAL grasp — EE directly above
-            # object at ee_finger_offset height.
-            #
-            # Previously used measured hand_z (frame Z-axis) for the grasp
-            # offset direction, but that produced tilted trajectories whose
-            # lowest gripper link hit the table, causing collision forces that
-            # destabilised the wrist PD controller.
-            grasp_pos = obj_pos.copy()
-            grasp_pos[2] += grasp_offset       # EE above object; fingertips at object surface
-
-            approach_pos = grasp_pos.copy()
-            approach_pos[2] += approach_offset  # Approach a bit higher
-
             reached = self._move_palm_down(approach_pos)
             if not reached:
                 logger.warning(f"Failed to reach approach position for {object_name}")
@@ -1125,12 +1803,6 @@ class SimSkills:
             # joint discontinuities on low-inertia wrist joints.
             self._move_cartesian_steps(approach_pos, grasp_pos, max_step=0.015)
         else:
-            # 7+ DOF: full pose IK maintains palm-down → vertical approach
-            grasp_pos = obj_pos.copy()
-            grasp_pos[2] += grasp_offset
-            approach_pos = grasp_pos.copy()
-            approach_pos[2] += approach_offset
-
             reached = self._move_palm_down(approach_pos)
             if not reached:
                 logger.warning(f"Failed to reach approach position for {object_name}")
@@ -1153,11 +1825,30 @@ class SimSkills:
         print(f"  PRE-GRASP '{object_name}': EE={np.round(ee_pos, 4)}, "
               f"hand_z={np.round(hand_z, 3)}, obj_z={obj_pos[2]:.4f}, "
               f"grasp_err={grasp_error:.4f}m")
+        if self.cfg.name == "so101":
+            try:
+                from src.data_collection.so101_patches import summarize_so101_pad_alignment_from_stage
+
+                alignment = summarize_so101_pad_alignment_from_stage(
+                    self.robot.env.sim.stage,
+                    obj_pos,
+                    env_idx=self.robot.env_idx,
+                )
+                print(
+                    "  SO101 pad alignment: "
+                    f"midpoint_delta={np.round(alignment['midpoint_delta'], 4)}, "
+                    f"separation={alignment['separation']:.4f}m"
+                )
+            except Exception as align_err:
+                logger.debug("SO101 pad alignment summary failed: %s", align_err)
 
         # Close gripper — use robot-specific duration from profile.
         # Franka (stiffness=2000 Nm/rad): 0.5s suffices.
         # UR10e Robotiq 2F-85 (stiffness=11.25 Nm/rad): needs ~2.0s for full closure.
-        self.gripper_close(duration=self.cfg.gripper_close_duration)
+        self.gripper_close(
+            duration=self.cfg.gripper_close_duration,
+            skill_description=step_desc(f"close the gripper to grasp {object_name}"),
+        )
 
         # Lift back to approach via Cartesian steps (6-DOF) or single move (7+)
         if self.cfg.arm_dofs == 6:
@@ -1167,6 +1858,14 @@ class SimSkills:
                 approach_pos,
                 max_step=0.015,
                 fixed_joints=[3, 4, 5],
+            )
+        elif self.cfg.arm_dofs <= 5 and self._orientation_lock_joints:
+            ee_pos, _ = self.robot.read_ee_pose()
+            self._move_cartesian_steps(
+                ee_pos,
+                approach_pos,
+                max_step=0.01,
+                fixed_joints=list(self._orientation_lock_joints),
             )
         else:
             self._move_palm_down(approach_pos)
@@ -1185,6 +1884,7 @@ class SimSkills:
         approach_offset: float = 0.05,
         drop_offset: float = 0.005,
         _placed_object: Optional[str] = None,
+        skill_description: str | None = None,
     ) -> bool:
         """
         Place held object at target position using 6-DOF IK (palm-down).
@@ -1194,22 +1894,15 @@ class SimSkills:
         Returns:
             True if object landed near target XY (when _placed_object is given).
         """
+        def step_desc(default: str) -> str:
+            return f"{skill_description} ({default})" if skill_description else default
+
         target_position = np.asarray(target_position, dtype=np.float64)
-        finger_offset = self.cfg.ee_finger_offset
-
-        if self.cfg.arm_dofs == 6:
-            # 6-DOF with pitch=-90°: vertical placement.
-            # EE directly above target at finger_offset + drop_offset height.
-            place_pos = target_position.copy()
-            place_pos[2] += drop_offset + finger_offset
-
-            approach_pos = place_pos.copy()
-            approach_pos[2] += approach_offset
-        else:
-            place_pos = target_position.copy()
-            place_pos[2] += drop_offset + finger_offset
-            approach_pos = place_pos.copy()
-            approach_pos[2] += approach_offset
+        place_pos, approach_pos = self._compute_place_targets(
+            target_position,
+            approach_offset=approach_offset,
+            drop_offset=drop_offset,
+        )
 
         # Move to approach
         self._move_palm_down(approach_pos)
@@ -1221,7 +1914,11 @@ class SimSkills:
             self._move_palm_down(place_pos)
 
         # Open gripper
-        self.gripper_open(duration=0.3)
+        release_name = _placed_object or "the held object"
+        self.gripper_open(
+            duration=0.3,
+            skill_description=step_desc(f"open the gripper to release {release_name}"),
+        )
 
         # Retreat up via Cartesian steps (6-DOF)
         if self.cfg.arm_dofs == 6:
@@ -1249,6 +1946,7 @@ class SimSkills:
         place_position: np.ndarray,
         approach_offset: float = 0.05,
         place_on_object: Optional[str] = None,
+        skill_description: str | None = None,
     ) -> bool:
         """Full pick-and-place sequence.
 
@@ -1263,7 +1961,11 @@ class SimSkills:
         Returns:
             True if both pick and place succeeded verification.
         """
-        pick_ok = self.execute_pick(pick_object, approach_offset=approach_offset)
+        pick_ok = self.execute_pick(
+            pick_object,
+            approach_offset=approach_offset,
+            skill_description=skill_description,
+        )
         # Transit through ready pose while keeping gripper CLOSED (holding object)
         self.move_to_ready(duration=1.0, open_gripper=False)
 
@@ -1271,10 +1973,12 @@ class SimSkills:
         if place_on_object and self.detector and pick_ok:
             try:
                 updated_pos = self.detector.get_object_position(place_on_object)
-                # Keep the original Z offset (stack height) but update XY
-                height_offset = place_position[2] - 0.0  # approximate table level
+                # Preserve the caller's requested relative stack height instead of
+                # forcing a hard-coded 5cm offset. This keeps OpenArm/SO-101 stack
+                # placements aligned with the task's actual block height.
+                height_offset = max(float(place_position[2] - updated_pos[2]), 0.0)
                 place_position = updated_pos.copy()
-                place_position[2] += 0.05  # stack height above target object
+                place_position[2] += height_offset
                 logger.info(
                     f"Re-detected '{place_on_object}' at {updated_pos}, "
                     f"updated place_position={place_position}"
@@ -1285,6 +1989,7 @@ class SimSkills:
         place_ok = self.execute_place(
             place_position, approach_offset=approach_offset,
             _placed_object=pick_object,
+            skill_description=skill_description,
         )
         success = pick_ok and place_ok
         if not success:
@@ -1304,7 +2009,7 @@ class SimSkills:
         skill_type: str = "move",
         goal_world_xyzrpy: Optional[np.ndarray] = None,
         gripper_target: Optional[float] = None,
-        goal_gripper: float = 0.0,
+        goal_gripper: Optional[float] = None,
     ) -> bool:
         """
         Execute a joint-space trajectory from current to target.
@@ -1314,9 +2019,22 @@ class SimSkills:
         """
         current_joints = self.robot.read_arm_joint_positions()
         target_joints = np.asarray(target_joints, dtype=np.float64)
+        record_start_idx = (
+            self.recorder.current_episode_steps
+            if self.recorder is not None and self.recorder.is_recording
+            else 0
+        )
 
-        # Compute goal_robot_xyzrpy via FK (robot base frame)
-        goal_robot_xyzrpy = self._compute_goal_robot_xyzrpy(target_joints)
+        if goal_world_xyzrpy is None:
+            goal_world_xyzrpy = self._compute_goal_tcp_world_xyzrpy(target_joints)
+        goal_robot_xyzrpy = self._compute_goal_tcp_robot_xyzrpy(target_joints)
+        needs_pose_backfill = goal_world_xyzrpy is None or goal_robot_xyzrpy is None
+        full_goal_joint = self._compose_full_goal_joint(
+            target_joints,
+            gripper_target=gripper_target,
+        )
+        if goal_gripper is None:
+            goal_gripper = self._goal_gripper_scalar(gripper_target)
 
         # Interpolate
         if self.use_s_curve:
@@ -1339,7 +2057,7 @@ class SimSkills:
         # Set skill metadata
         self._set_skill_meta(
             skill_label, skill_type,
-            goal_joint=target_joints,
+            goal_joint=full_goal_joint,
             goal_world_xyzrpy=goal_world_xyzrpy,
             goal_robot_xyzrpy=goal_robot_xyzrpy,
             goal_gripper=goal_gripper,
@@ -1364,7 +2082,7 @@ class SimSkills:
                 cmd = waypoint.copy()
                 for idx in self._orientation_lock_joints:
                     drift = actual_arm[idx] - waypoint[idx]
-                    cmd[idx] = waypoint[idx] - _CLOSED_GRIPPER_ANTI_DRIFT_GAIN * drift
+                    cmd[idx] = waypoint[idx] - self._closed_gripper_anti_drift_gain * drift
                 self.robot.write_arm_joint_positions(cmd)
             else:
                 # Write arm joints
@@ -1382,11 +2100,30 @@ class SimSkills:
             if i < num_steps:
                 self._record_step_if_active(
                     progress=(i + 1) / num_steps,
-                    goal_joint=target_joints,
+                    goal_joint=full_goal_joint,
                     goal_world_xyzrpy=goal_world_xyzrpy,
                     goal_robot_xyzrpy=goal_robot_xyzrpy,
                     goal_gripper=goal_gripper,
                 )
+
+        if needs_pose_backfill:
+            final_goal_world = (
+                goal_world_xyzrpy
+                if goal_world_xyzrpy is not None
+                else self._current_tcp_world_xyzrpy()
+            )
+            final_goal_robot = (
+                goal_robot_xyzrpy
+                if goal_robot_xyzrpy is not None
+                else self._current_tcp_robot_xyzrpy()
+            )
+            self._current_goal_world_xyzrpy = final_goal_world
+            self._current_goal_robot_xyzrpy = final_goal_robot
+            self._backfill_skill_goal_poses(
+                record_start_idx,
+                goal_world_xyzrpy=final_goal_world,
+                goal_robot_xyzrpy=final_goal_robot,
+            )
 
         return True
 
@@ -1410,7 +2147,20 @@ class SimSkills:
         """Update current skill metadata for recording."""
         self._current_skill_label = label
         self._current_skill_type = skill_type
-        self._current_goal_robot_xyzrpy = goal_robot_xyzrpy
+        self._current_goal_joint = (
+            None if goal_joint is None else np.asarray(goal_joint, dtype=np.float32).ravel()
+        )
+        self._current_goal_world_xyzrpy = (
+            None
+            if goal_world_xyzrpy is None
+            else np.asarray(goal_world_xyzrpy, dtype=np.float32).ravel()
+        )
+        self._current_goal_robot_xyzrpy = (
+            None
+            if goal_robot_xyzrpy is None
+            else np.asarray(goal_robot_xyzrpy, dtype=np.float32).ravel()
+        )
+        self._current_goal_gripper = float(goal_gripper)
         self._skill_step_count = 0
         self._skill_total_steps = 1
 
@@ -1420,7 +2170,7 @@ class SimSkills:
         goal_joint: Optional[np.ndarray] = None,
         goal_world_xyzrpy: Optional[np.ndarray] = None,
         goal_robot_xyzrpy: Optional[np.ndarray] = None,
-        goal_gripper: float = 0.0,
+        goal_gripper: Optional[float] = None,
     ):
         """Record a step if SimRecorder is active. Captures camera image.
 
@@ -1433,6 +2183,16 @@ class SimSkills:
 
         state = self.robot.read_joint_positions()
         action = self.robot.read_target_positions()  # pending targets = control command
+        if goal_joint is None:
+            goal_joint = self._current_goal_joint
+        if goal_world_xyzrpy is None:
+            goal_world_xyzrpy = self._current_goal_world_xyzrpy
+        if goal_robot_xyzrpy is None:
+            goal_robot_xyzrpy = self._current_goal_robot_xyzrpy
+        if goal_gripper is None:
+            goal_gripper = self._current_goal_gripper
+        tcp_world_xyzrpy = self._current_tcp_world_xyzrpy()
+        tcp_robot_xyzrpy = self._current_tcp_robot_xyzrpy()
 
         # Capture camera images with decimation (each capture triggers GPU render)
         images = None
@@ -1464,4 +2224,6 @@ class SimSkills:
             goal_world_xyzrpy=goal_world_xyzrpy,
             goal_robot_xyzrpy=goal_robot_xyzrpy,
             goal_gripper=goal_gripper,
+            tcp_world_xyzrpy=tcp_world_xyzrpy,
+            tcp_robot_xyzrpy=tcp_robot_xyzrpy,
         )

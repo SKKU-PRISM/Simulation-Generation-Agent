@@ -15,18 +15,17 @@
 ## Summary
 
 - Total tasks: **78**
-- Known `isaaclab_eval=pass`: **2**
-- Known `adc_verified=yes`: **2**
-- Known `dataset_generated=yes`: **2**
-- Known `task_success=yes`: **1**
+- Known `isaaclab_eval=pass`: **4**
+- Known `adc_verified=yes`: **4**
+- Known `dataset_generated=yes`: **4**
+- Known `task_success=yes`: **2**
 
 | Robot | Tasks | Categories | IsaacLab pass | ADC verified | Dataset generated | Task success |
 | --- | ---: | --- | ---: | ---: | ---: | ---: |
 | `franka` | 24 | assembly (4), cabinet (3), lift (2), peg_insert (1), pick_place (9), sort (3), stack (2) | 1 | 1 | 1 | 1 |
-| `openarm` | 24 | assembly (4), cabinet (3), lift (2), pick_place (9), reach (1), sort (3), stack (2) | 0 | 0 | 0 | 0 |
-| `so101` | 13 | assembly (4), lift (1), pick_place (3), reach (1), sort (3), stack (1) | 0 | 0 | 0 | 0 |
-| `ur10` | 4 | assembly (4) | 0 | 0 | 0 | 0 |
-| `ur10e` | 13 | cabinet (3), pick_place (7), reach (1), stack (2) | 1 | 1 | 1 | 0 |
+| `openarm` | 24 | assembly (4), cabinet (3), lift (2), pick_place (9), reach (1), sort (3), stack (2) | 1 | 1 | 1 | 1 |
+| `so101` | 13 | assembly (4), lift (1), pick_place (3), reach (1), sort (3), stack (1) | 1 | 1 | 1 | 0 |
+| `ur10e` | 17 | assembly (4), cabinet (3), pick_place (7), reach (1), stack (2) | 1 | 1 | 1 | 0 |
 
 ## Task Descriptions
 
@@ -87,7 +86,7 @@ task 이름과 실제 목표를 빠르게 훑어볼 수 있는 섹션입니다. 
 | `sort` | `OpenArmColorSort` | Sort each colored block onto its matching colored zone: blue block -> blue zone, red block -> red zone, green block -> green zone | `unknown` | `tasks/openarm/sort/openarm_color_sort.yaml` |
 | `sort` | `OpenArmLineArrange` | Arrange blocks in a line at x=0.42: blue (y=-0.06), red (y=0.0), green (y=0.06) | `unknown` | `tasks/openarm/sort/openarm_line_arrange.yaml` |
 | `sort` | `OpenArmShapeSort` | Sort objects by shape: place cubes on the purple bin, spheres on the rose bin | `unknown` | `tasks/openarm/sort/openarm_shape_sort.yaml` |
-| `stack` | `OpenArmStack` | Stack cubes in order: Cube_1/Blue (bottom) -> Cube_2/Red (middle) -> Cube_3/Green (top) | `unknown` | `tasks/openarm/stack/openarm_stack.yaml` |
+| `stack` | `OpenArmStack` | Stack cubes in order: Cube_1/Blue (bottom) -> Cube_2/Red (middle) -> Cube_3/Green (top) | `yes` | `tasks/openarm/stack/openarm_stack.yaml` |
 | `stack` | `OpenArmStackTray` | Stack cubes inside the tray in order: Blue (bottom) -> Red (middle) -> Green (top) | `unknown` | `tasks/openarm/stack/openarm_stack_tray.yaml` |
 
 ### so101
@@ -106,21 +105,16 @@ task 이름과 실제 목표를 빠르게 훑어볼 수 있는 섹션입니다. 
 | `sort` | `SO101ColorSort` | Sort each colored cube onto its matching colored zone: blue -> blue zone, red -> red zone, green -> green zone | `unknown` | `tasks/so101/sort/so101_color_sort.yaml` |
 | `sort` | `SO101LineArrange` | Arrange cubes in a line at x=0.18: blue (y=-0.04), red (y=0.0), green (y=0.04) | `unknown` | `tasks/so101/sort/so101_line_arrange.yaml` |
 | `sort` | `SO101ShapeSort` | Sort objects by shape: place cubes on the purple bin, spheres on the rose bin | `unknown` | `tasks/so101/sort/so101_shape_sort.yaml` |
-| `stack` | `SO101Stack` | Stack cubes in order: Cube_1/Blue (bottom) -> Cube_2/Red (middle) -> Cube_3/Green (top) | `unknown` | `tasks/so101/stack/so101_stack.yaml` |
-
-### ur10
-
-| Category | Task | What it does | ADC verified | YAML |
-| --- | --- | --- | --- | --- |
-| `assembly` | `UR10AssemblingKits` | Pick up the randomly misplaced shape and insert it into the matching cutout slot on the kit tray | `unknown` | `tasks/ur10/assembly/ur10_assembling_kits.yaml` |
-| `assembly` | `UR10LiftPegUpright` | Lift the two-tone peg from lying flat to an upright vertical position on the table | `unknown` | `tasks/ur10/assembly/ur10_lift_peg_upright.yaml` |
-| `assembly` | `UR10PegInsertionSide` | Pick up the peg and insert the orange end sideways into the box hole | `unknown` | `tasks/ur10/assembly/ur10_peg_insertion_side.yaml` |
-| `assembly` | `UR10PlugCharger` | Pick up the charger and insert its prongs into the receptacle slots | `unknown` | `tasks/ur10/assembly/ur10_plug_charger.yaml` |
+| `stack` | `SO101Stack` | Stack cubes in order: Cube_1/Blue (bottom) -> Cube_2/Red (middle) -> Cube_3/Green (top) | `yes` | `tasks/so101/stack/so101_stack.yaml` |
 
 ### ur10e
 
 | Category | Task | What it does | ADC verified | YAML |
 | --- | --- | --- | --- | --- |
+| `assembly` | `UR10eAssemblingKits` | Pick up the randomly misplaced shape and insert it into the matching cutout slot on the kit tray | `unknown` | `tasks/ur10e/assembly/ur10e_assembling_kits.yaml` |
+| `assembly` | `UR10eLiftPegUpright` | Lift the two-tone peg from lying flat to an upright vertical position on the table | `unknown` | `tasks/ur10e/assembly/ur10e_lift_peg_upright.yaml` |
+| `assembly` | `UR10ePegInsertionSide` | Pick up the peg and insert the orange end sideways into the box hole | `unknown` | `tasks/ur10e/assembly/ur10e_peg_insertion_side.yaml` |
+| `assembly` | `UR10ePlugCharger` | Pick up the charger and insert its prongs into the receptacle slots | `unknown` | `tasks/ur10e/assembly/ur10e_plug_charger.yaml` |
 | `cabinet` | `UR10eCabinet` | Open the top drawer of the cabinet by pulling the handle | `unknown` | `tasks/ur10e/cabinet/ur10e_cabinet.yaml` |
 | `cabinet` | `UR10eCabinetBlocks` | Pick all 3 colored blocks from cabinet top and place them on the target zone | `unknown` | `tasks/ur10e/cabinet/ur10e_cabinet_blocks.yaml` |
 | `cabinet` | `UR10eCabinetYCB` | Pick all 3 YCB objects from cabinet top and place them on the target zone | `unknown` | `tasks/ur10e/cabinet/ur10e_cabinet_ycb.yaml` |
@@ -192,7 +186,7 @@ task 이름과 실제 목표를 빠르게 훑어볼 수 있는 섹션입니다. 
 | `sort` | `OpenArmColorSort` | `tasks/openarm/sort/openarm_color_sort.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
 | `sort` | `OpenArmLineArrange` | `tasks/openarm/sort/openarm_line_arrange.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
 | `sort` | `OpenArmShapeSort` | `tasks/openarm/sort/openarm_shape_sort.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
-| `stack` | `OpenArmStack` | `tasks/openarm/stack/openarm_stack.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
+| `stack` | `OpenArmStack` | `tasks/openarm/stack/openarm_stack.yaml` | `pass` | `yes` | `yes` | `yes` | Source-level generator fixes now let `run_isaac_lab.py --evaluate` pass without manual env edits. Differential IK motion reaches the stack waypoints and deterministic ADC fallback completes the full stack task. | `outputs/isaaclab/openarmstack_20260307_182545/eval_report.json`<br>`outputs/motion_eval/OpenArmStack_20260307_191640/motion_report.json`<br>`outputs/data_collection/OpenArmStack_20260307_191829/collection_results.json` |
 | `stack` | `OpenArmStackTray` | `tasks/openarm/stack/openarm_stack_tray.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
 
 ### so101
@@ -211,21 +205,16 @@ task 이름과 실제 목표를 빠르게 훑어볼 수 있는 섹션입니다. 
 | `sort` | `SO101ColorSort` | `tasks/so101/sort/so101_color_sort.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
 | `sort` | `SO101LineArrange` | `tasks/so101/sort/so101_line_arrange.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
 | `sort` | `SO101ShapeSort` | `tasks/so101/sort/so101_shape_sort.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
-| `stack` | `SO101Stack` | `tasks/so101/stack/so101_stack.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
-
-### ur10
-
-| Category | Task | YAML | IsaacLab | ADC verified | Dataset | Task success | Notes | Evidence |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `assembly` | `UR10AssemblingKits` | `tasks/ur10/assembly/ur10_assembling_kits.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
-| `assembly` | `UR10LiftPegUpright` | `tasks/ur10/assembly/ur10_lift_peg_upright.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
-| `assembly` | `UR10PegInsertionSide` | `tasks/ur10/assembly/ur10_peg_insertion_side.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
-| `assembly` | `UR10PlugCharger` | `tasks/ur10/assembly/ur10_plug_charger.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
+| `stack` | `SO101Stack` | `tasks/so101/stack/so101_stack.yaml` | `pass` | `yes` | `yes` | `no` | IsaacLab generation/evaluation, motion sanity, and ADC smoke all run without manual env edits. The remaining blocker is not action delivery: EE tracking is now within about 2 mm at grasp, but the claw still closes without lifting the cube, so the failure is in grasp/contact geometry. | `outputs/isaaclab/so101stack_20260307_190110/eval_report.json`<br>`outputs/motion_eval/SO101Stack_20260307_193751/motion_report.json`<br>`outputs/data_collection/SO101Stack_20260307_193930/collection_results.json` |
 
 ### ur10e
 
 | Category | Task | YAML | IsaacLab | ADC verified | Dataset | Task success | Notes | Evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `assembly` | `UR10eAssemblingKits` | `tasks/ur10e/assembly/ur10e_assembling_kits.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
+| `assembly` | `UR10eLiftPegUpright` | `tasks/ur10e/assembly/ur10e_lift_peg_upright.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
+| `assembly` | `UR10ePegInsertionSide` | `tasks/ur10e/assembly/ur10e_peg_insertion_side.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
+| `assembly` | `UR10ePlugCharger` | `tasks/ur10e/assembly/ur10e_plug_charger.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
 | `cabinet` | `UR10eCabinet` | `tasks/ur10e/cabinet/ur10e_cabinet.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
 | `cabinet` | `UR10eCabinetBlocks` | `tasks/ur10e/cabinet/ur10e_cabinet_blocks.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
 | `cabinet` | `UR10eCabinetYCB` | `tasks/ur10e/cabinet/ur10e_cabinet_ycb.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
@@ -239,4 +228,3 @@ task 이름과 실제 목표를 빠르게 훑어볼 수 있는 섹션입니다. 
 | `reach` | `UR10eReach` | `tasks/ur10e/reach/ur10e_reach.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
 | `stack` | `UR10eStack` | `tasks/ur10e/stack/ur10e_stack.yaml` | `pass` | `yes` | `yes` | `no` | IsaacLab eval 91/100. ADC verified run produced raw_dataset, but target_met=false (0/3 successful episodes). | `outputs/isaaclab/ur10estack_20260307_102720/eval_report.json`<br>`outputs/data_collection/UR10eStack_20260307_104601/collection_results.json` |
 | `stack` | `UR10eStackTray` | `tasks/ur10e/stack/ur10e_stack_tray.yaml` | `unknown` | `unknown` | `unknown` | `unknown` | - | - |
-

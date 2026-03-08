@@ -88,6 +88,7 @@ python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml \
 - `docs/task_yaml_spec.md`: task YAML 포맷과 자산 규약
 - `docs/tasks_overview.md`: 전체 task 목록과 IsaacLab/ADC 검증 상태 보드
 - `docs/task_descriptions_ko.md`: task 이름, 한글 설명, ADC 검증 여부 빠른 참고용 문서
+- `docs/dataset_alignment_and_export.md`: raw sim / ADC dataset 차이, export schema, 학습용 canonical 경로
 - `docs/troubleshooting.md`: 자주 발생하는 런타임/VLM/MCP 문제
 
 ## 프로젝트 구조

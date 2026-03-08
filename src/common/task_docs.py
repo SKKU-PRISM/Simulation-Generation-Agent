@@ -24,7 +24,7 @@ def load_task_document(yaml_path: str | Path) -> dict[str, Any]:
 
 
 def resolve_task_document(task_doc: dict[str, Any], yaml_path: str | Path) -> dict[str, Any]:
-    """Resolve repo-local path and assembly-specific semantics in a task document."""
+    """Resolve repo-local path, assembly semantics, and legacy robot aliases."""
     resolved = deepcopy(task_doc)
     yaml_path = Path(yaml_path).resolve()
     _normalize_asset_paths(resolved)
@@ -51,9 +51,15 @@ def _detect_category(yaml_path: Path) -> str | None:
 
 
 def _normalize_asset_paths(task_doc: dict[str, Any]) -> None:
-    """Convert stale absolute assembly asset URLs to repo-local asset paths."""
+    """Normalize repo-local asset paths and stale assembly asset URLs."""
     assets = task_doc.get("assets", [])
     for asset in assets:
+        asset_path = asset.get("asset_path")
+        if isinstance(asset_path, str) and asset_path.startswith("assets/"):
+            local_asset = PROJECT_ROOT / asset_path
+            if local_asset.exists():
+                asset["asset_path"] = str(local_asset.resolve())
+
         asset_url = asset.get("asset_url")
         if not asset_url or "assembling_kits" not in asset_url:
             continue
@@ -65,7 +71,7 @@ def _normalize_asset_paths(task_doc: dict[str, Any]) -> None:
 
 
 def _canonicalize_ur10_assembly(task_doc: dict[str, Any]) -> None:
-    """Map legacy UR10 assembly specs to the repo's canonical UR10e representation."""
+    """Backfill external legacy UR10 assembly specs to the canonical UR10e form."""
     for asset in task_doc.get("assets", []):
         if asset.get("type") != "articulation":
             continue
@@ -94,7 +100,7 @@ def _canonicalize_ur10_assembly(task_doc: dict[str, Any]) -> None:
             )
 
         notes = task_doc.setdefault("notes", [])
-        note = "Resolved for IsaacLab: legacy UR10 suction spec canonicalized to UR10e + Robotiq 2F-85."
+        note = "Backward-compatibility: external legacy UR10 assembly spec canonicalized to UR10e + Robotiq 2F-85."
         if note not in notes:
             notes.append(note)
 

@@ -14,8 +14,7 @@
 - `franka`: **24** tasks
 - `openarm`: **24** tasks
 - `so101`: **13** tasks
-- `ur10`: **4** tasks
-- `ur10e`: **13** tasks
+- `ur10e`: **17** tasks
 
 ## 임시 우선 사용 후보
 
@@ -33,13 +32,13 @@
 | `openarm` | `pick_place` | `OpenArmPickPlaceBox` | sugar box를 집어 초록 타깃 마커 위에 놓는다. | `unknown` | `tasks/openarm/pick_place/openarm_pick_place_box.yaml` |
 | `openarm` | `pick_place` | `OpenArmPickPlaceMug` | 머그를 집어 초록 타깃 마커 위에 놓는다. | `unknown` | `tasks/openarm/pick_place/openarm_pick_place_mug.yaml` |
 | `openarm` | `pick_place` | `OpenArmPickPlaceGears` | 기어들과 너트를 집어 트레이 안에 정리한다. | `unknown` | `tasks/openarm/pick_place/openarm_pick_place_gears.yaml` |
-| `openarm` | `stack` | `OpenArmStack` | 큐브 3개를 파랑-빨강-초록 순서로 쌓는다. | `unknown` | `tasks/openarm/stack/openarm_stack.yaml` |
+| `openarm` | `stack` | `OpenArmStack` | 큐브 3개를 파랑-빨강-초록 순서로 쌓는다. | `yes` | `tasks/openarm/stack/openarm_stack.yaml` |
 | `openarm` | `sort` | `OpenArmShapeSort` | 큐브와 구체를 shape 기준으로 다른 bin에 분류한다. | `unknown` | `tasks/openarm/sort/openarm_shape_sort.yaml` |
 | `openarm` | `new assembly` | `OpenArmAssemblingKits`, `OpenArmLiftPegUpright`, `OpenArmPegInsertionSide`, `OpenArmPlugCharger` | shape fitting, peg 세우기, peg 삽입, charger 삽입을 다루는 assembly 4종이다. | `unknown` | `tasks/openarm/assembly/` |
 | `so101` | `pick_place` | `SO101PickPlace` | cube를 집어 초록 타깃 마커 위에 놓는다. | `unknown` | `tasks/so101/pick_place/so101_pick_place.yaml` |
 | `so101` | `pick_place` | `SO101PickPlaceCylinder` | 원기둥을 집어 초록 타깃 마커 위에 놓는다. | `unknown` | `tasks/so101/pick_place/so101_pick_place_cylinder.yaml` |
 | `so101` | `pick_place` | `SO101MultiPickPlace` | 색 큐브 3개를 모두 금색 수집 구역으로 모은다. | `unknown` | `tasks/so101/pick_place/so101_multi_pick_place.yaml` |
-| `so101` | `stack` | `SO101Stack` | 큐브 3개를 파랑-빨강-초록 순서로 쌓는다. | `unknown` | `tasks/so101/stack/so101_stack.yaml` |
+| `so101` | `stack` | `SO101Stack` | 큐브 3개를 파랑-빨강-초록 순서로 쌓는다. | `yes` | `tasks/so101/stack/so101_stack.yaml` |
 | `so101` | `sort` | `SO101ShapeSort` | 큐브와 구체를 shape 기준으로 다른 bin에 분류한다. | `unknown` | `tasks/so101/sort/so101_shape_sort.yaml` |
 | `so101` | `new assembly` | `SO101AssemblingKits`, `SO101LiftPegUpright`, `SO101PegInsertionSide`, `SO101PlugCharger` | shape fitting, peg 세우기, peg 삽입, charger 삽입을 다루는 assembly 4종이다. | `unknown` | `tasks/so101/assembly/` |
 
@@ -98,7 +97,7 @@
 | `sort` | `OpenArmColorSort` | 색 블록을 각자 대응하는 색 영역으로 분류한다. 파랑->파랑, 빨강->빨강, 초록->초록. | `unknown` | `tasks/openarm/sort/openarm_color_sort.yaml` |
 | `sort` | `OpenArmLineArrange` | 블록 3개를 x=0.42 선상에 일렬로 배치한다. 파랑(y=-0.06), 빨강(y=0.0), 초록(y=0.06). | `unknown` | `tasks/openarm/sort/openarm_line_arrange.yaml` |
 | `sort` | `OpenArmShapeSort` | 도형 종류별로 분류한다. 큐브는 보라색 빈, 구체는 로즈색 빈에 놓는다. | `unknown` | `tasks/openarm/sort/openarm_shape_sort.yaml` |
-| `stack` | `OpenArmStack` | 큐브 3개를 파랑(아래) -> 빨강(중간) -> 초록(위) 순서로 쌓는다. | `unknown` | `tasks/openarm/stack/openarm_stack.yaml` |
+| `stack` | `OpenArmStack` | 큐브 3개를 파랑(아래) -> 빨강(중간) -> 초록(위) 순서로 쌓는다. | `yes` | `tasks/openarm/stack/openarm_stack.yaml` |
 | `stack` | `OpenArmStackTray` | 트레이 안에서 파랑(아래) -> 빨강(중간) -> 초록(위) 순서로 큐브를 쌓는다. | `unknown` | `tasks/openarm/stack/openarm_stack_tray.yaml` |
 
 ## SO-101
@@ -117,21 +116,16 @@
 | `sort` | `SO101ColorSort` | 색 큐브를 각자 대응하는 색 영역으로 분류한다. 파랑->파랑, 빨강->빨강, 초록->초록. | `unknown` | `tasks/so101/sort/so101_color_sort.yaml` |
 | `sort` | `SO101LineArrange` | 큐브 3개를 x=0.18 선상에 일렬로 배치한다. 파랑(y=-0.04), 빨강(y=0.0), 초록(y=0.04). | `unknown` | `tasks/so101/sort/so101_line_arrange.yaml` |
 | `sort` | `SO101ShapeSort` | 도형 종류별로 분류한다. 큐브는 보라색 빈, 구체는 로즈색 빈에 놓는다. | `unknown` | `tasks/so101/sort/so101_shape_sort.yaml` |
-| `stack` | `SO101Stack` | 큐브 3개를 파랑(아래) -> 빨강(중간) -> 초록(위) 순서로 쌓는다. | `unknown` | `tasks/so101/stack/so101_stack.yaml` |
-
-## UR10
-
-| 카테고리 | Task 이름 | 무엇을 하는가 | ADC verified | YAML |
-| --- | --- | --- | --- | --- |
-| `assembly` | `UR10AssemblingKits` | 무작위 위치에 놓인 도형 조각을 집어 키트 트레이의 맞는 컷아웃 슬롯에 끼운다. | `unknown` | `tasks/ur10/assembly/ur10_assembling_kits.yaml` |
-| `assembly` | `UR10LiftPegUpright` | 테이블에 눕혀진 2색 peg를 집어 수직 자세로 세운다. | `unknown` | `tasks/ur10/assembly/ur10_lift_peg_upright.yaml` |
-| `assembly` | `UR10PegInsertionSide` | peg를 집어 주황색 끝을 박스 측면 구멍에 옆으로 삽입한다. | `unknown` | `tasks/ur10/assembly/ur10_peg_insertion_side.yaml` |
-| `assembly` | `UR10PlugCharger` | 충전기를 집어 플러그 핀을 리셉터클 슬롯에 끼운다. | `unknown` | `tasks/ur10/assembly/ur10_plug_charger.yaml` |
+| `stack` | `SO101Stack` | 큐브 3개를 파랑(아래) -> 빨강(중간) -> 초록(위) 순서로 쌓는다. | `yes` | `tasks/so101/stack/so101_stack.yaml` |
 
 ## UR10e
 
 | 카테고리 | Task 이름 | 무엇을 하는가 | ADC verified | YAML |
 | --- | --- | --- | --- | --- |
+| `assembly` | `UR10eAssemblingKits` | 무작위 위치에 놓인 도형 조각을 집어 키트 트레이의 맞는 컷아웃 슬롯에 끼운다. | `unknown` | `tasks/ur10e/assembly/ur10e_assembling_kits.yaml` |
+| `assembly` | `UR10eLiftPegUpright` | 테이블에 눕혀진 2색 peg를 집어 수직 자세로 세운다. | `unknown` | `tasks/ur10e/assembly/ur10e_lift_peg_upright.yaml` |
+| `assembly` | `UR10ePegInsertionSide` | peg를 집어 주황색 끝을 박스 측면 구멍에 옆으로 삽입한다. | `unknown` | `tasks/ur10e/assembly/ur10e_peg_insertion_side.yaml` |
+| `assembly` | `UR10ePlugCharger` | 충전기를 집어 플러그 핀을 리셉터클 슬롯에 끼운다. | `unknown` | `tasks/ur10e/assembly/ur10e_plug_charger.yaml` |
 | `cabinet` | `UR10eCabinet` | 손잡이를 당겨 캐비닛 상단 서랍을 연다. | `unknown` | `tasks/ur10e/cabinet/ur10e_cabinet.yaml` |
 | `cabinet` | `UR10eCabinetBlocks` | 캐비닛 위의 색 블록 3개를 모두 집어 타깃 영역으로 옮긴다. | `unknown` | `tasks/ur10e/cabinet/ur10e_cabinet_blocks.yaml` |
 | `cabinet` | `UR10eCabinetYCB` | 캐비닛 위의 YCB 물체 3개를 모두 집어 타깃 영역으로 옮긴다. | `unknown` | `tasks/ur10e/cabinet/ur10e_cabinet_ycb.yaml` |

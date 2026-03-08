@@ -112,6 +112,20 @@ def get_kinematics_engine():
     return mod.KinematicsEngine
 
 
+def get_calibration_limits_loader():
+    """Import and return ADC's ``load_calibration_limits`` helper."""
+    calib_path = _ADC_SRC / "lerobot_cap" / "kinematics" / "calibration_limits.py"
+    mod = _load_module_from_file("_adc_calibration_limits", calib_path)
+    return mod.load_calibration_limits
+
+
+def get_frame_transformer():
+    """Import and return ADC's ``FrameTransformer`` class."""
+    transforms_path = _ADC_SRC / "lerobot_cap" / "transforms.py"
+    mod = _load_module_from_file("_adc_transforms", transforms_path)
+    return mod.FrameTransformer
+
+
 def get_interpolation_module():
     """Import and return ADC's interpolation module.
 

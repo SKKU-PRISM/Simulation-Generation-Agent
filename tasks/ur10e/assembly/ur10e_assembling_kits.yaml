@@ -1,12 +1,12 @@
-# Task Document: UR10AssemblingKits
+# Task Document: UR10eAssemblingKits
 # Version: 1.0.0
 # Template: v2.0.0
-# Description: UR10 robot with suction gripper picks up a misplaced shape and inserts it into the kit tray
-# Reference: ManiSkill AssemblingKits-v1 adapted for UR10
+# Description: UR10e robot with Robotiq 2F-85 gripper picks up a misplaced shape and inserts it into the kit tray
+# Reference: ManiSkill AssemblingKits-v1 adapted for UR10e
 
 task:
-  name: UR10AssemblingKits
-  description: "UR10 robot with suction gripper picks up a misplaced colored shape piece and inserts it into the matching cutout slot on a kit tray board"
+  name: UR10eAssemblingKits
+  description: "UR10e robot with Robotiq 2F-85 gripper picks up a misplaced colored shape piece and inserts it into the matching cutout slot on a kit tray board"
   version: "1.0.0"
 
 simulation:
@@ -55,16 +55,17 @@ episode:
       rot: 0.735
 
 assets:
-  # UR10 robot with Long Suction gripper
+  # UR10e robot (Robotiq 2F-85 gripper variant for shape fitting)
   - name: robot
     type: articulation
     source: usd
-    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    robot_type: ur10e
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10e/ur10e.usd"
     prim_path: "/World/Robot"
     position: [0, 0, 0]
     rotation: [1, 0, 0, 0]
     variant_sets:
-      Gripper: Long_Suction
+      Gripper: Robotiq_2f_85
     initial_joints:
       shoulder_pan_joint: 0.0
       shoulder_lift_joint: -1.5707
@@ -80,8 +81,8 @@ assets:
         stiffness: 800.0
         damping: 40.0
     ee_frame:
-      body: ee_link
-      offset_position: [0.22, 0, 0]
+      body: wrist_3_link
+      offset_position: [0.0, 0.0, 0.0]
     physics:
       self_collision: false
       solver_position_iterations: 8
@@ -242,8 +243,8 @@ camera:
   resolution: [1280, 720]
 
 notes:
-  - "Source: ManiSkill AssemblingKits-v1 adapted for UR10"
-  - "UR10 reach 1.30m — same positions as Franka version"
-  - "Suction gripper ideal for flat shape pickup"
+  - "Source: ManiSkill AssemblingKits-v1 adapted for UR10e"
+  - "UR10e reach 1.30m — same positions as Franka version"
+  - "Robotiq 2F-85 parallel-jaw gripper for shape pickup and slot insertion"
   - "Uses same mesh assets as Franka version (kit_303 + shapes)"
   - "Misplaced shape position randomized ±10cm in XY"

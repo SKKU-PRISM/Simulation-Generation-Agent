@@ -84,6 +84,9 @@ class SimRobotInterface:
         # Device (match the simulation tensor device)
         self._device = self._articulation.device
 
+        # Resolve EE frame once. Prefer TCP frame when the profile provides one.
+        self._ee_body_name, self._ee_body_idx = self._resolve_ee_body()
+
         logger.info(
             "SimRobotInterface initialized: %s | arm_dofs=%d finger_dofs=%d | action_dim=%d",
             robot_cfg.name,
@@ -128,21 +131,42 @@ class SimRobotInterface:
         return all_pos[self._arm_indices].cpu().numpy()
 
     def read_ee_position(self) -> np.ndarray:
-        """Read end-effector position in world frame.
+        """Read TCP/end-effector position in world frame.
 
         Returns:
             Array ``[x, y, z]`` in meters.
         """
-        pos, _ = self._read_ee_frame()
+        pos, _ = self.read_tcp_pose_world()
         return pos
 
     def read_ee_pose(self) -> tuple[np.ndarray, np.ndarray]:
-        """Read end-effector pose in world frame.
+        """Read TCP/end-effector pose in world frame.
+
+        Returns:
+            Tuple of (position ``[x,y,z]``, quaternion ``[w,x,y,z]``).
+        """
+        return self.read_tcp_pose_world()
+
+    def read_tcp_pose_world(self) -> tuple[np.ndarray, np.ndarray]:
+        """Read TCP pose in simulator world frame.
 
         Returns:
             Tuple of (position ``[x,y,z]``, quaternion ``[w,x,y,z]``).
         """
         return self._read_ee_frame()
+
+    def read_tcp_pose_robot(self) -> tuple[np.ndarray, np.ndarray]:
+        """Read TCP pose in the robot base frame."""
+        pos_world, quat_world = self.read_tcp_pose_world()
+        return self.world_pose_to_robot_pose(pos_world, quat_world)
+
+    def read_root_pose_world(self) -> tuple[np.ndarray, np.ndarray]:
+        """Read articulation root pose in simulator world frame."""
+        root_pose = self._articulation.data.root_pose_w[self.env_idx]
+        return (
+            root_pose[:3].cpu().numpy(),
+            root_pose[3:7].cpu().numpy(),
+        )
 
     # ------------------------------------------------------------------
     # Write
@@ -266,6 +290,26 @@ class SimRobotInterface:
         return obs
 
     @property
+    def articulation(self):
+        """Underlying IsaacLab articulation."""
+        return self._articulation
+
+    @property
+    def arm_joint_indices(self) -> list[int]:
+        """Resolved arm joint indices inside the articulation."""
+        return list(self._arm_indices)
+
+    @property
+    def ee_body_name(self) -> str:
+        """Resolved end-effector body name used for pose reads."""
+        return self._ee_body_name
+
+    @property
+    def ee_body_index(self) -> int:
+        """Resolved end-effector body index used for pose reads."""
+        return self._ee_body_idx
+
+    @property
     def env_terminated(self) -> bool:
         """Whether the environment fired a success/failure termination."""
         return self._env_terminated
@@ -377,7 +421,96 @@ class SimRobotInterface:
                     joint_targets[n_arm:n_arm + n_g],
                     dtype=torch.float32, device=self._device,
                 )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "Action tensor built: arm=%s gripper=%s total_dim=%d",
+                np.round(joint_targets[:n_arm], 4).tolist(),
+                np.round(joint_targets[n_arm:], 4).tolist() if len(joint_targets) > n_arm else [],
+                self._action_dim,
+            )
         return action
+
+    def expand_gripper_target_positions(
+        self,
+        target: float | list[float] | tuple[float, ...] | np.ndarray,
+    ) -> np.ndarray:
+        """Expand a gripper target into per-joint position targets."""
+        if not self.cfg.has_gripper_joints:
+            return np.zeros(0, dtype=np.float64)
+
+        if isinstance(target, np.ndarray):
+            target = target.tolist()
+
+        if self.cfg.gripper_type == "parallel_jaw":
+            if self.cfg.gripper_mirrored:
+                scalar = float(target[0] if isinstance(target, (list, tuple)) else target)
+                return np.full(len(self._finger_indices), scalar, dtype=np.float64)
+
+            if isinstance(target, (list, tuple)):
+                values = [float(v) for v in target[: len(self._finger_indices)]]
+                if not values:
+                    values = [0.0]
+                while len(values) < len(self._finger_indices):
+                    values.append(values[-1])
+                return np.asarray(values, dtype=np.float64)
+
+            return np.full(len(self._finger_indices), float(target), dtype=np.float64)
+
+        scalar = float(target[0] if isinstance(target, (list, tuple)) else target)
+        return np.asarray([scalar], dtype=np.float64)
+
+    def _resolve_ee_body(self) -> tuple[str, int]:
+        """Resolve the configured EE body once.
+
+        Prefers ``tcp_frame`` when the robot profile provides it, and falls
+        back to the legacy ``body`` name when the TCP frame is not a rigid body
+        in the loaded articulation.
+        """
+        candidates = []
+        if self.cfg.ee_frame_tcp:
+            candidates.append(self.cfg.ee_frame_tcp)
+        if self.cfg.ee_frame_body and self.cfg.ee_frame_body not in candidates:
+            candidates.append(self.cfg.ee_frame_body)
+
+        for body_name in candidates:
+            body_indices, _ = self._articulation.find_bodies(body_name)
+            if body_indices:
+                return body_name, body_indices[0]
+
+        raise RuntimeError(
+            f"EE body not found. Tried {candidates}. "
+            f"Available: {self._articulation.body_names}"
+        )
+
+    def world_pose_to_robot_pose(
+        self,
+        position_world: np.ndarray,
+        quat_world_wxyz: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Transform a world-frame pose into the articulation root frame."""
+        root_pos, root_quat = self.read_root_pose_world()
+        root_rot = self._quat_to_rotation_matrix(root_quat)
+        tcp_rot = self._quat_to_rotation_matrix(quat_world_wxyz)
+
+        pos_robot = root_rot.T @ (np.asarray(position_world, dtype=np.float64) - root_pos)
+        rot_robot = root_rot.T @ tcp_rot
+        quat_robot = self._rotation_matrix_to_quat(rot_robot)
+        return pos_robot, quat_robot
+
+    def robot_pose_to_world_pose(
+        self,
+        position_robot: np.ndarray,
+        quat_robot_wxyz: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Transform a robot-base-frame pose into simulator world frame."""
+        root_pos, root_quat = self.read_root_pose_world()
+        root_rot = self._quat_to_rotation_matrix(root_quat)
+        tcp_rot_robot = self._quat_to_rotation_matrix(quat_robot_wxyz)
+
+        pos_world = root_pos + root_rot @ np.asarray(position_robot, dtype=np.float64)
+        rot_world = root_rot @ tcp_rot_robot
+        quat_world = self._rotation_matrix_to_quat(rot_world)
+        return pos_world, quat_world
 
     def _read_ee_frame(self) -> tuple[np.ndarray, np.ndarray]:
         """Read EE body frame from the articulation.
@@ -385,21 +518,69 @@ class SimRobotInterface:
         Returns:
             (position [x,y,z], quaternion [w,x,y,z]) as numpy arrays.
         """
-        body_name = self.cfg.ee_frame_body
-        # Find the body index for the EE frame
-        body_indices, _ = self._articulation.find_bodies(body_name)
-        if not body_indices:
-            raise RuntimeError(
-                f"EE body '{body_name}' not found. "
-                f"Available: {self._articulation.body_names}"
-            )
-        body_idx = body_indices[0]
-
         # body_state_w shape: (num_envs, num_bodies, 13)
         # columns: pos(3), quat(4), lin_vel(3), ang_vel(3)
-        body_state = self._articulation.data.body_state_w[self.env_idx, body_idx]
+        body_state = self._articulation.data.body_state_w[self.env_idx, self._ee_body_idx]
         pos = body_state[:3].cpu().numpy()
         # IsaacLab body_state_w quaternion is already (w, x, y, z) format
         # See: ArticulationData.body_link_pose_w docstring
         quat_wxyz = body_state[3:7].cpu().numpy()
+        # Some robots only expose a body-frame EE in sim while ADC/Pinocchio uses
+        # a TCP offset from that body frame. Apply the same local offset here so
+        # EE reads and IK targets stay in the same coordinate convention.
+        if (
+            self.cfg.ee_frame_offset_position
+            and self._ee_body_name == self.cfg.ee_frame_body
+            and not self.cfg.ee_frame_tcp
+        ):
+            offset_local = np.asarray(self.cfg.ee_frame_offset_position, dtype=np.float64)
+            rot = self._quat_to_rotation_matrix(quat_wxyz)
+            pos = pos + rot @ offset_local
         return pos, quat_wxyz
+
+    @staticmethod
+    def _quat_to_rotation_matrix(quat_wxyz: np.ndarray) -> np.ndarray:
+        w, x, y, z = quat_wxyz
+        return np.array(
+            [
+                [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+            ],
+            dtype=np.float64,
+        )
+
+    @staticmethod
+    def _rotation_matrix_to_quat(rotation: np.ndarray) -> np.ndarray:
+        """Convert a 3x3 rotation matrix to quaternion [w, x, y, z]."""
+        m = np.asarray(rotation, dtype=np.float64)
+        trace = np.trace(m)
+        if trace > 0.0:
+            s = np.sqrt(trace + 1.0) * 2.0
+            w = 0.25 * s
+            x = (m[2, 1] - m[1, 2]) / s
+            y = (m[0, 2] - m[2, 0]) / s
+            z = (m[1, 0] - m[0, 1]) / s
+        elif m[0, 0] > m[1, 1] and m[0, 0] > m[2, 2]:
+            s = np.sqrt(1.0 + m[0, 0] - m[1, 1] - m[2, 2]) * 2.0
+            w = (m[2, 1] - m[1, 2]) / s
+            x = 0.25 * s
+            y = (m[0, 1] + m[1, 0]) / s
+            z = (m[0, 2] + m[2, 0]) / s
+        elif m[1, 1] > m[2, 2]:
+            s = np.sqrt(1.0 + m[1, 1] - m[0, 0] - m[2, 2]) * 2.0
+            w = (m[0, 2] - m[2, 0]) / s
+            x = (m[0, 1] + m[1, 0]) / s
+            y = 0.25 * s
+            z = (m[1, 2] + m[2, 1]) / s
+        else:
+            s = np.sqrt(1.0 + m[2, 2] - m[0, 0] - m[1, 1]) * 2.0
+            w = (m[1, 0] - m[0, 1]) / s
+            x = (m[0, 2] + m[2, 0]) / s
+            y = (m[1, 2] + m[2, 1]) / s
+            z = 0.25 * s
+        quat = np.array([w, x, y, z], dtype=np.float64)
+        norm = np.linalg.norm(quat)
+        if norm < 1e-12:
+            return np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
+        return quat / norm

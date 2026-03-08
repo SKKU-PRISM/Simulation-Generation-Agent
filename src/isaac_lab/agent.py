@@ -27,6 +27,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 from src.common.llm_client import AzureOpenAIClient
 from src.common.robot_names import contains_robot_name, normalize_robot_name
 from src.common.task_docs import dump_task_document, load_task_document
+from src.isaac_lab.assembling_kits_template import build_assembling_kits_template
 
 console = Console()
 
@@ -40,6 +41,8 @@ REFERENCE_MAP = {
         "base": "stack/stack_env_cfg.py",
         "robot": {
             "default": ["stack/config/franka/stack_joint_pos_env_cfg.py"],
+            "openarm": ["lift/config/openarm/joint_pos_env_cfg.py"],
+            "so101": ["lift/config/openarm/joint_pos_env_cfg.py"],
             "ur10e": [
                 "stack/config/ur10_gripper/stack_joint_pos_env_cfg.py",
                 "deploy/gear_assembly/config/ur_10e/joint_pos_env_cfg.py",
@@ -80,6 +83,7 @@ REFERENCE_MAP = {
         "robot": {
             "default": ["lift/config/franka/joint_pos_env_cfg.py"],
             "openarm": ["lift/config/openarm/joint_pos_env_cfg.py"],
+            "so101": ["lift/config/openarm/joint_pos_env_cfg.py"],
             "ur10e": [
                 "deploy/gear_assembly/config/ur_10e/joint_pos_env_cfg.py",
                 "deploy/reach/config/ur_10e/joint_pos_env_cfg.py",
@@ -92,6 +96,7 @@ REFERENCE_MAP = {
         "robot": {
             "default": ["lift/config/franka/joint_pos_env_cfg.py"],
             "openarm": ["lift/config/openarm/joint_pos_env_cfg.py"],
+            "so101": ["lift/config/openarm/joint_pos_env_cfg.py"],
             "ur10e": ["deploy/gear_assembly/config/ur_10e/joint_pos_env_cfg.py"],
         },
         "mdp": ["lift/mdp/rewards.py"],
@@ -191,6 +196,13 @@ class IsaacLabAgent:
 
         return "franka"
 
+    @staticmethod
+    def _is_assembling_kits_task(yaml_path: str, task_doc: dict) -> bool:
+        """Return True when the task belongs to the AssemblingKits family."""
+        stem = Path(yaml_path).stem.lower()
+        task_name = str(task_doc.get("task", {}).get("name", "")).lower()
+        return "assembling_kits" in stem or "assemblingkits" in task_name
+
     # ----- Reference Code Loading -----
 
     def _robot_reference_paths(self, category: str, robot: str) -> list[str]:
@@ -238,10 +250,8 @@ class IsaacLabAgent:
 
     def _build_robot_guidance(self, robot: str) -> str:
         """Return robot-specific implementation rules to inject into the prompt."""
-        if robot != "ur10e":
-            return ""
-
-        return """## Robot-Specific Rules (UR10e + Robotiq 2F-85)
+        if robot == "ur10e":
+            return """## Robot-Specific Rules (UR10e + Robotiq 2F-85)
 
 - This task MUST use `UR10e_ROBOTIQ_2F_85_CFG`, not `FRANKA_PANDA_CFG`, `UR10_CFG`, or suction gripper configs.
 - Add this import when `robot_type` is `ur10e`:
@@ -286,6 +296,37 @@ class IsaacLabAgent:
   ```
 - For UR10e observations, use `SceneEntityCfg("robot", body_names=["wrist_3_link"])`.
 """
+
+        if robot == "openarm":
+            return """## Robot-Specific Rules (OpenArm)
+
+- This task MUST import and use `OPENARM_UNI_CFG` from `isaaclab_assets.robots.openarm`.
+- Do not rely on the preset alone. After assigning `self.scene.robot = OPENARM_UNI_CFG.replace(...)`, explicitly set:
+  - `self.scene.robot.init_state.joint_pos` from the YAML `initial_joints`
+  - `self.scene.robot.actuators` from the YAML actuator values
+- The end-effector frame must use the OpenArm TCP, not an object prim:
+  - source prim: `{ENV_REGEX_NS}/Robot/openarm_link0`
+  - target prim: `{ENV_REGEX_NS}/Robot/openarm_ee_tcp`
+- Never create a `FrameTransformerCfg` whose `prim_path` or target frame points to `/Cube_*` or another rigid object.
+- Keep the gripper joints as `openarm_finger_joint1` and `openarm_finger_joint2`.
+- For OpenArm stack/sort/pick-place tasks, preserve the YAML rigid-object spawn ranges and do not invent Franka-specific joints or body names.
+"""
+
+        if robot == "so101":
+            return """## Robot-Specific Rules (SO-101)
+
+- SO-101 is a repo-local USD robot. Use the YAML `asset_path` exactly as provided after normalization; do not rewrite it relative to `outputs/`.
+- Do not use `FRANKA_PANDA_CFG`, `OPENARM_UNI_CFG`, or any IsaacLab preset for SO-101.
+- Build `self.scene.robot` as an explicit `ArticulationCfg` with:
+  - `spawn=UsdFileCfg(usd_path=<normalized so101 usd path>)`
+  - `init_state.joint_pos` from the YAML `initial_joints`
+  - `actuators` matching the YAML arm/gripper actuator specs
+- Use `gripper_frame_link` as the SO-101 end-effector body for observations and frame transformers.
+- For stack tasks with `min_separation`, do not reset cubes independently if that can violate the separation constraint. Keep object resets deterministic or implement a single non-overlapping sampler.
+- Never use Franka joints/body names such as `panda_joint.*` or `panda_hand` in SO-101 code.
+"""
+
+        return ""
 
     @staticmethod
     def _build_assembly_guidance(task_doc: dict) -> str:
@@ -368,6 +409,7 @@ Use this structure/pattern, but fill in values from the YAML above.
    - Simulation: map timestep, decimation, episode_length, physx settings
    - Randomization: convert to EventTermCfg
    - Goals: convert to termination conditions
+   - If any rigid object uses `randomize.position.min_separation`, preserve that constraint; do not emit independent resets that can overlap objects
 
 4. For goal.success_criteria or goal.conditions that need custom logic,
    generate mdp/terminations.py with the custom function.
@@ -422,7 +464,11 @@ Use this structure/pattern, but fill in values from the YAML above.
             filepath = output_dir / filename
             filepath.parent.mkdir(parents=True, exist_ok=True)
             filepath.write_text(code)
-            console.print(f"  [green]Wrote[/green] {filepath.relative_to(PROJECT_ROOT)}")
+            try:
+                label = filepath.resolve().relative_to(PROJECT_ROOT)
+            except ValueError:
+                label = filepath
+            console.print(f"  [green]Wrote[/green] {label}")
 
         # ALWAYS ensure mdp/ package exists (env_cfg.py uses `import mdp as mdp`)
         mdp_dir = output_dir / "mdp"
@@ -499,7 +545,337 @@ Use this structure/pattern, but fill in values from the YAML above.
 
     # ----- Post-Generation Validation -----
 
-    def _validate_generated_code(self, output_dir: Path, robot: str) -> list[str]:
+    @staticmethod
+    def _ensure_import_line(content: str, import_line: str) -> str:
+        """Insert an import line near related imports if it is missing."""
+        if import_line in content:
+            return content
+
+        lines = content.split("\n")
+        insert_idx = 0
+        for i, line in enumerate(lines):
+            if line.startswith("from isaaclab_assets") or line.startswith("from isaaclab.actuators"):
+                insert_idx = i
+                break
+            if line.startswith("from isaaclab") or line.startswith("import isaaclab"):
+                insert_idx = i + 1
+        lines.insert(insert_idx, import_line)
+        return "\n".join(lines)
+
+    @staticmethod
+    def _inject_post_init_snippet(content: str, snippet: str) -> str:
+        """Append a snippet at the end of the generated __post_init__ method."""
+        marker = "    def __post_init__(self):"
+        start = content.find(marker)
+        if start == -1 or snippet.strip() in content:
+            return content
+
+        lines = content.split("\n")
+        method_matches = [i for i, line in enumerate(lines) if line.startswith(marker)]
+        method_idx = method_matches[-1] if method_matches else None
+        if method_idx is None:
+            return content
+
+        insert_idx = len(lines)
+        for i in range(method_idx + 1, len(lines)):
+            line = lines[i]
+            stripped = line.lstrip()
+            if not stripped:
+                continue
+            indent = len(line) - len(stripped)
+            if indent <= 4 and not stripped.startswith("#"):
+                insert_idx = i
+                break
+
+        snippet_lines = snippet.rstrip().split("\n")
+        lines[insert_idx:insert_idx] = [""] + snippet_lines + [""]
+        return "\n".join(lines)
+
+    @staticmethod
+    def _inject_after_super_post_init(content: str, snippet: str) -> str:
+        """Insert a snippet immediately after the generated super().__post_init__() call."""
+        if snippet.strip() in content:
+            return content
+
+        lines = content.split("\n")
+        method_matches = [i for i, line in enumerate(lines) if line.startswith("    def __post_init__(self):")]
+        if method_matches:
+            method_idx = method_matches[-1]
+            for i in range(method_idx + 1, len(lines)):
+                if "super().__post_init__()" in lines[i]:
+                    snippet_lines = snippet.rstrip().split("\n")
+                    lines[i + 1:i + 1] = [""] + snippet_lines + [""]
+                    return "\n".join(lines)
+        return IsaacLabAgent._inject_post_init_snippet(content, snippet)
+
+    @staticmethod
+    def _task_has_min_separation(task_doc: dict) -> bool:
+        for asset in task_doc.get("assets", []):
+            if asset.get("type") != "rigid":
+                continue
+            randomize = asset.get("randomize", {})
+            if randomize.get("min_separation") is not None:
+                return True
+        return False
+
+    @staticmethod
+    def _build_disable_randomization_snippet(task_doc: dict) -> str:
+        if not IsaacLabAgent._task_has_min_separation(task_doc):
+            return ""
+
+        event_names = []
+        for asset in task_doc.get("assets", []):
+            if asset.get("type") != "rigid":
+                continue
+            name = asset.get("name")
+            if name:
+                event_names.append(f"randomize_{name.lower()}")
+                event_names.append(f"reset_{name.lower()}")
+                event_names.append(f"{name.lower()}_position")
+
+        if not event_names:
+            return ""
+
+        return "\n".join([
+            "        # Auto-patch: keep object reset deterministic for stack/sort smoke validation.",
+            "        # Independent uniform resets ignore YAML min_separation and can destabilize the scene.",
+            f"        for _event_name in {event_names!r}:",
+            "            if hasattr(self.events, _event_name):",
+            "                setattr(self.events, _event_name, None)",
+        ])
+
+    @staticmethod
+    def _build_primitive_scene_override_snippet(task_doc: dict) -> str:
+        """Rebuild primitive assets with explicit physics so smoke tests use stable objects."""
+        lines: list[str] = []
+
+        for asset in task_doc.get("assets", []):
+            if asset.get("source") != "primitive" or asset.get("primitive") != "cube":
+                continue
+
+            name = asset.get("name")
+            if not name:
+                continue
+
+            physics = asset.get("physics", {})
+            prim_name = Path(str(asset.get("prim_path", f"/World/{name}"))).name
+            env_prim_path = f"{{ENV_REGEX_NS}}/{prim_name}"
+            position = asset.get("position", [0.0, 0.0, 0.0])
+            rotation = asset.get("rotation", [1.0, 0.0, 0.0, 0.0])
+            size = tuple(float(v) for v in asset.get("scale", [1.0, 1.0, 1.0]))
+            color = tuple(float(v) for v in asset.get("color", [0.7, 0.7, 0.7]))
+
+            if physics.get("rigid_body", False):
+                mass = float(physics.get("mass", 0.05))
+                solver_pos = int(physics.get("solver_position_iterations", 8))
+                solver_vel = int(physics.get("solver_velocity_iterations", 1))
+                max_ang = float(physics.get("max_angular_velocity", 1000.0))
+                max_lin = float(physics.get("max_linear_velocity", 1000.0))
+                max_dep = float(physics.get("max_depenetration_velocity", 5.0))
+                lines.extend(
+                    [
+                        f"        self.scene.{name} = RigidObjectCfg(",
+                        f"            prim_path={env_prim_path!r},",
+                        f"            init_state=RigidObjectCfg.InitialStateCfg(pos={position!r}, rot={rotation!r}),",
+                        "            spawn=sim_utils.CuboidCfg(",
+                        f"                size={size!r},",
+                        "                rigid_props=sim_utils.RigidBodyPropertiesCfg(",
+                        "                    disable_gravity=False,",
+                        f"                    solver_position_iteration_count={solver_pos},",
+                        f"                    solver_velocity_iteration_count={solver_vel},",
+                        f"                    max_angular_velocity={max_ang},",
+                        f"                    max_linear_velocity={max_lin},",
+                        f"                    max_depenetration_velocity={max_dep},",
+                        "                ),",
+                        f"                mass_props=sim_utils.MassPropertiesCfg(mass={mass}),",
+                        "                collision_props=sim_utils.CollisionPropertiesCfg(),",
+                        f"                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color={color!r}),",
+                        "            ),",
+                        "        )",
+                    ]
+                )
+            else:
+                lines.extend(
+                    [
+                        f"        self.scene.{name} = AssetBaseCfg(",
+                        f"            prim_path={env_prim_path!r},",
+                        f"            init_state=AssetBaseCfg.InitialStateCfg(pos={position!r}, rot={rotation!r}),",
+                        "            spawn=sim_utils.CuboidCfg(",
+                        f"                size={size!r},",
+                        "                collision_props=sim_utils.CollisionPropertiesCfg(),",
+                        f"                visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color={color!r}),",
+                        "            ),",
+                        "        )",
+                    ]
+                )
+
+        if not lines:
+            return ""
+
+        return "\n".join(
+            [
+                "        # Auto-patch: rebuild primitive assets with explicit collision and mass properties.",
+                "        # The generated defaults can leave tiny cubes with invalid mass/inertia in smoke tests.",
+                *lines,
+            ]
+        )
+
+    @staticmethod
+    def _build_openarm_override_snippet(task_doc: dict) -> str:
+        robot_asset = next(
+            (asset for asset in task_doc.get("assets", []) if asset.get("type") == "articulation"),
+            None,
+        )
+        if not robot_asset:
+            return ""
+
+        initial_joints = robot_asset.get("initial_joints", {})
+        simulation = task_doc.get("simulation", {})
+        physx = simulation.get("physx", {})
+        disable_randomization = IsaacLabAgent._build_disable_randomization_snippet(task_doc)
+        return "\n".join([
+            "        # Auto-patch: normalize OpenArm robot config to the official asset + valid EE frame.",
+            f"        self.decimation = {int(simulation.get('decimation', 5))}",
+            f"        self.episode_length_s = {float(simulation.get('episode_length', 30.0))}",
+            f"        self.sim.dt = {float(simulation.get('timestep', 0.01))}",
+            f"        self.sim.render_interval = {int(simulation.get('render_interval', max(1, simulation.get('decimation', 5))))}",
+            f"        self.sim.physx.bounce_threshold_velocity = {float(physx.get('bounce_threshold', 0.01))}",
+            f"        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = {int(physx.get('gpu_found_lost_aggregate_pairs_capacity', 1024 * 1024 * 4))}",
+            f"        self.sim.physx.gpu_total_aggregate_pairs_capacity = {int(physx.get('gpu_total_aggregate_pairs_capacity', 16 * 1024))}",
+            f"        self.sim.physx.friction_correlation_distance = {float(physx.get('friction_correlation_distance', 0.00625))}",
+            "        self.scene.robot = OPENARM_UNI_CFG.replace(prim_path=\"{ENV_REGEX_NS}/Robot\")",
+            f"        self.scene.robot.init_state.joint_pos = {repr(initial_joints)}",
+            "        self.scene.robot.actuators = {",
+            "            \"openarm_arm\": ImplicitActuatorCfg(",
+            "                joint_names_expr=[\"openarm_joint[1-7]\"],",
+            "                velocity_limit_sim={\"openarm_joint[1-2]\": 2.175, \"openarm_joint[3-4]\": 2.175, \"openarm_joint[5-7]\": 2.61},",
+            "                effort_limit_sim={\"openarm_joint[1-2]\": 40.0, \"openarm_joint[3-4]\": 27.0, \"openarm_joint[5-7]\": 7.0},",
+            "                stiffness=80.0,",
+            "                damping=4.0,",
+            "            ),",
+            "            \"openarm_gripper\": ImplicitActuatorCfg(",
+            "                joint_names_expr=[\"openarm_finger_joint.*\"],",
+            "                velocity_limit_sim=0.2,",
+            "                effort_limit_sim=333.33,",
+            "                stiffness=2000.0,",
+            "                damping=100.0,",
+            "            ),",
+            "        }",
+            "        try:",
+            "            self.scene.robot.spawn.semantic_tags = [(\"class\", \"robot\")]",
+            "        except Exception:",
+            "            pass",
+            "        self.scene.ee_frame = FrameTransformerCfg(",
+            "            prim_path=\"{ENV_REGEX_NS}/Robot/openarm_link0\",",
+            "            debug_vis=False,",
+            "            target_frames=[",
+            "                FrameTransformerCfg.FrameCfg(",
+            "                    prim_path=\"{ENV_REGEX_NS}/Robot/openarm_ee_tcp\",",
+            "                    name=\"end_effector\",",
+            "                ),",
+            "            ],",
+            "        )",
+            "        self.actions.arm_action = mdp.JointPositionActionCfg(",
+            "            asset_name=\"robot\",",
+            "            joint_names=[\"openarm_joint.*\"],",
+            "            scale=0.5,",
+            "            use_default_offset=True,",
+            "        )",
+            "        self.actions.gripper_action = mdp.BinaryJointPositionActionCfg(",
+            "            asset_name=\"robot\",",
+            "            joint_names=[\"openarm_finger_joint.*\"],",
+            "            open_command_expr={\"openarm_finger_joint.*\": 0.044},",
+            "            close_command_expr={\"openarm_finger_joint.*\": 0.0},",
+            "        )",
+            disable_randomization,
+            "        return",
+        ])
+
+    @staticmethod
+    def _build_so101_override_snippet(task_doc: dict) -> str:
+        robot_asset = next(
+            (asset for asset in task_doc.get("assets", []) if asset.get("type") == "articulation"),
+            None,
+        )
+        if not robot_asset:
+            return ""
+
+        asset_path = str(robot_asset.get("asset_path", ""))
+        initial_joints = robot_asset.get("initial_joints", {})
+        position = robot_asset.get("position", [0.0, 0.0, 0.0])
+        rotation = robot_asset.get("rotation", [1.0, 0.0, 0.0, 0.0])
+        simulation = task_doc.get("simulation", {})
+        physx = simulation.get("physx", {})
+        disable_randomization = IsaacLabAgent._build_disable_randomization_snippet(task_doc)
+        return "\n".join([
+            "        # Auto-patch: normalize SO-101 robot config to explicit ArticulationCfg.",
+            f"        self.decimation = {int(simulation.get('decimation', 5))}",
+            f"        self.episode_length_s = {float(simulation.get('episode_length', 30.0))}",
+            f"        self.sim.dt = {float(simulation.get('timestep', 0.01))}",
+            f"        self.sim.render_interval = {int(simulation.get('render_interval', max(1, simulation.get('decimation', 5))))}",
+            f"        self.sim.physx.bounce_threshold_velocity = {float(physx.get('bounce_threshold', 0.01))}",
+            f"        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = {int(physx.get('gpu_found_lost_aggregate_pairs_capacity', 1024 * 1024 * 4))}",
+            f"        self.sim.physx.gpu_total_aggregate_pairs_capacity = {int(physx.get('gpu_total_aggregate_pairs_capacity', 16 * 1024))}",
+            f"        self.sim.physx.friction_correlation_distance = {float(physx.get('friction_correlation_distance', 0.00625))}",
+            "        self.scene.robot = ArticulationCfg(",
+            "            prim_path=\"{ENV_REGEX_NS}/Robot\",",
+            f"            init_state=ArticulationCfg.InitialStateCfg(pos={position!r}, rot={rotation!r}, joint_pos={initial_joints!r}),",
+            "            spawn=UsdFileCfg(",
+            f"                usd_path={asset_path!r},",
+            "                rigid_props=sim_utils.RigidBodyPropertiesCfg(disable_gravity=False, max_depenetration_velocity=5.0),",
+            "                articulation_props=sim_utils.ArticulationRootPropertiesCfg(",
+            "                    enabled_self_collisions=False,",
+            "                    solver_position_iteration_count=8,",
+            "                    solver_velocity_iteration_count=0,",
+            "                ),",
+            "            ),",
+            "            actuators={",
+            "                \"arm\": ImplicitActuatorCfg(",
+            "                    joint_names_expr=[\"shoulder_pan\", \"shoulder_lift\", \"elbow_flex\", \"wrist_flex\", \"wrist_roll\"],",
+            "                    effort_limit_sim=10.0,",
+            "                    stiffness=17.8,",
+            "                    damping=0.6,",
+            "                ),",
+            "                \"gripper\": ImplicitActuatorCfg(",
+            "                    joint_names_expr=[\"gripper\"],",
+            "                    effort_limit_sim=10.0,",
+            "                    stiffness=200.0,",
+            "                    damping=10.0,",
+            "                ),",
+            "            },",
+            "        )",
+            "        try:",
+            "            self.scene.robot.spawn.semantic_tags = [(\"class\", \"robot\")]",
+            "        except Exception:",
+            "            pass",
+            "        self.scene.ee_frame = FrameTransformerCfg(",
+            "            prim_path=\"{ENV_REGEX_NS}/Robot/gripper_frame_link\",",
+            "            debug_vis=False,",
+            "            target_frames=[",
+            "                FrameTransformerCfg.FrameCfg(",
+            "                    prim_path=\"{ENV_REGEX_NS}/Robot/gripper_frame_link\",",
+            "                    name=\"end_effector\",",
+            "                ),",
+            "            ],",
+            "        )",
+            "        self.actions.arm_action = mdp.JointPositionActionCfg(",
+            "            asset_name=\"robot\",",
+            "            joint_names=[\"shoulder_pan\", \"shoulder_lift\", \"elbow_flex\", \"wrist_flex\", \"wrist_roll\"],",
+            "            scale=0.5,",
+            "            use_default_offset=True,",
+            "        )",
+            "        self.actions.gripper_action = mdp.BinaryJointPositionActionCfg(",
+            "            asset_name=\"robot\",",
+            "            joint_names=[\"gripper\"],",
+            "            open_command_expr={\"gripper\": 1.745},",
+            "            close_command_expr={\"gripper\": -0.175},",
+            "        )",
+            IsaacLabAgent._build_primitive_scene_override_snippet(task_doc),
+            disable_randomization,
+            "        return",
+        ])
+
+    def _validate_generated_code(self, output_dir: Path, robot: str, task_doc: dict | None = None) -> list[str]:
         """Post-generation validation: auto-fix known mistakes before execution."""
         fixes = []
 
@@ -527,91 +903,141 @@ Use this structure/pattern, but fill in values from the YAML above.
                 py_file.write_text(text)
                 fixes.append(f"Patched {py_file.name}: env.scene → env.scene.keys()")
 
-        fixes.extend(self._apply_robot_specific_fixes(output_dir, robot))
+        fixes.extend(self._apply_robot_specific_fixes(output_dir, robot, task_doc or {}))
         return fixes
 
-    def _apply_robot_specific_fixes(self, output_dir: Path, robot: str) -> list[str]:
+    def _apply_robot_specific_fixes(self, output_dir: Path, robot: str, task_doc: dict) -> list[str]:
         """Patch predictable robot-specific mistakes from the LLM output."""
-        if robot != "ur10e":
-            return []
-
         env_cfg_path = output_dir / "env_cfg.py"
         if not env_cfg_path.exists():
             return []
 
         original = env_cfg_path.read_text()
         content = original
+        fixes = []
 
-        replacements = [
-            (
-                "from isaaclab_assets.robots.franka import FRANKA_PANDA_CFG  # if robot_type is franka",
-                "from isaaclab_assets.robots.universal_robots import UR10e_ROBOTIQ_2F_85_CFG",
-            ),
-            (
-                "from isaaclab_assets.robots.franka import FRANKA_PANDA_CFG",
-                "from isaaclab_assets.robots.universal_robots import UR10e_ROBOTIQ_2F_85_CFG",
-            ),
-            ("FRANKA_PANDA_CFG", "UR10e_ROBOTIQ_2F_85_CFG"),
-            ('["panda_joint.*"]', '["shoulder_.*", "elbow_joint", "wrist_.*"]'),
-            (
-                '["panda_finger.*"]',
-                '["finger_joint", "right_outer_knuckle_joint", "left_inner_finger_joint", '
-                '"right_inner_finger_joint", "left_inner_finger_knuckle_joint", '
-                '"right_inner_finger_knuckle_joint"]',
-            ),
-            ('{"panda_finger_.*": 0.04}', '{"finger_joint": 0.0, "right_outer_knuckle_joint": 0.0, '
-             '"left_inner_finger_joint": 0.0, "right_inner_finger_joint": 0.0, '
-             '"left_inner_finger_knuckle_joint": 0.0, "right_inner_finger_knuckle_joint": 0.0}'),
-            ('{"panda_finger_.*": 0.0}', '{"finger_joint": 0.65, "right_outer_knuckle_joint": 0.65, '
-             '"left_inner_finger_joint": -0.65, "right_inner_finger_joint": 0.65, '
-             '"left_inner_finger_knuckle_joint": -0.65, "right_inner_finger_knuckle_joint": -0.65}'),
-            ('gripper_joint_names = ["panda_finger_.*"]',
-             'gripper_joint_names = ["finger_joint", "right_outer_knuckle_joint", '
-             '"left_inner_finger_joint", "right_inner_finger_joint", '
-             '"left_inner_finger_knuckle_joint", "right_inner_finger_knuckle_joint"]'),
-            ("gripper_open_val = 0.04", "gripper_open_val = 0.0"),
-            ("gripper_threshold = 0.005", "gripper_threshold = 0.05"),
-            ("panda_hand", "wrist_3_link"),
-            ("panda_link0", "base_link"),
-            ("ee_link", "wrist_3_link"),
-        ]
-        for source, target in replacements:
-            content = content.replace(source, target)
+        if robot == "ur10e":
+            replacements = [
+                (
+                    "from isaaclab_assets.robots.franka import FRANKA_PANDA_CFG  # if robot_type is franka",
+                    "from isaaclab_assets.robots.universal_robots import UR10e_ROBOTIQ_2F_85_CFG",
+                ),
+                (
+                    "from isaaclab_assets.robots.franka import FRANKA_PANDA_CFG",
+                    "from isaaclab_assets.robots.universal_robots import UR10e_ROBOTIQ_2F_85_CFG",
+                ),
+                ("FRANKA_PANDA_CFG", "UR10e_ROBOTIQ_2F_85_CFG"),
+                ('["panda_joint.*"]', '["shoulder_.*", "elbow_joint", "wrist_.*"]'),
+                (
+                    '["panda_finger.*"]',
+                    '["finger_joint", "right_outer_knuckle_joint", "left_inner_finger_joint", '
+                    '"right_inner_finger_joint", "left_inner_finger_knuckle_joint", '
+                    '"right_inner_finger_knuckle_joint"]',
+                ),
+                ('{"panda_finger_.*": 0.04}', '{"finger_joint": 0.0, "right_outer_knuckle_joint": 0.0, '
+                 '"left_inner_finger_joint": 0.0, "right_inner_finger_joint": 0.0, '
+                 '"left_inner_finger_knuckle_joint": 0.0, "right_inner_finger_knuckle_joint": 0.0}'),
+                ('{"panda_finger_.*": 0.0}', '{"finger_joint": 0.65, "right_outer_knuckle_joint": 0.65, '
+                 '"left_inner_finger_joint": -0.65, "right_inner_finger_joint": 0.65, '
+                 '"left_inner_finger_knuckle_joint": -0.65, "right_inner_finger_knuckle_joint": -0.65}'),
+                ('gripper_joint_names = ["panda_finger_.*"]',
+                 'gripper_joint_names = ["finger_joint", "right_outer_knuckle_joint", '
+                 '"left_inner_finger_joint", "right_inner_finger_joint", '
+                 '"left_inner_finger_knuckle_joint", "right_inner_finger_knuckle_joint"]'),
+                ("gripper_open_val = 0.04", "gripper_open_val = 0.0"),
+                ("gripper_threshold = 0.005", "gripper_threshold = 0.05"),
+                ("panda_hand", "wrist_3_link"),
+                ("panda_link0", "base_link"),
+                ("ee_link", "wrist_3_link"),
+            ]
+            for source, target in replacements:
+                content = content.replace(source, target)
+            content = self._ensure_import_line(
+                content, "from isaaclab_assets.robots.universal_robots import UR10e_ROBOTIQ_2F_85_CFG"
+            )
+            if content != original:
+                fixes.append("Patched env_cfg.py: normalized UR10e Robotiq 2F-85 config and body/joint names")
 
-        if "UR10e_ROBOTIQ_2F_85_CFG" in content and "from isaaclab_assets.robots.universal_robots import UR10e_ROBOTIQ_2F_85_CFG" not in content:
-            lines = content.split("\n")
-            insert_idx = 0
-            for i, line in enumerate(lines):
-                if line.startswith("from isaaclab_assets") or line.startswith("from isaaclab.markers"):
-                    insert_idx = i
-                    break
-            lines.insert(insert_idx, "from isaaclab_assets.robots.universal_robots import UR10e_ROBOTIQ_2F_85_CFG")
-            content = "\n".join(lines)
+        elif robot == "openarm":
+            content = re.sub(
+                r'params=\{\s*"asset_cfg"\s*:\s*SceneEntityCfg\("robot"\)\s*,\s*"body_name"\s*:\s*"([^"]+)"\s*\}',
+                r'params={"asset_cfg": SceneEntityCfg("robot", body_names=["\1"])}',
+                content,
+            )
+            content = re.sub(
+                r'params=\{\s*"body_name"\s*:\s*"([^"]+)"\s*,\s*"asset_cfg"\s*:\s*SceneEntityCfg\("robot"\)\s*\}',
+                r'params={"asset_cfg": SceneEntityCfg("robot", body_names=["\1"])}',
+                content,
+            )
+            content = re.sub(
+                r'params=\{\s*"body_name"\s*:\s*"([^"]+)"\s*\}',
+                r'params={"asset_cfg": SceneEntityCfg("robot", body_names=["\1"])}',
+                content,
+            )
+            content = self._ensure_import_line(
+                content, "from isaaclab_assets.robots.openarm import OPENARM_UNI_CFG"
+            )
+            content = self._ensure_import_line(
+                content, "from isaaclab.actuators import ImplicitActuatorCfg"
+            )
+            if task_doc:
+                content = self._inject_after_super_post_init(content, self._build_openarm_override_snippet(task_doc))
+            if content != original:
+                fixes.append("Patched env_cfg.py: forced OpenArm asset/actuators/tcp frame and deterministic object reset")
 
-        if content == original:
-            return []
+        elif robot == "so101":
+            content = re.sub(
+                r'params=\{\s*"asset_cfg"\s*:\s*SceneEntityCfg\("robot"\)\s*,\s*"body_name"\s*:\s*"([^"]+)"\s*\}',
+                r'params={"asset_cfg": SceneEntityCfg("robot", body_names=["\1"])}',
+                content,
+            )
+            content = re.sub(
+                r'params=\{\s*"body_name"\s*:\s*"([^"]+)"\s*,\s*"asset_cfg"\s*:\s*SceneEntityCfg\("robot"\)\s*\}',
+                r'params={"asset_cfg": SceneEntityCfg("robot", body_names=["\1"])}',
+                content,
+            )
+            content = self._ensure_import_line(
+                content, "from isaaclab.actuators import ImplicitActuatorCfg"
+            )
+            if task_doc:
+                content = self._inject_after_super_post_init(content, self._build_so101_override_snippet(task_doc))
+            if content != original:
+                fixes.append("Patched env_cfg.py: forced SO-101 articulation config and deterministic object reset")
 
-        env_cfg_path.write_text(content)
-        return ["Patched env_cfg.py: normalized UR10e Robotiq 2F-85 config and body/joint names"]
+        if fixes:
+            env_cfg_path.write_text(content)
+        return fixes
 
     # ----- Execution -----
 
-    def execute_isaaclab(self, output_dir: Path) -> tuple[bool, str]:
-        """Execute generated run_env.py via isaaclab.sh inside the conda env."""
-        run_script = output_dir / "run_env.py"
+    def _execute_isaaclab_script(
+        self,
+        output_dir: Path,
+        script_name: str,
+        *,
+        enable_cameras: bool = False,
+        num_envs: int | None = None,
+        headless: bool | None = None,
+    ) -> tuple[bool, str]:
+        """Execute a generated IsaacLab script via isaaclab.sh inside the conda env."""
+        run_script = output_dir / script_name
         if not run_script.exists():
-            return False, "run_env.py not found in output directory"
+            return False, f"{script_name} not found in output directory"
 
         launcher = self.isaaclab_path / "isaaclab.sh"
         if not launcher.exists():
             return False, f"isaaclab.sh not found at {launcher}"
 
         conda_env = self.config["isaaclab"]["conda_env"]
+        script_num_envs = self.num_envs if num_envs is None else num_envs
+        script_headless = self.headless if headless is None else headless
 
         # Build the isaaclab.sh command
-        isaaclab_cmd = f"{launcher} -p {run_script} --num_envs {self.num_envs}"
-        if self.headless:
+        isaaclab_cmd = f"{launcher} -p {run_script} --num_envs {script_num_envs}"
+        if script_headless:
             isaaclab_cmd += " --headless"
+        if enable_cameras:
+            isaaclab_cmd += " --enable_cameras"
 
         # Wrap with conda run to ensure correct Python environment
         cmd = [
@@ -656,6 +1082,20 @@ Use this structure/pattern, but fill in values from the YAML above.
             return False, f"Execution timed out after {self.execution_timeout}s\n{partial[-2000:]}"
         except Exception as e:
             return False, f"Execution error: {e}"
+
+    def execute_isaaclab(self, output_dir: Path) -> tuple[bool, str]:
+        """Execute generated run_env.py via isaaclab.sh inside the conda env."""
+        return self._execute_isaaclab_script(output_dir, "run_env.py")
+
+    def capture_scene(self, output_dir: Path) -> tuple[bool, str]:
+        """Capture a scene image for template-based tasks."""
+        return self._execute_isaaclab_script(
+            output_dir,
+            "capture_scene.py",
+            enable_cameras=True,
+            num_envs=1,
+            headless=False,
+        )
 
     # ----- Error Parsing -----
 
@@ -736,6 +1176,7 @@ Use this structure/pattern, but fill in values from the YAML above.
         task_name = task_doc.get("task", {}).get("name", "UnknownTask")
         category = self._detect_category(yaml_path)
         robot = self._detect_robot(task_doc, yaml_path)
+        use_assembling_kits_template = category == "assembly" and self._is_assembling_kits_task(yaml_path, task_doc)
 
         console.print(Panel(
             f"[bold]Task[/bold]: {task_name}\n"
@@ -751,25 +1192,30 @@ Use this structure/pattern, but fill in values from the YAML above.
         task_slug = task_name.lower().replace(" ", "_")
         output_dir = self.output_dir / f"{task_slug}_{timestamp}"
 
-        # Step 1: Load reference code (pattern examples)
-        console.print("[bold]Step 1:[/bold] Loading reference code patterns...")
-        reference_code = self.select_reference(category, robot)
+        if use_assembling_kits_template:
+            console.print("[bold]Step 1:[/bold] Using deterministic AssemblingKits template...")
+            code_dict = build_assembling_kits_template(task_doc, robot)
+            console.print(f"  Generated {len(code_dict)} template file(s): {list(code_dict.keys())}")
+        else:
+            # Step 1: Load reference code (pattern examples)
+            console.print("[bold]Step 1:[/bold] Loading reference code patterns...")
+            reference_code = self.select_reference(category, robot)
 
-        # Step 2: Build prompt and generate code
-        console.print("[bold]Step 2:[/bold] Generating IsaacLab code via LLM...")
-        user_prompt = self.build_prompt(yaml_path, task_doc, reference_code)
-        response = self.llm.generate(
-            system_prompt=self.system_prompt,
-            user_prompt=user_prompt,
-            temperature=self.config["agent"]["temperature"],
-        )
+            # Step 2: Build prompt and generate code
+            console.print("[bold]Step 2:[/bold] Generating IsaacLab code via LLM...")
+            user_prompt = self.build_prompt(yaml_path, task_doc, reference_code)
+            response = self.llm.generate(
+                system_prompt=self.system_prompt,
+                user_prompt=user_prompt,
+                temperature=self.config["agent"]["temperature"],
+            )
 
-        code_dict = self.parse_generated_code(response)
-        if not code_dict:
-            console.print("[red]Error:[/red] LLM returned no parseable code blocks")
-            return {"success": False, "output_dir": None, "attempts": 0, "error": "No code generated"}
+            code_dict = self.parse_generated_code(response)
+            if not code_dict:
+                console.print("[red]Error:[/red] LLM returned no parseable code blocks")
+                return {"success": False, "output_dir": None, "attempts": 0, "error": "No code generated"}
 
-        console.print(f"  Generated {len(code_dict)} file(s): {list(code_dict.keys())}")
+            console.print(f"  Generated {len(code_dict)} file(s): {list(code_dict.keys())}")
 
         # Step 3: Write files
         console.print("[bold]Step 3:[/bold] Writing generated code...")
@@ -780,13 +1226,15 @@ Use this structure/pattern, but fill in values from the YAML above.
             return {"success": True, "output_dir": str(output_dir), "attempts": 0, "error": None}
 
         # Step 3.5: Validate and auto-fix known mistakes
-        fixes = self._validate_generated_code(output_dir, robot)
-        for fix in fixes:
-            console.print(f"  [yellow]Auto-fix[/yellow]: {fix}")
+        if not use_assembling_kits_template:
+            fixes = self._validate_generated_code(output_dir, robot, task_doc)
+            for fix in fixes:
+                console.print(f"  [yellow]Auto-fix[/yellow]: {fix}")
 
         # Step 4: Execute and iterate
-        for attempt in range(1, self.max_retries + 1):
-            console.print(f"[bold]Step 4:[/bold] Execution attempt {attempt}/{self.max_retries}...")
+        max_attempts = 1 if use_assembling_kits_template else self.max_retries
+        for attempt in range(1, max_attempts + 1):
+            console.print(f"[bold]Step 4:[/bold] Execution attempt {attempt}/{max_attempts}...")
             success, output = self.execute_isaaclab(output_dir)
 
             if success:
@@ -803,6 +1251,14 @@ Use this structure/pattern, but fill in values from the YAML above.
                     result["evaluation"] = eval_result
                     result["eval_score"] = eval_result.get("total_score", 0)
 
+                if use_assembling_kits_template:
+                    console.print("[bold]Step 6:[/bold] Capturing scene image...")
+                    captured, capture_output = self.capture_scene(output_dir)
+                    if captured and (output_dir / "scene_capture.png").exists():
+                        result["scene_capture"] = str(output_dir / "scene_capture.png")
+                    else:
+                        result["scene_capture_error"] = capture_output[-500:] if capture_output else "Unknown capture error"
+
                 return result
 
             console.print(f"  [red]Failed[/red] (attempt {attempt})")
@@ -813,19 +1269,19 @@ Use this structure/pattern, but fill in values from the YAML above.
                 error_file.write_text(output)
 
             # Fix errors (except on last attempt)
-            if attempt < self.max_retries:
+            if attempt < max_attempts:
                 code_dict = self.fix_errors(code_dict, output, attempt + 1)
                 self.write_output(code_dict, output_dir)
                 # Re-validate after error fix
-                fixes = self._validate_generated_code(output_dir, robot)
+                fixes = self._validate_generated_code(output_dir, robot, task_doc)
                 for fix in fixes:
                     console.print(f"  [yellow]Auto-fix[/yellow]: {fix}")
 
-        console.print(f"[red bold]FAILED[/red bold] after {self.max_retries} attempts")
+        console.print(f"[red bold]FAILED[/red bold] after {max_attempts} attempts")
         return {
             "success": False,
             "output_dir": str(output_dir),
-            "attempts": self.max_retries,
+            "attempts": max_attempts,
             "error": output[-500:] if output else "Unknown error",
         }
 

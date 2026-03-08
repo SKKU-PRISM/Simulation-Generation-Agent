@@ -1,0 +1,211 @@
+"""Embodiment runtime wrappers used by generated CaP code."""
+
+from __future__ import annotations
+
+import numpy as np
+
+from src.data_collection.cap_runtime.context import CaPRuntimeContext
+
+
+class PolicyFallbackBlockedError(RuntimeError):
+    """Raised when generated CaP code relied on a forbidden policy fallback."""
+
+
+class BaseTabletopCaPSkills:
+    """Shared tabletop skill wrapper on top of ``SimSkills``."""
+
+    PICK_APPROACH_OFFSET = 0.10
+    PLACE_APPROACH_OFFSET = 0.05
+    PLACE_DROP_OFFSET = 0.005
+
+    def __init__(self, *_, frame: str = "world", **__):
+        resources = CaPRuntimeContext.get()
+        self._resources = resources
+        self._skills = resources.sim_skills
+        self._detector = resources.detector
+        self._robot_cfg = resources.robot_cfg
+        self._positions = resources.translated_positions
+        self.frame = frame
+        self._held_object_name: str | None = None
+        self._held_half_height: float | None = None
+
+    def connect(self) -> bool:
+        return True
+
+    def disconnect(self) -> bool:
+        return True
+
+    def detect_objects(self, queries: list[str] | None = None, **_) -> dict[str, dict]:
+        if not queries:
+            return dict(self._positions)
+        return {name: self._positions.get(name) for name in queries}
+
+    def move_to_ready(self, skill_description: str | None = None) -> bool:
+        return self._skills.move_to_ready(
+            duration=1.0,
+            skill_description=skill_description,
+        )
+
+    def move_to_initial_state(self, skill_description: str | None = None) -> bool:
+        return self.move_to_ready(skill_description=skill_description)
+
+    def move_to_free_state(self, skill_description: str | None = None) -> bool:
+        return self._skills.move_to_ready(
+            duration=1.2,
+            safe_retreat=True,
+            skill_description=skill_description,
+        )
+
+    def move_to_position(
+        self,
+        position,
+        target_name: str | None = None,
+        skill_description: str | None = None,
+    ) -> bool:
+        return self._skills.move_to_position(
+            np.asarray(position, dtype=np.float64),
+            target_name=target_name,
+            skill_description=skill_description,
+        )
+
+    def gripper_open(
+        self,
+        skill_description: str | None = None,
+        ratio: float = 1.0,
+    ) -> bool:
+        del ratio
+        return self._skills.gripper_open(
+            duration=0.3,
+            skill_description=skill_description,
+        )
+
+    def gripper_close(self, skill_description: str | None = None) -> bool:
+        return self._skills.gripper_close(
+            duration=self._robot_cfg.gripper_close_duration,
+            skill_description=skill_description,
+        )
+
+    def rotate_90degree(self, *_, **__) -> bool:
+        raise RuntimeError("rotate_90degree is not supported in the IsaacLab CaP tabletop runtime")
+
+    def execute_pick_object(
+        self,
+        object_position,
+        object_name: str | None = None,
+        skill_description: str | None = None,
+    ) -> bool:
+        del object_position
+        if not object_name:
+            raise PolicyFallbackBlockedError(
+                "execute_pick_object requires explicit object_name; runtime inference is disabled"
+            )
+
+        pick_ok = self._skills.execute_pick(
+            object_name,
+            approach_offset=self.PICK_APPROACH_OFFSET,
+            skill_description=skill_description,
+        )
+        if pick_ok:
+            self._held_object_name = object_name
+            self._held_half_height = self._resolve_half_height(object_name)
+        return pick_ok
+
+    def execute_place_object(
+        self,
+        place_position,
+        target_name: str | None = None,
+        is_table: bool = True,
+        skill_description: str | None = None,
+        **_,
+    ) -> bool:
+        held_name = self._held_object_name
+        if held_name is None:
+            return False
+        if not is_table and not target_name:
+            raise PolicyFallbackBlockedError(
+                "execute_place_object with is_table=False requires explicit target_name"
+            )
+
+        target_center = self._resolve_place_center(place_position, target_name, is_table)
+        self._skills.move_to_ready(
+            duration=1.0,
+            open_gripper=False,
+            skill_description=(
+                f"{skill_description} (carry the held object through the ready pose before placement)"
+                if skill_description
+                else "carry the held object through the ready pose before placement"
+            ),
+        )
+        placed = self._skills.execute_place(
+            target_center,
+            approach_offset=self.PLACE_APPROACH_OFFSET,
+            drop_offset=self.PLACE_DROP_OFFSET,
+            _placed_object=held_name,
+            skill_description=skill_description,
+        )
+        if placed:
+            self._held_object_name = None
+            self._held_half_height = None
+        return placed
+
+    def _current_object_position(self, object_name: str) -> np.ndarray:
+        """Resolve the latest center position for a named object."""
+
+        try:
+            current_pos = self._detector.get_object_position(object_name)
+        except Exception as exc:
+            raise PolicyFallbackBlockedError(
+                f"unable to read live pose for '{object_name}' during placement: {exc}"
+            ) from exc
+        return np.asarray(current_pos, dtype=np.float64)
+
+    def _resolve_half_height(self, object_name: str | None) -> float:
+        """Resolve the best available half-height estimate for an object."""
+
+        if not object_name:
+            raise PolicyFallbackBlockedError(
+                "half-height lookup requires explicit object_name"
+            )
+
+        info = self._positions.get(object_name)
+        if info is None:
+            raise PolicyFallbackBlockedError(
+                f"object '{object_name}' missing from translated positions"
+            )
+
+        estimated = info.get("estimated_half_height")
+        if estimated is not None:
+            return max(float(estimated), 0.005)
+
+        position = info.get("position")
+        if isinstance(position, (list, tuple)) and len(position) >= 3:
+            return max(float(position[2]) / 2.0, 0.005)
+
+        raise PolicyFallbackBlockedError(
+            f"no half-height metadata available for '{object_name}'"
+        )
+
+    def _resolve_place_center(
+        self,
+        place_position,
+        target_name: str | None,
+        is_table: bool,
+    ) -> np.ndarray:
+        """Resolve the desired center position for the placed object."""
+
+        target = np.asarray(place_position, dtype=np.float64).copy()
+        held_half_height = self._held_half_height or 0.02
+
+        if is_table:
+            target[2] = float(target[2]) + held_half_height
+            return target
+
+        if not target_name:
+            raise PolicyFallbackBlockedError(
+                "object-on-object placement requires explicit target_name"
+            )
+
+        target_center = self._current_object_position(target_name)
+        target_half_height = self._resolve_half_height(target_name)
+        target_center[2] = float(target_center[2]) + target_half_height + held_half_height
+        return target_center

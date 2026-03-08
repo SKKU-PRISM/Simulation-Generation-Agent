@@ -15,7 +15,7 @@ load_dotenv(_PROJECT_ROOT / ".env")
 class AzureOpenAIClient:
     """Thin wrapper around Azure OpenAI Responses API."""
 
-    def __init__(self):
+    def __init__(self, model: str | None = None):
         api_key = os.environ.get("AZURE_OPENAI_API_KEY")
         if not api_key:
             raise EnvironmentError(
@@ -31,7 +31,7 @@ class AzureOpenAIClient:
                 "Add it to .env file or set the environment variable.\n"
                 "  echo 'AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1/' >> .env"
             )
-        self.model = os.environ.get("AZURE_OPENAI_MODEL", "gpt-5-mini")
+        self.model = model or os.environ.get("AZURE_OPENAI_MODEL", "gpt-5-mini")
 
         self.client = OpenAI(api_key=api_key, base_url=base_url)
 

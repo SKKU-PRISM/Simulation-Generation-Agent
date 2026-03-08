@@ -3,8 +3,6 @@ VLM-based task success judge for simulation data collection.
 
 Uses ADC's chain-of-thought judge prompts with SGA's Azure OpenAI (gpt-5)
 for multimodal before/after image evaluation.
-
-Falls back to a built-in prompt if ADC submodule is not available.
 """
 
 from __future__ import annotations
@@ -22,48 +20,6 @@ logger = logging.getLogger(__name__)
 
 
 # ------------------------------------------------------------------ #
-# Fallback prompt (used when ADC submodule is not available)
-# ------------------------------------------------------------------ #
-
-_FALLBACK_SYSTEM_PROMPT = """You are a Task Completion Judge for robotic manipulation tasks.
-
-Evaluate whether the robot successfully completed the task by comparing the initial and final images.
-
-Steps:
-1. Identify objects in the initial image
-2. Identify objects in the final image
-3. Analyze if the target object moved
-4. Verify the goal was achieved
-5. Check spatial relationships match the instruction
-
-Output format:
-PREDICTION: [TRUE/FALSE/UNCERTAIN]
-REASONING: [One sentence explanation]
-"""
-
-
-def _fallback_build_prompt(
-    instruction: str,
-    object_positions: dict,
-    executed_code: str,
-    image_resolution: tuple[int, int] | None = None,
-) -> str:
-    """Minimal prompt builder when ADC is not available."""
-    positions_text = "\n".join(
-        f"- {name}: {info}" for name, info in object_positions.items()
-    )
-    return (
-        f"## Task Evaluation\n\n"
-        f"### Goal: {instruction}\n\n"
-        f"### Object Positions (initial):\n{positions_text}\n\n"
-        f"### Executed Skills:\n```\n{executed_code}\n```\n\n"
-        f"Analyze the before/after images and provide:\n"
-        f"PREDICTION: [TRUE/FALSE/UNCERTAIN]\n"
-        f"REASONING: [explanation]"
-    )
-
-
-# ------------------------------------------------------------------ #
 # SimJudge
 # ------------------------------------------------------------------ #
 
@@ -74,8 +30,6 @@ class SimJudge:
     Uses ADC's 6-step chain-of-thought prompts with SGA's Azure OpenAI
     API (gpt-5) for multimodal evaluation of before/after images.
 
-    Falls back to built-in prompts if ADC submodule is not available.
-
     Args:
         model: Azure OpenAI model name (default: gpt-5).
     """
@@ -83,23 +37,24 @@ class SimJudge:
     def __init__(self, model: str = "gpt-5"):
         self._model = model
         self._client = None
-        self._system_prompt: str = _FALLBACK_SYSTEM_PROMPT
-        self._build_prompt = _fallback_build_prompt
+        self._system_prompt: str | None = None
+        self._build_prompt = None
         self._available = False
+        self._availability_reason = "SimJudge not initialized"
         self._initialize()
 
     def _initialize(self):
         """Initialize OpenAI client and load prompts."""
-        # Load ADC prompts if available
         try:
             from .adc_imports import get_judge_prompts
 
             self._system_prompt, self._build_prompt = get_judge_prompts()
             logger.info("SimJudge: loaded ADC judge prompts")
-        except ImportError:
-            logger.info("SimJudge: ADC prompts not available, using fallback")
+        except Exception as exc:
+            self._availability_reason = f"ADC judge prompts unavailable: {exc}"
+            logger.warning("SimJudge: %s", self._availability_reason)
+            return
 
-        # Initialize Azure OpenAI client
         try:
             from dotenv import load_dotenv
             from openai import OpenAI
@@ -111,17 +66,24 @@ class SimJudge:
             base_url = os.environ.get("AZURE_OPENAI_BASE_URL")
 
             if not api_key or not base_url:
-                logger.warning(
-                    "SimJudge: AZURE_OPENAI_API_KEY or AZURE_OPENAI_BASE_URL not set. "
-                    "VLM judging disabled."
+                self._availability_reason = (
+                    "AZURE_OPENAI_API_KEY or AZURE_OPENAI_BASE_URL not set"
                 )
+                logger.warning("SimJudge: %s", self._availability_reason)
                 return
 
             self._client = OpenAI(api_key=api_key, base_url=base_url)
             self._available = True
+            self._availability_reason = "ready"
             logger.info(f"SimJudge initialized: model={self._model}")
         except ImportError as e:
-            logger.warning(f"SimJudge: OpenAI package not available ({e})")
+            self._availability_reason = f"OpenAI package not available ({e})"
+            logger.warning("SimJudge: %s", self._availability_reason)
+
+    @property
+    def availability_reason(self) -> str:
+        """Human-readable reason why the judge is or is not available."""
+        return self._availability_reason
 
     @property
     def is_available(self) -> bool:
@@ -134,6 +96,7 @@ class SimJudge:
         initial_images: dict[str, np.ndarray] | np.ndarray,
         final_images: dict[str, np.ndarray] | np.ndarray,
         object_positions: dict,
+        executed_code: str = "",
         executed_skills: str = "",
         # Legacy single-image aliases
         initial_image: np.ndarray | None = None,
@@ -148,7 +111,8 @@ class SimJudge:
             initial_images: Dict ``{"wrist": array, "front": array}`` or single RGB array.
             final_images: Dict ``{"wrist": array, "front": array}`` or single RGB array.
             object_positions: ``{name: {"position": [x,y,z]}}`` from SimDetector.
-            executed_skills: String description of executed skill sequence.
+            executed_code: Executed generated code (preferred).
+            executed_skills: Legacy string description of executed skills.
             initial_image: Legacy single-image (used if initial_images is None).
             final_image: Legacy single-image (used if final_images is None).
 
@@ -162,10 +126,12 @@ class SimJudge:
         if not self._available:
             return {
                 "prediction": "UNCERTAIN",
-                "reasoning": "VLM judge not available",
+                "reasoning": self._availability_reason,
                 "success": False,
                 "raw_response": "",
             }
+
+        executed_code = executed_code or executed_skills
 
         # Normalize inputs: accept both dict and single-image
         if initial_images is None and initial_image is not None:
@@ -182,10 +148,17 @@ class SimJudge:
         # Get resolution from first image
         first_img = next(iter(initial_images.values()))
         image_resolution = (first_img.shape[1], first_img.shape[0])
+        if self._build_prompt is None or self._system_prompt is None:
+            return {
+                "prediction": "UNCERTAIN",
+                "reasoning": "ADC judge prompts unavailable",
+                "success": False,
+                "raw_response": "",
+            }
         user_prompt = self._build_prompt(
             instruction=task_description,
             object_positions=object_positions,
-            executed_code=executed_skills,
+            executed_code=executed_code,
             image_resolution=image_resolution,
         )
 

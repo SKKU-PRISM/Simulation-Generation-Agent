@@ -1,12 +1,12 @@
-# Task Document: UR10LiftPegUpright
+# Task Document: UR10eLiftPegUpright
 # Version: 1.0.0
 # Template: v2.0.0
-# Description: UR10 robot with suction gripper lifts a two-tone peg to an upright position
-# Reference: ManiSkill LiftPegUpright-v1 adapted for UR10
+# Description: UR10e robot with Robotiq 2F-85 gripper lifts a two-tone peg to an upright position
+# Reference: ManiSkill LiftPegUpright-v1 adapted for UR10e
 
 task:
-  name: UR10LiftPegUpright
-  description: "UR10 robot with suction gripper picks up a two-tone peg (red+blue) lying flat on the table and lifts it into an upright (vertical) position"
+  name: UR10eLiftPegUpright
+  description: "UR10e robot with Robotiq 2F-85 gripper picks up a two-tone peg (red+blue) lying flat on the table and lifts it into an upright (vertical) position"
   version: "1.0.0"
 
 simulation:
@@ -34,16 +34,17 @@ scene:
     position: [0, 0, -1.05]
 
 assets:
-  # UR10 robot with Long Suction gripper
+  # UR10e robot (Robotiq 2F-85 gripper variant for peg reorientation)
   - name: robot
     type: articulation
     source: usd
-    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    robot_type: ur10e
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10e/ur10e.usd"
     prim_path: "/World/Robot"
     position: [0, 0, 0]
     rotation: [1, 0, 0, 0]
     variant_sets:
-      Gripper: Long_Suction
+      Gripper: Robotiq_2f_85
     initial_joints:
       shoulder_pan_joint: 0.0
       shoulder_lift_joint: -1.5707
@@ -59,8 +60,8 @@ assets:
         stiffness: 800.0
         damping: 40.0
     ee_frame:
-      body: ee_link
-      offset_position: [0.22, 0, 0]
+      body: wrist_3_link
+      offset_position: [0.0, 0.0, 0.0]
     physics:
       self_collision: false
       solver_position_iterations: 8
@@ -147,7 +148,7 @@ camera:
   resolution: [1280, 720]
 
 notes:
-  - "Source: ManiSkill LiftPegUpright-v1 adapted for UR10"
-  - "UR10 reach 1.30m — same positions as Franka version"
-  - "Suction gripper attaches to peg flat surface"
+  - "Source: ManiSkill LiftPegUpright-v1 adapted for UR10e"
+  - "UR10e reach 1.30m — same positions as Franka version"
+  - "Robotiq 2F-85 parallel-jaw grasp on the peg body before upright reorientation"
   - "Peg position randomized ±5cm X, ±10cm Y"

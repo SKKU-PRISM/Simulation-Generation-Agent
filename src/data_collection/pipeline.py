@@ -129,6 +129,11 @@ class DataCollectionPipeline:
         )
         target_met = bool(results.get("target_met", False))
         successful_episodes = int(results.get("successful_episodes", 0))
+        geometry_successful_episodes = int(
+            results.get("geometry_successful_episodes", successful_episodes)
+        )
+        vlm_successful_episodes = int(results.get("vlm_successful_episodes", 0))
+        overall_successful_episodes = int(results.get("overall_successful_episodes", 0))
         total_episodes = int(results.get("total_episodes", 0))
 
         return {
@@ -136,6 +141,9 @@ class DataCollectionPipeline:
             "pipeline_completed": pipeline_completed,
             "target_met": target_met,
             "successful_episodes": successful_episodes,
+            "geometry_successful_episodes": geometry_successful_episodes,
+            "vlm_successful_episodes": vlm_successful_episodes,
+            "overall_successful_episodes": overall_successful_episodes,
             "total_episodes": total_episodes,
             "output_dir": str(self.output_dir),
             "raw_dataset": str(raw_data_dir) if raw_data_dir.exists() else None,
@@ -221,6 +229,7 @@ class DataCollectionPipeline:
             "headless": self.config.env_headless,
             "num_envs": self.config.env_num_envs,
             "use_vlm_judge": self.config.use_vlm_judge,
+            "llm_model": self.config.llm_model,
             "target_successful_episodes": target_success,
             "max_total_attempts": max_attempts,
         }
@@ -237,6 +246,7 @@ class DataCollectionPipeline:
             import json
             import sys
             import os
+            import re
             import traceback
 
             # === AppLauncher MUST be first (before any physics imports) ===
@@ -259,8 +269,64 @@ class DataCollectionPipeline:
             # Add project paths
             sys.path.insert(0, "{PROJECT_ROOT}")
             sys.path.insert(0, "{Path(self.env_dir).resolve()}")
+            sys.path.insert(0, "{(PROJECT_ROOT / 'src' / 'data_collection' / 'cap_runtime').resolve()}")
 
             from isaaclab.envs import ManagerBasedRLEnv
+
+            def _install_generated_mdp_stubs():
+                \"\"\"Install no-op stubs for missing custom MDP helpers in generated envs.
+
+                Data collection disables task success terminations after env creation, so
+                for missing task-specific `mdp.*` helpers we only need import-time shims
+                that keep `env_cfg.py` loadable.
+                \"\"\"
+                env_cfg_path = os.path.join("{Path(self.env_dir).resolve()}", "env_cfg.py")
+                mdp_dir = os.path.join("{Path(self.env_dir).resolve()}", "mdp")
+                if not os.path.exists(env_cfg_path) or not os.path.isdir(mdp_dir):
+                    return
+
+                import mdp as generated_mdp
+
+                with open(env_cfg_path, "r", encoding="utf-8") as f:
+                    env_cfg_text = f.read()
+
+                def _num_envs(env):
+                    return int(getattr(env, "num_envs", getattr(getattr(env, "scene", None), "num_envs", 1)))
+
+                def _device(env):
+                    return getattr(env, "device", "cpu")
+
+                def _bool_stub(env, *_, **__):
+                    return torch.zeros(_num_envs(env), device=_device(env), dtype=torch.bool)
+
+                def _float_stub(env, *_, **__):
+                    return torch.zeros(_num_envs(env), device=_device(env), dtype=torch.float32)
+
+                def _event_stub(*_, **__):
+                    return None
+
+                done_terms = set(re.findall(r"DoneTerm\\(\\s*func=mdp\\.([A-Za-z_][A-Za-z0-9_]*)", env_cfg_text))
+                reward_terms = set(re.findall(r"RewTerm\\(\\s*func=mdp\\.([A-Za-z_][A-Za-z0-9_]*)", env_cfg_text))
+                event_terms = set(re.findall(r"EventTerm\\(\\s*func=mdp\\.([A-Za-z_][A-Za-z0-9_]*)", env_cfg_text))
+
+                missing_done = sorted(name for name in done_terms if not hasattr(generated_mdp, name))
+                missing_reward = sorted(name for name in reward_terms if not hasattr(generated_mdp, name))
+                missing_event = sorted(name for name in event_terms if not hasattr(generated_mdp, name))
+
+                for name in missing_done:
+                    setattr(generated_mdp, name, _bool_stub)
+                for name in missing_reward:
+                    setattr(generated_mdp, name, _float_stub)
+                for name in missing_event:
+                    setattr(generated_mdp, name, _event_stub)
+
+                if missing_done or missing_reward or missing_event:
+                    print(
+                        "Installed generated mdp stubs: "
+                        f"done={{missing_done}}, reward={{missing_reward}}, event={{missing_event}}"
+                    )
+
+            _install_generated_mdp_stubs()
 
             # Import generated environment config
             from env_cfg import *  # noqa: F403
@@ -272,11 +338,13 @@ class DataCollectionPipeline:
             from src.data_collection.sim_camera import SimCamera, MultiCameraManager, inject_cameras_into_scene, SceneCameraManager
             from src.data_collection.sim_recorder import SimRecorder, RecorderStorageError
             from src.data_collection.sim_skills import SimSkills, create_ik_solver
-            from src.data_collection.skill_planner import SkillPlanner
+            from src.data_collection.cap_artifacts import make_episode_run_dir, save_code_generation_artifacts, save_execution_context, save_judge_images
+            from src.data_collection.cap_generator import SimCaPGenerator, is_supported_tabletop_task, select_cap_profile
+            from src.data_collection.cap_runtime import CaPRuntimeContext
+            from src.data_collection.cap_runtime.skills.base import PolicyFallbackBlockedError
             from src.data_collection.sim_judge import SimJudge
 
             MARKER_FILE = os.path.join("{Path(self.output_dir).resolve()}", "COLLECTION_COMPLETE_MARKER")
-            USE_LLM_PLANNER = {self.config.skill_retry_max > 0}
             USE_VLM_JUDGE = {self.config.use_vlm_judge}
 
             def _find_env_cfg_class():
@@ -289,65 +357,164 @@ class DataCollectionPipeline:
                         return obj
                 return None
 
-            def _execute_task_skills_fallback(skills, detector, goal, scene_state):
-                \"\"\"Fallback: execute task-specific skills based on hardcoded goal parsing.
+            def _sanitize_generated_env_cfg(env_cfg, task_doc=None):
+                \"\"\"Patch common schema mismatches from generated env_cfg files.
 
-                For stacking: re-detects base object position before each place
-                (previous picks may have displaced objects).
+                Some generated observation terms still pass `body_name=...` directly
+                into IsaacLab observation helpers such as `mdp.body_pose_w()`.
+                Current IsaacLab expects the body selection to live in
+                `asset_cfg.body_names`, not as a standalone keyword argument.
+
+                Some generated scene configs also map static primitive assets
+                (for example tray walls) onto nested rigid prim paths such as
+                `{{ENV_REGEX_NS}}/Tray/Base`. IsaacLab's rigid-object spawners can
+                choke on those intermediate prims, so flatten static primitive
+                assets onto `{{ENV_REGEX_NS}}/<asset_name>` and, when needed,
+                replace `RigidObjectCfg` with `AssetBaseCfg`.
                 \"\"\"
-                conditions = []
+                patched_terms = []
+                observations = getattr(env_cfg, "observations", None)
+                if observations is not None:
+                    for group_name, group_cfg in vars(observations).items():
+                        if group_name.startswith("_") or group_cfg is None:
+                            continue
+                        for term_name, term_cfg in vars(group_cfg).items():
+                            if term_name.startswith("_") or term_cfg is None:
+                                continue
+                            params = getattr(term_cfg, "params", None)
+                            if not isinstance(params, dict):
+                                continue
 
-                if "success_criteria" in goal:
-                    sc = goal["success_criteria"]
-                    if "conditions" in sc:
-                        conditions = sc["conditions"]
-                    elif "stacking_order" in sc:
-                        order = sc["stacking_order"]
-                        base_obj = order[0] if order else None
-                        if base_obj and base_obj in scene_state:
-                            height = 0.05
-                            # Stack bottom-up: place each object on top of the previous
-                            for i, obj in enumerate(order[1:], 1):
-                                # Re-detect base position right before place
-                                # (previous operations may have shifted objects)
-                                try:
-                                    prev_obj = order[i - 1]
-                                    base_pos = detector.get_object_position(prev_obj)
-                                    print(f"Re-detected '{{prev_obj}}' at {{base_pos}} for stacking")
-                                except Exception:
-                                    base_pos = scene_state[base_obj]["position"]
-                                target = base_pos.copy()
-                                target[2] += height
-                                skills.execute_pick_and_place(
-                                    obj, target, place_on_object=prev_obj,
-                                )
-                            return
-                elif "conditions" in goal:
-                    conditions = goal["conditions"]
+                            func_name = getattr(getattr(term_cfg, "func", None), "__name__", "")
+                            if (
+                                "robot_cfg" in params
+                                and "asset_cfg" not in params
+                                and func_name in {{"body_pose_w", "body_pos_w", "body_quat_w", "body_state_w"}}
+                            ):
+                                params["asset_cfg"] = params.pop("robot_cfg")
+                                patched_terms.append(f"{{group_name}}/{{term_name}} (robot_cfg->asset_cfg)")
 
-                for cond in conditions:
-                    cond_type = cond.get("type", "")
-                    if cond_type in ("on_top_of", "stacked"):
-                        obj = cond.get("object", cond.get("top"))
-                        target_obj = cond.get("target", cond.get("bottom"))
-                        if obj and target_obj and target_obj in scene_state:
-                            target_pos = scene_state[target_obj]["position"].copy()
-                            target_pos[2] += 0.05
-                            skills.execute_pick_and_place(
-                                obj, target_pos, place_on_object=target_obj,
+                            if "body_name" not in params:
+                                continue
+
+                            body_name = params.pop("body_name")
+                            asset_cfg = params.get("asset_cfg")
+                            if asset_cfg is not None and hasattr(asset_cfg, "body_names"):
+                                asset_cfg.body_names = body_name
+                                patched_terms.append(f"{{group_name}}/{{term_name}} (body_name->body_names)")
+                            else:
+                                # Put the parameter back if we cannot patch it safely.
+                                params["body_name"] = body_name
+
+                patched_scene_assets = []
+                scene = getattr(env_cfg, "scene", None)
+                if scene is not None and isinstance(task_doc, dict):
+                    for asset in task_doc.get("assets", []):
+                        if asset.get("source") != "primitive":
+                            continue
+                        if asset.get("physics", {{}}).get("rigid_body", False):
+                            continue
+
+                        asset_name = asset.get("name")
+                        if not asset_name or not hasattr(scene, asset_name):
+                            continue
+
+                        scene_cfg = getattr(scene, asset_name)
+                        old_prim_path = str(getattr(scene_cfg, "prim_path", ""))
+                        flat_prim_path = "{{ENV_REGEX_NS}}/" + asset_name
+                        init_state = getattr(scene_cfg, "init_state", None)
+                        pos = list(getattr(init_state, "pos", [0.0, 0.0, 0.0]))
+                        rot = list(getattr(init_state, "rot", [1.0, 0.0, 0.0, 0.0]))
+
+                        if scene_cfg.__class__.__name__ == "RigidObjectCfg":
+                            setattr(
+                                scene,
+                                asset_name,
+                                AssetBaseCfg(
+                                    prim_path=flat_prim_path,
+                                    init_state=AssetBaseCfg.InitialStateCfg(pos=pos, rot=rot),
+                                    spawn=getattr(scene_cfg, "spawn", None),
+                                ),
                             )
-                    elif cond_type == "at_position":
-                        obj = cond.get("object", "")
-                        pos = cond.get("position", [])
-                        if obj and len(pos) == 3:
-                            skills.execute_pick_and_place(obj, np.array(pos))
-                    elif cond_type in ("lifted", "above"):
-                        obj = cond.get("object", "")
-                        height = cond.get("height", 0.1)
-                        if obj and obj in scene_state:
-                            target = scene_state[obj]["position"].copy()
-                            target[2] += height
-                            skills.execute_pick(obj)
+                            patched_scene_assets.append(
+                                f"{{asset_name}}: RigidObjectCfg -> AssetBaseCfg @ {{flat_prim_path}}"
+                            )
+                            continue
+
+                        if old_prim_path != flat_prim_path and old_prim_path.startswith("{{ENV_REGEX_NS}}/"):
+                            scene_cfg.prim_path = flat_prim_path
+                            patched_scene_assets.append(
+                                f"{{asset_name}}: prim_path {{old_prim_path}} -> {{flat_prim_path}}"
+                            )
+
+                patched_actuators = []
+                robot_scene_cfg = getattr(scene, "robot", None) if scene is not None else None
+                actuator_cfgs = getattr(robot_scene_cfg, "actuators", None)
+                if isinstance(actuator_cfgs, dict):
+                    normalized_actuators = {{}}
+                    for actuator_name, actuator_cfg in actuator_cfgs.items():
+                        if not isinstance(actuator_cfg, dict):
+                            normalized_actuators[actuator_name] = actuator_cfg
+                            continue
+
+                        joint_names = actuator_cfg.get("joint_names_expr", actuator_cfg.get("joint_names", []))
+                        if isinstance(joint_names, str):
+                            joint_names = [joint_names]
+
+                        effort_limit = actuator_cfg.get("effort_limit")
+                        effort_limit_per_joint = actuator_cfg.get("effort_limit_per_joint", {{}})
+                        if effort_limit is None and isinstance(effort_limit_per_joint, dict) and effort_limit_per_joint:
+                            effort_limit = max(float(value) for value in effort_limit_per_joint.values())
+                        if effort_limit is None:
+                            effort_limit = 1e9
+
+                        normalized_actuators[actuator_name] = ImplicitActuatorCfg(
+                            joint_names_expr=list(joint_names),
+                            effort_limit=float(effort_limit),
+                            stiffness=float(actuator_cfg.get("stiffness", 80.0)),
+                            damping=float(actuator_cfg.get("damping", 4.0)),
+                        )
+                        patched_actuators.append(actuator_name)
+
+                    if patched_actuators:
+                        robot_scene_cfg.actuators = normalized_actuators
+
+                disabled_event_terms = []
+                events_cfg = getattr(env_cfg, "events", None)
+                if events_cfg is not None:
+                    for event_name, event_cfg in vars(events_cfg).items():
+                        if event_name.startswith("_") or event_cfg is None:
+                            continue
+                        params = getattr(event_cfg, "params", None)
+                        if not isinstance(params, dict):
+                            continue
+                        if "asset_cfgs" in params:
+                            setattr(events_cfg, event_name, None)
+                            disabled_event_terms.append(
+                                f"{{event_name}} (unsupported asset_cfgs/min_separation reset term)"
+                            )
+
+                if patched_terms:
+                    print(
+                        "Patched observation body selectors: "
+                        f"{{patched_terms}}"
+                    )
+                if patched_scene_assets:
+                    print(
+                        "Patched static primitive scene assets: "
+                        f"{{patched_scene_assets}}"
+                    )
+                if patched_actuators:
+                    print(
+                        "Normalized raw actuator dicts: "
+                        f"{{patched_actuators}}"
+                    )
+                if disabled_event_terms:
+                    print(
+                        "Disabled unsupported event terms: "
+                        f"{{disabled_event_terms}}"
+                    )
+                return patched_terms, patched_scene_assets, patched_actuators, disabled_event_terms
 
             def _capture_judge_images(cameras):
                 \"\"\"Capture wrist + front images for VLM judge (multi-view assessment).
@@ -551,6 +718,7 @@ class DataCollectionPipeline:
 
                 env_cfg = env_cfg_class()
                 env_cfg.scene.num_envs = cfg["num_envs"]
+                _sanitize_generated_env_cfg(env_cfg, task_doc)
 
                 # --- Patch episode length to prevent auto-reset mid-collection ---
                 # LLM-generated env_cfg uses episode_length_s=30s (typical for RL).
@@ -595,7 +763,6 @@ class DataCollectionPipeline:
                 # Override with the robot profile's task-ready pose for proper workspace alignment.
                 ready_pose = {repr({k: v for k, v in self.robot_cfg.ready_pose.items()})}
                 if ready_pose and hasattr(env_cfg.scene, 'robot') and hasattr(env_cfg.scene.robot, 'init_state'):
-                    old_jp = dict(env_cfg.scene.robot.init_state.joint_pos)
                     env_cfg.scene.robot.init_state.joint_pos = ready_pose
                     print(f"Patched initial joint_pos from robot profile ready_pose: {{ready_pose}}")
 
@@ -606,10 +773,21 @@ class DataCollectionPipeline:
                 # wrist defaults to 216 which needs upgrading to resist gripper
                 # contact forces during grasping.
                 if hasattr(env_cfg.scene, 'robot') and hasattr(env_cfg.scene.robot, 'actuators'):
+                    def _cfg_get(cfg_obj, key, default=None):
+                        if isinstance(cfg_obj, dict):
+                            return cfg_obj.get(key, default)
+                        return getattr(cfg_obj, key, default)
+
+                    def _cfg_set(cfg_obj, key, value):
+                        if isinstance(cfg_obj, dict):
+                            cfg_obj[key] = value
+                        else:
+                            setattr(cfg_obj, key, value)
+
                     for act_name, actuator in env_cfg.scene.robot.actuators.items():
                         if 'hand' not in act_name and 'finger' not in act_name and 'gripper' not in act_name:
-                            orig_s = getattr(actuator, 'stiffness', 80.0)
-                            orig_d = getattr(actuator, 'damping', 4.0)
+                            orig_s = _cfg_get(actuator, 'stiffness', 80.0)
+                            orig_d = _cfg_get(actuator, 'damping', 4.0)
                             orig_s = float(orig_s) if isinstance(orig_s, (int, float)) else 80.0
                             orig_d = float(orig_d) if isinstance(orig_d, (int, float)) else 4.0
                             # Proportional scaling: preserve per-joint ratios.
@@ -622,18 +800,21 @@ class DataCollectionPipeline:
                             MAX_DAMPING = 400.0
                             new_s = min(orig_s * STIFFNESS_MULT, MAX_STIFFNESS)
                             new_d = min(orig_d * STIFFNESS_MULT, MAX_DAMPING)
+                            if robot_cfg.name == "so101":
+                                new_s = max(new_s, 300.0)
+                                new_d = max(new_d, 30.0)
                             if robot_cfg.name == "ur10e" and act_name == "wrist":
                                 # The Robotiq grasp loads wrist_2 heavily during post-close lift.
                                 # Give the shared UR wrist actuator more authority than the
                                 # generic x5 scaling so the wrist can hold its fixed-joint pose.
                                 new_s = max(new_s, 2000.0)
                                 new_d = max(new_d, 200.0)
-                            actuator.stiffness = new_s
-                            actuator.damping = new_d
+                            _cfg_set(actuator, 'stiffness', new_s)
+                            _cfg_set(actuator, 'damping', new_d)
                             # Remove effort limit clipping — let PD solver produce
                             # whatever torque it needs for unconditional stability.
-                            actuator.effort_limit = 1e9
-                            actuator.effort_limit_sim = 1e9
+                            _cfg_set(actuator, 'effort_limit', 1e9)
+                            _cfg_set(actuator, 'effort_limit_sim', 1e9)
                             print(f"  {{act_name}}: stiffness={{orig_s}}->{{new_s}}, damping={{orig_d}}->{{new_d}}, effort_limit=1e9")
                     print("Patched arm actuators: proportional PD scaling (×5, cap 5000), effort_limit=1e9")
                     # --- Patch gripper drive stiffness for reliable grasping ---
@@ -643,19 +824,26 @@ class DataCollectionPipeline:
                     grasp_stiffness = {self.robot_cfg.gripper_grasp_stiffness!r}
                     if grasp_stiffness > 0:
                         for act_name, actuator in env_cfg.scene.robot.actuators.items():
-                            if 'gripper_drive' in act_name or 'gripper_finger' in act_name:
-                                old_s = getattr(actuator, 'stiffness', None)
-                                actuator.stiffness = grasp_stiffness
-                                actuator.damping = grasp_stiffness * 0.05
-                                actuator.effort_limit_sim = max(100.0, grasp_stiffness * 0.2)
+                            act_name_lower = act_name.lower()
+                            if (
+                                'gripper_drive' in act_name_lower
+                                or 'gripper_finger' in act_name_lower
+                                or 'gripper' in act_name_lower
+                                or 'hand' in act_name_lower
+                                or 'finger' in act_name_lower
+                            ):
+                                old_s = _cfg_get(actuator, 'stiffness', None)
+                                _cfg_set(actuator, 'stiffness', grasp_stiffness)
+                                _cfg_set(actuator, 'damping', grasp_stiffness * 0.05)
+                                _cfg_set(actuator, 'effort_limit_sim', max(100.0, grasp_stiffness * 0.2))
                                 print(f"Patched {{act_name}}: stiffness {{old_s}} -> {{grasp_stiffness}} (grasp_stiffness override)")
-                            elif 'gripper_passive' in act_name or 'passive' in act_name:
+                            elif 'gripper_passive' in act_name_lower or 'passive' in act_name_lower:
                                 # Passive mimic joints (stiffness=0, damping=0) are completely
                                 # unconstrained, causing reaction forces on wrist joints during
                                 # gripper closure. Give them enough stiffness to track targets.
-                                old_s = getattr(actuator, 'stiffness', None)
-                                actuator.stiffness = grasp_stiffness * 0.5
-                                actuator.damping = grasp_stiffness * 0.025
+                                old_s = _cfg_get(actuator, 'stiffness', None)
+                                _cfg_set(actuator, 'stiffness', grasp_stiffness * 0.5)
+                                _cfg_set(actuator, 'damping', grasp_stiffness * 0.025)
                                 print(f"Patched {{act_name}}: stiffness {{old_s}} -> {{grasp_stiffness * 0.5}} (passive joint stabilization)")
                 if hasattr(env_cfg.scene, 'robot') and hasattr(env_cfg.scene.robot, 'spawn'):
                     if hasattr(env_cfg.scene.robot.spawn, 'rigid_props') and env_cfg.scene.robot.spawn.rigid_props is not None:
@@ -714,8 +902,13 @@ class DataCollectionPipeline:
 
                         added_paths = ensure_ur10e_pad_collisions(env.sim.stage, env_idx=0, verbose=True)
                         print(f"Ensured {{len(added_paths)}} UR10e finger-pad collision shapes")
+                    elif robot_cfg.name == "so101":
+                        from src.data_collection.so101_patches import ensure_so101_claw_collisions
+
+                        added_paths = ensure_so101_claw_collisions(env.sim.stage, env_idx=0, verbose=True)
+                        print(f"Ensured {{len(added_paths)}} SO-101 claw collision proxies")
                 except Exception as coll_err:
-                    print(f"WARNING: Failed to add Robotiq collision shapes: {{coll_err}}")
+                    print(f"WARNING: Failed to add runtime collision shapes: {{coll_err}}")
                     traceback.print_exc()
 
                 # Initialize components
@@ -744,8 +937,8 @@ class DataCollectionPipeline:
                     fps=cfg["recording_fps"],
                 )
 
-                # Create IK solver (Pinocchio-only, URDF from robot profile)
-                ik_solver = create_ik_solver(robot_cfg)
+                # Create IK solver (Pinocchio when URDF exists, otherwise DifferentialIK fallback)
+                ik_solver = create_ik_solver(robot_cfg, robot_interface=robot_interface)
 
                 # Create skills (with multi-camera for image recording)
                 skills = SimSkills(
@@ -759,37 +952,49 @@ class DataCollectionPipeline:
                     base_offset=robot_base_pos,
                 )
 
-                # Initialize LLM-based skill planner if enabled
-                skill_planner = None
-                if USE_LLM_PLANNER:
-                    try:
-                        from src.common.llm_client import AzureOpenAIClient
-                        llm_client = AzureOpenAIClient()
-                        skill_planner = SkillPlanner(llm_client, robot_cfg)
-                        print("SkillPlanner initialized (LLM-based skill planning enabled)")
-                    except Exception as e:
-                        print(f"SkillPlanner init failed ({{e}}), using fallback skill logic")
+                cap_profile = select_cap_profile(robot_cfg)
+                cap_generator = None
+                try:
+                    from src.common.llm_client import AzureOpenAIClient
+
+                    llm_client = AzureOpenAIClient(model=cfg["llm_model"])
+                    cap_generator = SimCaPGenerator(llm_client, robot_cfg)
+                    print(
+                        f"SimCaPGenerator initialized: model={{cfg['llm_model']}}, "
+                        f"skill_class={{cap_profile.class_name}}"
+                    )
+                except Exception as e:
+                    print(f"SimCaPGenerator init failed: {{e}}")
 
                 # Initialize VLM judge if enabled
                 sim_judge = None
+                judge_init_error = ""
                 if USE_VLM_JUDGE:
-                    try:
-                        sim_judge = SimJudge(model="gpt-5")
-                        if sim_judge.is_available:
-                            print("SimJudge initialized (VLM-based episode judging enabled)")
-                        else:
-                            print("SimJudge: VLM not available (missing API keys), skipping")
-                            sim_judge = None
-                    except Exception as e:
-                        print(f"SimJudge init failed ({{e}}), skipping VLM judging")
+                    sim_judge = SimJudge(model="gpt-5")
+                    if not sim_judge.is_available:
+                        judge_init_error = sim_judge.availability_reason
+                        print(f"SimJudge unavailable: {{judge_init_error}}")
+                        sim_judge = None
+                    else:
+                        print("SimJudge initialized (VLM-based episode judging enabled)")
 
                 results = {{
                     "episodes": [],
                     "total_episodes": 0,
                     "successful_episodes": 0,
+                    "geometry_successful_episodes": 0,
+                    "vlm_successful_episodes": 0,
+                    "overall_successful_episodes": 0,
                     "pipeline_completed": False,
                     "target_met": False,
+                    "geometry_target_met": False,
+                    "vlm_target_met": False,
+                    "overall_target_met": False,
                     "raw_dataset": None,
+                    "robot_skill_class": cap_profile.class_name,
+                    "judge_enabled": USE_VLM_JUDGE,
+                    "judge_available": sim_judge is not None,
+                    "judge_unavailable_reason": judge_init_error or None,
                 }}
 
                 # Success-based episode loop
@@ -799,6 +1004,16 @@ class DataCollectionPipeline:
                 successful_count = 0
 
                 try:
+                    supported_task, unsupported_reason = is_supported_tabletop_task(task_doc)
+                    if not supported_task:
+                        raise RuntimeError(
+                            f"Task unsupported by current CaP tabletop profile: {{unsupported_reason}}"
+                        )
+                    if cap_generator is None:
+                        raise RuntimeError("CaP generator unavailable; check Azure OpenAI configuration")
+                    if USE_VLM_JUDGE and sim_judge is None:
+                        raise RuntimeError(f"VLM judge unavailable: {{judge_init_error}}")
+
                     while successful_count < target_success and episode_idx < max_attempts:
                         print(f"\\n=== Episode {{episode_idx + 1}} (success: {{successful_count}}/{{target_success}}, max: {{max_attempts}}) ===")
 
@@ -812,8 +1027,14 @@ class DataCollectionPipeline:
                         # With scale=1.0 + use_default_offset=False, zero action = target 0.0
                         # which drives the robot away from its initial pose.
                         _warmup_action = torch.zeros(env.num_envs, env.action_space.shape[-1], device=env.device)
-                        _warmup_action[0, :6] = env.scene["robot"].data.joint_pos[0, :6].clone()
-                        _warmup_action[0, 6] = 1.0  # gripper open
+                        _num_arm_joints = min(
+                            len(robot_cfg.arm_joint_names),
+                            env.scene["robot"].data.joint_pos.shape[1],
+                            env.action_space.shape[-1],
+                        )
+                        _warmup_action[0, :_num_arm_joints] = env.scene["robot"].data.joint_pos[0, :_num_arm_joints].clone()
+                        if env.action_space.shape[-1] > _num_arm_joints:
+                            _warmup_action[0, _num_arm_joints] = 1.0  # gripper open
                         for _ in range(10):
                             env.step(_warmup_action)
 
@@ -843,34 +1064,54 @@ class DataCollectionPipeline:
                             except Exception as _de:
                                 print(f"Debug image capture failed: {{_de}}")
 
-                        # Track executed skills description for judge
-                        executed_skills_desc = ""
+                        run_dir = make_episode_run_dir(cfg["output_dir"], episode_idx)
+                        initial_image_paths = save_judge_images(run_dir, "initial", initial_images)
+                        final_image_paths = []
+                        generated_code = ""
+                        translated_positions = {{}}
+                        artifact_paths = {{}}
+                        execution_context_path = None
+                        codegen_success = False
+                        codegen_error = ""
+                        execution_error = ""
+                        blocked_fallback_reason = ""
+                        geometry_success = False
+                        vlm_success = False
+                        overall_success = False
+                        judge_available = False
 
-                        # Execute skills
+                        # Execute ADC-style generated code
                         try:
-                            skills.move_to_ready(duration=1.0)
+                            generation = cap_generator.generate_code(
+                                task_doc=task_doc,
+                                scene_state=scene_state,
+                                task_description=task_desc,
+                            )
+                            translated_positions = generation.translated_positions
+                            generated_code = generation.generated_code
+                            artifact_paths = save_code_generation_artifacts(
+                                run_dir=run_dir,
+                                generated_code=generated_code,
+                                raw_response=generation.raw_response,
+                                translated_positions=translated_positions,
+                            )
+                            codegen_success = True
+                            print(
+                                f"Generated CaP code: {{artifact_paths.get('generated_code', '')}} "
+                                f"({{len(generated_code)}} chars)"
+                            )
 
-                            if skill_planner is not None:
-                                # LLM-based dynamic skill planning
-                                skill_sequence = skill_planner.plan_skills(
-                                    task_doc, scene_state
-                                )
-                                print(f"Planned {{len(skill_sequence)}} skills via LLM")
-                                all_ok, errors = skill_planner.execute_skill_sequence(
-                                    skills, skill_sequence
-                                )
-                                executed_skills_desc = str(skill_sequence)
-                                if errors:
-                                    print(f"Skill verification errors: {{errors}}")
-                                else:
-                                    print("All skills passed verification")
-                            else:
-                                # Fallback: hardcoded goal-based skills
-                                goal = task_doc.get("goal", {{}})
-                                _execute_task_skills_fallback(
-                                    skills, detector, goal, scene_state
-                                )
-                                executed_skills_desc = "fallback goal-based execution"
+                            CaPRuntimeContext.configure(
+                                sim_skills=skills,
+                                detector=detector,
+                                robot_cfg=robot_cfg,
+                                translated_positions=translated_positions,
+                            )
+                            exec_globals = {{
+                                "__name__": "__main__",
+                                "positions": translated_positions,
+                            }}
+                            exec(generated_code, exec_globals)
 
                             # Capture env termination + goal state BEFORE move_to_ready
                             # (move_to_ready can knock objects; env auto-resets on success)
@@ -882,21 +1123,31 @@ class DataCollectionPipeline:
                             pre_retreat_goal_ok = False
                             pre_retreat_goal_details = ""
                             if not env_terminated_during_skills:
-                                # Only check if env hasn't auto-reset yet
                                 pre_retreat_goal_ok, pre_retreat_goal_details = _verify_goal_conditions(detector, goal)
 
                             # Capture final images BEFORE retreat (for VLM judge)
                             final_images = None
                             if sim_judge is not None:
                                 final_images = _capture_judge_images(cameras)
+                                final_image_paths = save_judge_images(run_dir, "final", final_images)
 
-                            skills.move_to_ready(duration=1.5, safe_retreat=True)
+                            skills.move_to_ready(
+                                duration=1.5,
+                                safe_retreat=True,
+                                skill_description="return to the ready pose after executing the generated policy",
+                            )
                             execution_ok = True
                         except Exception as e:
+                            if codegen_success:
+                                execution_error = str(e)
+                            else:
+                                codegen_error = str(e)
+                            if isinstance(e, PolicyFallbackBlockedError):
+                                blocked_fallback_reason = str(e)
                             if isinstance(e, RecorderStorageError):
                                 print(f"Recorder storage error: {{e}}")
                             else:
-                                print(f"Skill execution error: {{e}}")
+                                print(f"CaP execution error: {{e}}")
                             traceback.print_exc()
                             execution_ok = False
                             env_terminated_during_skills = robot_interface.env_terminated
@@ -904,35 +1155,60 @@ class DataCollectionPipeline:
                             pre_retreat_goal_ok = False
                             pre_retreat_goal_details = "execution error"
                             final_images = None
+                        finally:
+                            CaPRuntimeContext.clear()
+                            if codegen_success:
+                                execution_context_path = save_execution_context(
+                                    run_dir=run_dir,
+                                    instruction=task_desc,
+                                    object_positions=translated_positions,
+                                    generated_code=generated_code,
+                                    execution_success=execution_ok,
+                                    metadata={{
+                                        "robot_name": robot_cfg.name,
+                                        "skill_class": cap_profile.class_name,
+                                        "episode": episode_idx,
+                                    }},
+                                )
 
-                        # Determine episode success
-                        # Priority: VLM judge > goal verification > env termination
-                        if sim_judge is not None and execution_ok and final_images is not None and initial_images is not None:
-                            verdict = sim_judge.judge_episode(
-                                task_description=task_desc,
-                                initial_images=initial_images,
-                                final_images=final_images,
-                                object_positions=scene_state,
-                                executed_skills=executed_skills_desc,
-                            )
-                            success = verdict["success"]
-                            print(f"VLM Judge: {{verdict['prediction']}} — {{verdict['reasoning'][:80]}}")
-                        elif execution_ok:
-                            # Check: env termination (success condition fired during skills)
+                        verdict = None
+
+                        # Determine geometric success first; VLM is tracked separately.
+                        if execution_ok:
                             env_success = env_terminated_during_skills and not env_truncated_during_skills
                             if env_success:
                                 print("Success: environment termination condition met during skills")
-                                success = True
+                                geometry_success = True
                             elif pre_retreat_goal_ok:
                                 print(f"Success (goal verified): {{pre_retreat_goal_details}}")
-                                success = True
+                                geometry_success = True
                             else:
                                 if pre_retreat_goal_details:
                                     print(f"Goal verification: {{pre_retreat_goal_details}}")
                                 print("Episode FAILED: goal conditions not met")
-                                success = False
-                        else:
-                            success = False
+                                geometry_success = False
+
+                        if sim_judge is not None:
+                            judge_available = (
+                                execution_ok
+                                and final_images is not None
+                                and initial_images is not None
+                            )
+                        if judge_available:
+                            verdict = sim_judge.judge_episode(
+                                task_description=task_desc,
+                                initial_images=initial_images,
+                                final_images=final_images,
+                                object_positions=translated_positions or scene_state,
+                                executed_code=generated_code,
+                            )
+                            vlm_success = bool(verdict["success"])
+                            print(f"VLM Judge: {{verdict['prediction']}} — {{verdict['reasoning'][:80]}}")
+                        elif sim_judge is not None:
+                            print("VLM Judge unavailable for episode: missing images or execution failed")
+
+                        overall_success = geometry_success and (vlm_success if sim_judge is not None else True)
+                        success = geometry_success
 
                         # End episode (discard failures when targeting success count)
                         discard_failed = (cfg.get("target_successful_episodes", 0) > 0
@@ -943,22 +1219,57 @@ class DataCollectionPipeline:
                         episode_result = {{
                             "episode": episode_idx,
                             "success": success,
+                            "geometry_success": geometry_success,
+                            "vlm_success": vlm_success,
+                            "overall_success": overall_success,
                             "steps": recorder.current_episode_steps,
                             "discarded": discard_failed,
+                            "robot_skill_class": cap_profile.class_name,
+                            "codegen_success": codegen_success,
+                            "execution_success": execution_ok,
+                            "judge_enabled": sim_judge is not None,
+                            "judge_available": judge_available,
+                            "generated_code_path": artifact_paths.get("generated_code"),
+                            "raw_response_path": artifact_paths.get("raw_response"),
+                            "scene_positions_path": artifact_paths.get("scene_positions"),
+                            "execution_context_path": execution_context_path,
+                            "initial_judge_images": initial_image_paths,
+                            "final_judge_images": final_image_paths,
                         }}
-                        if sim_judge is not None and execution_ok and initial_images is not None:
+                        if blocked_fallback_reason:
+                            episode_result["blocked_fallback_reason"] = blocked_fallback_reason
+                        if codegen_error:
+                            episode_result["codegen_error"] = codegen_error
+                        if execution_error:
+                            episode_result["execution_error"] = execution_error
+                        if verdict is not None:
                             episode_result["judge_prediction"] = verdict.get("prediction", "N/A")
                             episode_result["judge_reasoning"] = verdict.get("reasoning", "")
                         results["episodes"].append(episode_result)
                         results["total_episodes"] += 1
                         if success:
                             results["successful_episodes"] += 1
+                            results["geometry_successful_episodes"] += 1
                             successful_count += 1
+                        if vlm_success:
+                            results["vlm_successful_episodes"] += 1
+                        if overall_success:
+                            results["overall_successful_episodes"] += 1
 
-                        print(f"Episode {{episode_idx + 1}} complete: {{'SUCCESS' if success else 'FAILED'}}{{'(discarded)' if discard_failed else ''}}")
+                        print(
+                            f"Episode {{episode_idx + 1}} complete: "
+                            f"geometry={{'SUCCESS' if geometry_success else 'FAILED'}} "
+                            f"vlm={{'SUCCESS' if vlm_success else 'FAILED'}} "
+                            f"overall={{'SUCCESS' if overall_success else 'FAILED'}}"
+                            f"{{'(discarded)' if discard_failed else ''}}"
+                        )
                         episode_idx += 1
 
-                    print(f"\\nCompleted: {{successful_count}}/{{target_success}} successful episodes in {{episode_idx}} attempts")
+                    print(
+                        f"\\nCompleted: geometry={{results['geometry_successful_episodes']}}/{{target_success}} "
+                        f"overall={{results['overall_successful_episodes']}}/{{results['total_episodes']}} "
+                        f"in {{episode_idx}} attempts"
+                    )
 
                 except KeyboardInterrupt:
                     print("\\nCollection interrupted by user")
@@ -996,6 +1307,16 @@ class DataCollectionPipeline:
                     results["raw_dataset"] = dataset_path
                     results["target_met"] = (
                         results["successful_episodes"] >= target_success
+                    )
+                    results["geometry_target_met"] = (
+                        results["geometry_successful_episodes"] >= target_success
+                    )
+                    if USE_VLM_JUDGE:
+                        results["vlm_target_met"] = (
+                            results["vlm_successful_episodes"] >= target_success
+                        )
+                    results["overall_target_met"] = (
+                        results["overall_successful_episodes"] >= target_success
                     )
                     results["pipeline_completed"] = dataset_path is not None
                     results["success"] = results["pipeline_completed"]

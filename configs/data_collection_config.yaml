@@ -19,7 +19,7 @@ dataset:
   output_dir: "outputs/data_collection"
 
 llm:
-  model: "gpt-5-mini"         # Azure OpenAI model for skill planning
+  model: "gpt-5-mini"         # Azure OpenAI model for CaP code generation
 
 vlm:
   enabled: true               # use VLM for success judging
@@ -27,7 +27,7 @@ vlm:
   success_threshold: 0.8
 
 skill:
-  retry_max: 3                # max LLM retries on skill execution failure
+  retry_max: 3                # legacy compatibility key; unused by the forward-only CaP path
 
 # Goal verification (geometric, VLM 없이도 성공 판정 가능)
 goal_verification:

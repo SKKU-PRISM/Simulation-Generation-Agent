@@ -75,11 +75,14 @@ class RobotSimConfig:
     gripper_open_position: float | list[float] = 0.04
     gripper_close_position: float | list[float] = 0.0
     ee_finger_offset: float = 0.0      # m — EE frame to finger tip along grasp axis
+    grasp_lateral_bias: float = 0.0    # m — local tool-frame bias for asymmetric claw grasps
     gripper_close_duration: float = 1.5  # s — how long to hold close command (low-stiffness grippers need more)
     gripper_grasp_stiffness: float = 0.0  # Nm/rad — if >0, override gripper_drive stiffness for reliable grasping
 
     # End-effector
     ee_frame_body: str = "panda_hand"
+    ee_frame_tcp: str = ""
+    ee_frame_offset_position: list[float] = field(default_factory=list)
     ik_ee_frame: str = ""
 
     # Poses: {joint_name: radian_value}
@@ -274,9 +277,12 @@ def load_robot_config(robot_name: str) -> RobotSimConfig:
         gripper_open_position=gripper_open,
         gripper_close_position=gripper_close,
         ee_finger_offset=gripper.get("ee_finger_offset", 0.0),
+        grasp_lateral_bias=gripper.get("lateral_bias", 0.0),
         gripper_close_duration=gripper.get("close_duration", 1.5),
         gripper_grasp_stiffness=gripper.get("grasp_stiffness", 0.0),
         ee_frame_body=asset.get("ee_frame", {}).get("body", ""),
+        ee_frame_tcp=asset.get("ee_frame", {}).get("tcp_frame", ""),
+        ee_frame_offset_position=asset.get("ee_frame", {}).get("offset_position", []),
         ik_ee_frame=asset.get("ee_frame", {}).get("ik_frame", asset.get("ee_frame", {}).get("body", "")),
         ready_pose=asset.get("ready_pose", {}),
         default_pose=asset.get("default_pose", {}),
@@ -318,7 +324,7 @@ class DataCollectionConfig:
     dataset_repo_id: str = "local/sim_dataset"
     output_dir: str = "outputs/data_collection"
 
-    # LLM (skill planning)
+    # LLM (CaP code generation)
     llm_model: str = "gpt-5-mini"
 
     # VLM (success judging)
@@ -326,8 +332,8 @@ class DataCollectionConfig:
     vlm_backend: str = "auto"
     success_threshold: float = 0.8
 
-    # Skill execution
-    skill_retry_max: int = 3        # LLM retry on skill execution failure
+    # Legacy compatibility
+    skill_retry_max: int = 3        # retained for config compatibility; no longer used by the CaP path
 
     # IsaacLab environment
     env_headless: bool = True

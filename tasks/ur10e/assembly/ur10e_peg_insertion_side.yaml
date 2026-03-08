@@ -1,12 +1,12 @@
-# Task Document: UR10PegInsertionSide
+# Task Document: UR10ePegInsertionSide
 # Version: 1.0.0
 # Template: v2.0.0
-# Description: UR10 robot with suction gripper picks a peg and inserts it sideways into a box with a hole
-# Reference: ManiSkill PegInsertionSide-v1 adapted for UR10
+# Description: UR10e robot with Robotiq 2F-85 gripper picks a peg and inserts it sideways into a box with a hole
+# Reference: ManiSkill PegInsertionSide-v1 adapted for UR10e
 
 task:
-  name: UR10PegInsertionSide
-  description: "UR10 robot with suction gripper picks up a two-tone peg (orange+white) lying flat on the table and inserts the orange end sideways into a box with a matching hole"
+  name: UR10ePegInsertionSide
+  description: "UR10e robot with Robotiq 2F-85 gripper picks up a two-tone peg (orange+white) lying flat on the table and inserts the orange end sideways into a box with a matching hole"
   version: "1.0.0"
 
 simulation:
@@ -34,16 +34,17 @@ scene:
     position: [0, 0, -1.05]
 
 assets:
-  # UR10 robot with Long Suction gripper
+  # UR10e robot (Robotiq 2F-85 gripper variant for peg insertion)
   - name: robot
     type: articulation
     source: usd
-    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    robot_type: ur10e
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10e/ur10e.usd"
     prim_path: "/World/Robot"
     position: [0, 0, 0]
     rotation: [1, 0, 0, 0]
     variant_sets:
-      Gripper: Long_Suction
+      Gripper: Robotiq_2f_85
     initial_joints:
       shoulder_pan_joint: 0.0
       shoulder_lift_joint: -1.5707
@@ -59,8 +60,8 @@ assets:
         stiffness: 800.0
         damping: 40.0
     ee_frame:
-      body: ee_link
-      offset_position: [0.22, 0, 0]
+      body: wrist_3_link
+      offset_position: [0.0, 0.0, 0.0]
     physics:
       self_collision: false
       solver_position_iterations: 8
@@ -80,7 +81,7 @@ assets:
       collision: true
 
   # ===== Peg: two-tone, lying flat on table =====
-  # Same dimensions and positions as Franka version (UR10 has longer reach)
+  # Same dimensions and positions as Franka version (UR10e has longer reach)
 
   - name: peg_head
     type: rigid
@@ -215,7 +216,7 @@ camera:
   resolution: [1280, 720]
 
 notes:
-  - "Source: ManiSkill PegInsertionSide-v1 adapted for UR10"
-  - "UR10 reach 1.30m — same object positions as Franka (well within reach)"
-  - "Suction gripper picks peg from flat top surface"
+  - "Source: ManiSkill PegInsertionSide-v1 adapted for UR10e"
+  - "UR10e reach 1.30m — same object positions as Franka (well within reach)"
+  - "Robotiq 2F-85 parallel-jaw grasp on the peg body before insertion"
   - "Peg position randomized ±5cm in XY"

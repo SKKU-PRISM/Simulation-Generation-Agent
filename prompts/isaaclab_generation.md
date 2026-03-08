@@ -61,6 +61,7 @@ from isaaclab.actuators import ImplicitActuatorCfg  # for ArticulationCfg.actuat
 import mdp as mdp  # ALWAYS use local mdp/ package (re-exports isaaclab.envs.mdp + custom functions)
 
 from isaaclab_assets.robots.franka import FRANKA_PANDA_CFG  # if robot_type is franka
+from isaaclab_assets.robots.openarm import OPENARM_UNI_CFG  # if robot_type is openarm
 from isaaclab_assets.robots.universal_robots import UR10e_ROBOTIQ_2F_85_CFG  # if robot_type is ur10e
 ```
 
@@ -156,9 +157,12 @@ class SceneCfg(InteractiveSceneCfg):
 
 For `assets` with `type: articulation`:
 - If `robot_type: franka` → use `FRANKA_PANDA_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")`
+- If `robot_type: openarm` → use `OPENARM_UNI_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")` AND explicitly preserve YAML `initial_joints` + `actuators`
 - If `robot_type: ur10e` → use `UR10e_ROBOTIQ_2F_85_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")`
+- If `robot_type: so101` → build an explicit `ArticulationCfg` from the YAML `asset_path`, `initial_joints`, and `actuators`; do not substitute a Franka/OpenArm preset
 - Asset path template: `{ISAACLAB_NUCLEUS_DIR}` → use `ISAACLAB_NUCLEUS_DIR` Python constant
 - Asset path template: `{ISAAC_NUCLEUS_DIR}` → use `ISAAC_NUCLEUS_DIR` Python constant
+- Repo-local asset path like `/home/.../assets/...` must stay absolute; never rewrite it relative to `outputs/`
 
 UR10e-specific rules:
 - NEVER use `FRANKA_PANDA_CFG`, `UR10_CFG`, `UR10_LONG_SUCTION_CFG`, `SurfaceGripperCfg`, or suction actions for `robot_type: ur10e`.
@@ -231,6 +235,8 @@ my_cylinder = RigidObjectCfg(
     ),
 )
 ```
+
+If rigid objects specify `randomize.position.min_separation`, preserve that constraint with a single coordinated sampler or keep their reset deterministic. Do not emit independent resets that can overlap objects.
 
 ### 4. Simulation Parameters
 
@@ -570,3 +576,15 @@ success = DoneTerm(func=mdp.cubes_stacked, params={"xy_threshold": 0.04, ...})
     actuators={"drawers": ImplicitActuatorCfg(joint_names_expr=["drawer_top_joint"], effort_limit=87.0, stiffness=10.0, damping=1.0)}
     ```
 20. If `robot_type` is `ur10e`, do not emit any Franka-specific identifiers (`FRANKA_PANDA_CFG`, `panda_hand`, `panda_link0`, `panda_finger.*`) or suction-specific identifiers (`Long_Suction`, `SurfaceGripperCfg`).
+
+OpenArm-specific rules:
+- Preserve OpenArm actuator configuration; do not leave `scene.robot.actuators` empty.
+- The end-effector frame must be robot-based:
+  - source prim: `{ENV_REGEX_NS}/Robot/openarm_link0`
+  - target prim: `{ENV_REGEX_NS}/Robot/openarm_ee_tcp`
+- Never point `FrameTransformerCfg` at `/Cube_*` or another object prim.
+
+SO-101-specific rules:
+- Use `gripper_frame_link` as the end-effector body.
+- Keep the YAML local USD path exactly after normalization.
+- Do not emit Franka joint names or body names.
