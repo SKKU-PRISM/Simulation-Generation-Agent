@@ -556,6 +556,25 @@ class MultiCameraManager:
                 images[name] = None
         return images
 
+    def capture_named(self, preferred_names: tuple[str, ...] | list[str]) -> np.ndarray | None:
+        """Capture a single preferred camera image without touching others."""
+        if not self._cameras_ready:
+            self._deferred_camera_init()
+
+        for name in preferred_names:
+            cam = self.cameras.get(name)
+            if cam is None:
+                continue
+            try:
+                return cam.capture()
+            except Exception as exc:
+                logger.warning(
+                    "MultiCameraManager: capture failed for preferred camera '%s': %s",
+                    name,
+                    exc,
+                )
+        return None
+
     @property
     def camera_names(self) -> list[str]:
         """List of successfully initialized camera names."""
@@ -608,6 +627,13 @@ def inject_cameras_into_scene(env_cfg, robot_cfg, camera_names: list[str] | None
         if cam_cfg.cam_type == "fixed":
             quat_wxyz = _look_at_quaternion(cam_cfg.position, cam_cfg.target)
             prim_path = f"{env_ns_template}/{cam_name}Camera"
+            focal_length = 24.0
+            horizontal_aperture = 20.955
+            if cam_name == "top":
+                # Widen the overhead judge view so zone/marker targets near the
+                # table edges remain visible for sorting/arrangement tasks.
+                focal_length = 14.0
+                horizontal_aperture = 36.0
             camera_cfg = CameraCfg(
                 prim_path=prim_path,
                 update_period=0.0,
@@ -615,9 +641,9 @@ def inject_cameras_into_scene(env_cfg, robot_cfg, camera_names: list[str] | None
                 width=cam_cfg.resolution[0],
                 data_types=["rgb"],
                 spawn=sim_utils.PinholeCameraCfg(
-                    focal_length=24.0,
+                    focal_length=focal_length,
                     focus_distance=400.0,
-                    horizontal_aperture=20.955,
+                    horizontal_aperture=horizontal_aperture,
                     clipping_range=(0.1, 20.0),
                 ),
                 offset=CameraCfg.OffsetCfg(
@@ -697,6 +723,25 @@ class SceneCameraManager:
                 logger.warning("SceneCameraManager: capture failed for '%s': %s", name, e)
                 images[name] = None
         return images
+
+    def capture_named(self, preferred_names: tuple[str, ...] | list[str]) -> np.ndarray | None:
+        """Capture a single preferred scene camera image."""
+        for name in preferred_names:
+            cam_sensor = self._cameras.get(name)
+            if cam_sensor is None:
+                continue
+            try:
+                cam_sensor.update(dt=0.0)
+                rgba = cam_sensor.data.output["rgb"]
+                img = rgba[0, :, :, :3]
+                return img.cpu().numpy().astype(np.uint8)
+            except Exception as exc:
+                logger.warning(
+                    "SceneCameraManager: capture failed for preferred camera '%s': %s",
+                    name,
+                    exc,
+                )
+        return None
 
     @property
     def camera_names(self) -> list[str]:

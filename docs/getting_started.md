@@ -143,6 +143,27 @@ python3 scripts/preprocess_dataset.py \
   --output-dir outputs/preprocessed_datasets
 ```
 
+### 선택: local LeRobot dataset 생성
+
+```bash
+python3 scripts/convert_lerobot_dataset.py \
+  outputs/data_collection/<run_dir>/raw_dataset \
+  --repo-id local/<dataset_name>
+python3 scripts/check_lerobot_dataset.py \
+  outputs/data_collection/<run_dir>/local/<dataset_name> \
+  --repo-id local/<dataset_name>
+```
+
+필요 시 아래처럼 Hub 업로드를 수행한다.
+
+```bash
+python3 scripts/publish_lerobot_dataset.py \
+  outputs/data_collection/<run_dir>/local/<dataset_name> \
+  --repo-id <org>/<dataset_name> \
+  --local-repo-id local/<dataset_name> \
+  --private
+```
+
 ## 6. 다음에 볼 문서
 
 - 실제 옵션/출력 구조/결과 해석: `docs/usage.md`

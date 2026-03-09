@@ -40,6 +40,8 @@ class SimRecorder:
         │   │   ├── actions.npy     # (T, N_dof) float32
         │   │   ├── tcp_world_xyzrpy.npy  # (T, 6) float32
         │   │   ├── tcp_robot_xyzrpy.npy  # (T, 6) float32
+        │   │   ├── gripper_state.npy     # (T, 1) float32
+        │   │   ├── goal_robot_xyzrpy.npy # (T, 6) float32
         │   │   ├── images/         # multi-camera:
         │   │   │   ├── front/      #   000000.png, 000001.png, ...
         │   │   │   ├── wrist/
@@ -55,23 +57,34 @@ class SimRecorder:
         output_dir: str,
         dataset_name: str = "sim_dataset",
         fps: int = 20,
+        front_video_fps: int = 10,
     ) -> None:
         self._robot_cfg = robot_cfg
         self._fps = fps
+        self._run_output_dir = Path(output_dir)
         self._dataset_dir = Path(output_dir) / dataset_name
         self._episodes_dir = self._dataset_dir / "episodes"
         self._episodes_dir.mkdir(parents=True, exist_ok=True)
+        self._videos_dir = self._run_output_dir / "videos"
+        self._front_video_tmp_root = self._run_output_dir / ".front_video_frames"
+        self._front_video_target_fps = max(1, min(int(front_video_fps), int(fps)))
+        self._front_video_stride = max(1, round(float(fps) / float(self._front_video_target_fps)))
+        self._front_video_actual_fps = max(1, round(float(fps) / float(self._front_video_stride)))
 
         # Episode tracking
         self._episode_idx: int = 0
         self._recording: bool = False
         self._current_ep_dir: Optional[Path] = None
+        self._current_front_video_frames_dir: Optional[Path] = None
+        self._front_video_frame_count: int = 0
 
         # Per-episode buffers
         self._states: list[np.ndarray] = []
         self._actions: list[np.ndarray] = []
         self._tcp_world_xyzrpy: list[np.ndarray] = []
         self._tcp_robot_xyzrpy: list[np.ndarray] = []
+        self._gripper_state: list[np.ndarray] = []
+        self._goal_robot_xyzrpy_dense: list[np.ndarray] = []
         self._skills: list[dict] = []
         self._image_count: int = 0
         self._has_images: bool = False
@@ -79,6 +92,10 @@ class SimRecorder:
 
         # Dataset-level stats
         self._completed_episodes: list[dict] = []
+        self._front_video_generated: bool = False
+        self._front_video_episode: Optional[int] = None
+        self._front_video_path: Optional[Path] = None
+        self._front_video_error: Optional[str] = None
 
     # ------------------------------------------------------------------
     # Properties
@@ -95,6 +112,33 @@ class SimRecorder:
     @property
     def dataset_dir(self) -> Path:
         return self._dataset_dir
+
+    @property
+    def front_video_generated(self) -> bool:
+        return self._front_video_generated and self._front_video_path is not None
+
+    @property
+    def front_video_path(self) -> Path | None:
+        if self._front_video_path is None:
+            return None
+        return self._front_video_path if self._front_video_path.exists() else None
+
+    @property
+    def front_video_episode(self) -> int | None:
+        return self._front_video_episode
+
+    @property
+    def front_video_error(self) -> str | None:
+        return self._front_video_error
+
+    def should_capture_front_video_frame(self, step_idx: int) -> bool:
+        """Whether the current step should capture a front video frame."""
+        return (
+            self._recording
+            and not self._front_video_generated
+            and self._current_front_video_frames_dir is not None
+            and step_idx % self._front_video_stride == 0
+        )
 
     # ------------------------------------------------------------------
     # Episode lifecycle
@@ -128,11 +172,23 @@ class SimRecorder:
         self._actions.clear()
         self._tcp_world_xyzrpy.clear()
         self._tcp_robot_xyzrpy.clear()
+        self._gripper_state.clear()
+        self._goal_robot_xyzrpy_dense.clear()
         self._skills.clear()
         self._image_count = 0
         self._has_images = False
+        self._front_video_frame_count = 0
         self._recording = True
         self._current_task_description = task_description
+        if not self._front_video_generated:
+            self._current_front_video_frames_dir = (
+                self._front_video_tmp_root / f"episode_{self._episode_idx:06d}"
+            )
+            if self._current_front_video_frames_dir.exists():
+                shutil.rmtree(self._current_front_video_frames_dir)
+            self._current_front_video_frames_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            self._current_front_video_frames_dir = None
 
         logger.info("Started episode %d: %s", self._episode_idx, task_description)
 
@@ -142,6 +198,7 @@ class SimRecorder:
         action: np.ndarray,
         image: np.ndarray | None = None,
         images: dict[str, np.ndarray | None] | None = None,
+        front_video_image: np.ndarray | None = None,
         skill_label: str = "",
         skill_type: str = "",
         skill_progress: float = 0.0,
@@ -151,6 +208,7 @@ class SimRecorder:
         goal_gripper: float = 0.0,
         tcp_world_xyzrpy: np.ndarray | None = None,
         tcp_robot_xyzrpy: np.ndarray | None = None,
+        gripper_state: np.ndarray | None = None,
     ) -> None:
         """Record a single simulation step.
 
@@ -169,6 +227,7 @@ class SimRecorder:
             goal_gripper: Gripper target value.
             tcp_world_xyzrpy: Current TCP pose in simulator world frame, (6,) float32.
             tcp_robot_xyzrpy: Current TCP pose in robot base frame, (6,) float32.
+            gripper_state: Current gripper state scalar, (1,) float32.
         """
         if not self._recording:
             raise RuntimeError("Not recording. Call start_episode() first.")
@@ -193,14 +252,23 @@ class SimRecorder:
         self._tcp_robot_xyzrpy.append(
             self._coerce_pose_vector(tcp_robot_xyzrpy, "tcp_robot_xyzrpy")
         )
+        self._gripper_state.append(
+            self._coerce_gripper_state_vector(gripper_state)
+        )
+        self._goal_robot_xyzrpy_dense.append(
+            self._coerce_pose_vector(goal_robot_xyzrpy, "goal_robot_xyzrpy")
+        )
 
         # Judge-only cameras: excluded from dataset recording (VLM judge only)
         _JUDGE_ONLY_CAMERAS = {"front_cam", "front"}
+        front_frame = front_video_image
 
         # Save images (multi-camera or legacy single-camera)
         if images is not None:
             # Multi-camera path
             for cam_name, cam_img in images.items():
+                if front_frame is None and cam_name in _JUDGE_ONLY_CAMERAS and cam_img is not None:
+                    front_frame = cam_img
                 if cam_name in _JUDGE_ONLY_CAMERAS:
                     continue  # VLM judge only, not in dataset
                 if cam_img is not None:
@@ -210,10 +278,13 @@ class SimRecorder:
                         self._camera_names.append(cam_name)
         elif image is not None:
             # Legacy single-camera (save as "front")
+            if front_frame is None:
+                front_frame = image
             self._save_image(image, self._image_count, cam_name="front")
             self._has_images = True
             if "front" not in self._camera_names:
                 self._camera_names.append("front")
+        self._maybe_save_front_video_frame(front_frame, self._image_count)
         self._image_count += 1
 
         # Build skill metadata entry
@@ -251,6 +322,7 @@ class SimRecorder:
         steps = len(self._states)
 
         if discard or steps == 0:
+            self._cleanup_front_video_frames()
             if ep_dir is not None and ep_dir.exists():
                 shutil.rmtree(ep_dir)
             logger.info(
@@ -263,10 +335,14 @@ class SimRecorder:
         np.save(ep_dir / "actions.npy", np.stack(self._actions))
         np.save(ep_dir / "tcp_world_xyzrpy.npy", np.stack(self._tcp_world_xyzrpy))
         np.save(ep_dir / "tcp_robot_xyzrpy.npy", np.stack(self._tcp_robot_xyzrpy))
+        np.save(ep_dir / "gripper_state.npy", np.stack(self._gripper_state))
+        np.save(ep_dir / "goal_robot_xyzrpy.npy", np.stack(self._goal_robot_xyzrpy_dense))
 
         # Flush skills metadata
         with open(ep_dir / "skills.json", "w") as f:
             json.dump(self._skills, f)
+
+        self._finalize_front_video(success)
 
         # Track completed episode
         self._completed_episodes.append(
@@ -319,6 +395,15 @@ class SimRecorder:
                 "observation.tcp.world_xyzrpy",
                 "observation.tcp.robot_xyzrpy",
             ],
+            "gripper_state_dim": 1,
+            "gripper_state_definition": (
+                "Primary gripper command coordinate stored as a scalar observation"
+            ),
+            "required_step_fields": [
+                "observation.tcp.robot_xyzrpy",
+                "observation.gripper_state",
+                "skill.goal_position.robot_xyzrpy",
+            ],
             "world_frame_definition": "sim:/World",
             "robot_base_definition": "articulation root",
             "tcp_definition": (
@@ -329,6 +414,13 @@ class SimRecorder:
                 1 for e in self._completed_episodes if e["success"]
             ),
             "episodes": self._completed_episodes,
+            "front_video_generated": self.front_video_generated,
+            "front_video_path": (
+                str(self.front_video_path.relative_to(self._run_output_dir))
+                if self.front_video_path is not None
+                else None
+            ),
+            "front_video_episode": self._front_video_episode,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
 
@@ -339,6 +431,8 @@ class SimRecorder:
         logger.info(
             "Finalized dataset: %s (%d episodes)", path, len(self._completed_episodes)
         )
+        if self._front_video_tmp_root.exists():
+            shutil.rmtree(self._front_video_tmp_root)
         return path
 
     # ------------------------------------------------------------------
@@ -375,6 +469,111 @@ class SimRecorder:
                     f"Failed to save image to {out_path}: cv2.imwrite returned False"
                 )
 
+    def _maybe_save_front_video_frame(
+        self,
+        image: np.ndarray | None,
+        frame_idx: int,
+    ) -> None:
+        """Persist a front-view frame for later mp4 generation."""
+        if image is None or self._current_front_video_frames_dir is None:
+            return
+        if frame_idx % self._front_video_stride != 0:
+            return
+        img = np.asarray(image, dtype=np.uint8)
+        if img.ndim != 3 or img.shape[2] != 3:
+            raise ValueError(
+                f"Expected (H, W, 3) uint8 image for front video, got shape {img.shape}"
+            )
+        out_path = self._current_front_video_frames_dir / f"{self._front_video_frame_count:06d}.png"
+        try:
+            from PIL import Image
+
+            Image.fromarray(img).save(out_path)
+        except OSError as exc:
+            raise RecorderStorageError(
+                f"Failed to save front video frame to {out_path}: {exc}"
+            ) from exc
+        except ImportError:
+            import cv2
+
+            ok = cv2.imwrite(str(out_path), cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+            if not ok:
+                raise RecorderStorageError(
+                    f"Failed to save front video frame to {out_path}: cv2.imwrite returned False"
+                )
+        self._front_video_frame_count += 1
+
+    def _cleanup_front_video_frames(self) -> None:
+        if self._current_front_video_frames_dir is not None and self._current_front_video_frames_dir.exists():
+            shutil.rmtree(self._current_front_video_frames_dir)
+        self._current_front_video_frames_dir = None
+        self._front_video_frame_count = 0
+
+    def _finalize_front_video(self, success: bool) -> None:
+        """Encode the representative front-view mp4 for the first successful episode."""
+        self._front_video_error = None
+        frames_dir = self._current_front_video_frames_dir
+        frame_count = self._front_video_frame_count
+        if frames_dir is None:
+            return
+        try:
+            if success and not self._front_video_generated and frame_count > 0:
+                self._videos_dir.mkdir(parents=True, exist_ok=True)
+                out_path = self._videos_dir / "front_success.mp4"
+                meta_path = self._videos_dir / "front_success_meta.json"
+                self._encode_mp4_from_frames(frames_dir, out_path)
+                meta = {
+                    "episode": self._episode_idx,
+                    "fps": self._front_video_actual_fps,
+                    "frame_count": frame_count,
+                    "codec": "libx264",
+                }
+                with open(meta_path, "w", encoding="utf-8") as f:
+                    json.dump(meta, f, indent=2)
+                self._front_video_generated = True
+                self._front_video_episode = self._episode_idx
+                self._front_video_path = out_path
+            elif not success and self._videos_dir.exists() and not any(self._videos_dir.iterdir()):
+                self._videos_dir.rmdir()
+        except Exception as exc:
+            self._front_video_error = str(exc)
+            logger.warning("Failed to encode representative front video: %s", exc)
+        finally:
+            self._cleanup_front_video_frames()
+
+    def _encode_mp4_from_frames(self, frames_dir: Path, out_path: Path) -> None:
+        frame_paths = sorted(frames_dir.glob("*.png"))
+        if not frame_paths:
+            raise RecorderStorageError(
+                f"No front video frames found in {frames_dir}"
+            )
+
+        try:
+            import imageio.v2 as imageio
+            from PIL import Image
+        except ImportError as exc:
+            raise RecorderStorageError(
+                "imageio and Pillow are required to encode front success videos"
+            ) from exc
+
+        writer = imageio.get_writer(
+            str(out_path),
+            fps=self._front_video_actual_fps,
+            codec="libx264",
+            pixelformat="yuv420p",
+            ffmpeg_params=["-crf", "23", "-preset", "medium", "-movflags", "+faststart"],
+        )
+        try:
+            for frame_path in frame_paths:
+                frame = np.asarray(Image.open(frame_path), dtype=np.uint8)
+                writer.append_data(frame)
+        except Exception as exc:
+            raise RecorderStorageError(
+                f"Failed to encode front success video at {out_path}: {exc}"
+            ) from exc
+        finally:
+            writer.close()
+
     @staticmethod
     def _coerce_pose_vector(
         pose: np.ndarray | None,
@@ -389,6 +588,18 @@ class SimRecorder:
                 f"{field_name} has shape {pose_arr.shape}, expected (6,)"
             )
         return pose_arr
+
+    @staticmethod
+    def _coerce_gripper_state_vector(
+        value: np.ndarray | None,
+    ) -> np.ndarray:
+        """Normalize gripper state to shape (1,) float32."""
+        if value is None:
+            return np.zeros(1, dtype=np.float32)
+        arr = np.asarray(value, dtype=np.float32).ravel()
+        if arr.shape != (1,):
+            raise ValueError(f"gripper_state has shape {arr.shape}, expected (1,)")
+        return arr
 
     def patch_skill_metadata_range(
         self,
@@ -428,6 +639,11 @@ class SimRecorder:
                 entry["goal_world_xyzrpy"] = goal_world_list
             if goal_robot_list is not None:
                 entry["goal_robot_xyzrpy"] = goal_robot_list
+                if idx < len(self._goal_robot_xyzrpy_dense):
+                    self._goal_robot_xyzrpy_dense[idx] = np.asarray(
+                        goal_robot_list,
+                        dtype=np.float32,
+                    )
             if goal_gripper is not None:
                 entry["goal_gripper"] = float(goal_gripper)
 
@@ -484,6 +700,10 @@ def convert_to_lerobot(
             "dtype": "float32",
             "shape": (total_dofs,),
             "names": [metadata["joint_names"]],
+        },
+        "observation.gripper_state": {
+            "dtype": "float32",
+            "shape": (1,),
         },
         "observation.tcp.world_xyzrpy": {
             "dtype": "float32",
@@ -551,6 +771,11 @@ def convert_to_lerobot(
             if (ep_dir / "tcp_robot_xyzrpy.npy").exists()
             else np.zeros((states.shape[0], 6), dtype=np.float32)
         )
+        gripper_state = (
+            np.load(ep_dir / "gripper_state.npy")
+            if (ep_dir / "gripper_state.npy").exists()
+            else np.zeros((states.shape[0], 1), dtype=np.float32)
+        )
         T = states.shape[0]
 
         with open(ep_dir / "skills.json") as f:
@@ -577,6 +802,7 @@ def convert_to_lerobot(
 
             frame: dict = {
                 "observation.state": states[t],
+                "observation.gripper_state": gripper_state[t],
                 "observation.tcp.world_xyzrpy": tcp_world[t],
                 "observation.tcp.robot_xyzrpy": tcp_robot[t],
                 "action": actions[t],

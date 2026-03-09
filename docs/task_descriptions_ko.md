@@ -3,6 +3,7 @@
 대상: task를 빠르게 훑어보는 사용자  
 이 문서가 다루는 것: task 한글 설명, 추천 shortlist, 간단한 ADC 검증 표시  
 상세 상태와 evidence는 `docs/tasks_overview.md`
+Franka만 따로 보려면 `docs/franka_tasks_summary.md`
 
 이 문서는 `tasks/` 아래 task들을 한국어로 빠르게 훑어보기 위한 보조 문서입니다.
 설명은 각 YAML의 `goal.description` 또는 `task.description`을 기준으로 정리했고, `ADC verified`는 `run_data_collection.py` 경로까지 실제 실행한 증거가 있는지를 뜻합니다.

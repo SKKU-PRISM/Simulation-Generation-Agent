@@ -13,6 +13,7 @@ class OpenArmSkills(BaseTabletopCaPSkills):
     DEFAULT_GRASP_FACE = "top"
     PLACE_DROP_OFFSET = 0.002
     GRASP_YAW_RETRY_OFFSETS_DEG = (45.0, -45.0, 90.0, -90.0)
+    GRASP_LATERAL_BIAS_CANDIDATES_M = (0.0, 0.01, -0.01, 0.015, -0.015)
     TOP_DOWN_ALIGNMENT_TOLERANCE_DEG = 25.0
 
     @classmethod
@@ -80,6 +81,15 @@ class OpenArmSkills(BaseTabletopCaPSkills):
 
         self._clear_held_state()
 
+    def _get_skill_lateral_bias(self) -> float:
+        cfg = getattr(self._skills, "cfg", None)
+        return float(getattr(cfg, "grasp_lateral_bias", 0.0) or 0.0)
+
+    def _set_skill_lateral_bias(self, value: float) -> None:
+        cfg = getattr(self._skills, "cfg", None)
+        if cfg is not None:
+            cfg.grasp_lateral_bias = float(value)
+
     def _remember_default_pick(self, object_name: str) -> None:
         """Store held-object state for the default auto-grasp path."""
 
@@ -91,6 +101,7 @@ class OpenArmSkills(BaseTabletopCaPSkills):
         self._held_grasp_yaw_deg = None
         self._held_target_rotation_world = None
         self._held_approach_direction_world = None
+        self._held_grasp_lateral_bias = None
 
     def _store_resolved_grasp_spec(
         self,
@@ -113,6 +124,7 @@ class OpenArmSkills(BaseTabletopCaPSkills):
             dtype=np.float64,
         )
         self._held_approach_angle_deg = None
+        self._held_grasp_lateral_bias = self._get_skill_lateral_bias()
 
     def _default_pick_grasp_spec(self, object_name: str) -> tuple[str, float | None]:
         """Choose the default hidden grasp spec from affordance metadata."""
@@ -131,7 +143,13 @@ class OpenArmSkills(BaseTabletopCaPSkills):
         """Run the default hidden top-down pick with yaw retries."""
 
         face, base_yaw = self._default_pick_grasp_spec(object_name)
-        for attempt_idx, candidate_yaw in enumerate(self._candidate_grasp_yaws(base_yaw)):
+        original_bias = self._get_skill_lateral_bias()
+        attempts = [
+            (candidate_yaw, lateral_bias)
+            for lateral_bias in self.GRASP_LATERAL_BIAS_CANDIDATES_M
+            for candidate_yaw in self._candidate_grasp_yaws(base_yaw)
+        ]
+        for attempt_idx, (candidate_yaw, lateral_bias) in enumerate(attempts):
             if attempt_idx > 0:
                 self._skills.move_to_ready(
                     duration=1.0,
@@ -147,24 +165,29 @@ class OpenArmSkills(BaseTabletopCaPSkills):
                 grasp_yaw_deg=candidate_yaw,
             )
             attempt_desc = (
-                f"{skill_description} (retry top-down grasp with yaw={candidate_yaw:.1f})"
+                f"{skill_description} (retry top-down grasp with yaw={candidate_yaw:.1f}, lateral_bias={lateral_bias:+.3f}m)"
                 if skill_description and attempt_idx > 0
                 else skill_description
             )
-            pick_ok = self._skills.execute_pick(
-                object_name,
-                approach_offset=self.PICK_APPROACH_OFFSET,
-                target_rotation_world=grasp_spec["target_rotation_world"],
-                approach_direction_world=grasp_spec["approach_direction_world"],
-                required_tool_axis_world=np.asarray(
-                    grasp_spec["target_rotation_world"],
-                    dtype=np.float64,
-                )[:, 2],
-                required_tool_axis_tolerance_deg=self.TOP_DOWN_ALIGNMENT_TOLERANCE_DEG,
-                allow_position_only_fallback=False,
-                skill_description=attempt_desc,
-            )
+            self._set_skill_lateral_bias(float(lateral_bias))
+            try:
+                pick_ok = self._skills.execute_pick(
+                    object_name,
+                    approach_offset=self.PICK_APPROACH_OFFSET,
+                    target_rotation_world=grasp_spec["target_rotation_world"],
+                    approach_direction_world=grasp_spec["approach_direction_world"],
+                    required_tool_axis_world=np.asarray(
+                        grasp_spec["target_rotation_world"],
+                        dtype=np.float64,
+                    )[:, 2],
+                    required_tool_axis_tolerance_deg=self.TOP_DOWN_ALIGNMENT_TOLERANCE_DEG,
+                    allow_position_only_fallback=False,
+                    skill_description=attempt_desc,
+                )
+            finally:
+                self._set_skill_lateral_bias(original_bias)
             if pick_ok:
+                self._set_skill_lateral_bias(float(lateral_bias))
                 self._store_resolved_grasp_spec(object_name, grasp_spec)
                 return True
         return False
@@ -278,15 +301,21 @@ class OpenArmSkills(BaseTabletopCaPSkills):
         )
 
         if not explicit_override and self._held_target_rotation_world is None and self._held_approach_angle_deg is None:
-            placed = self._skills.execute_place(
-                target_center,
-                approach_offset=self.PLACE_APPROACH_OFFSET,
-                drop_offset=self.PLACE_DROP_OFFSET,
-                _placed_object=held_name,
-                _held_xy_offset_world=self._held_xy_offset_world,
-                allow_position_only_fallback=False,
-                skill_description=skill_description,
-            )
+            original_bias = self._get_skill_lateral_bias()
+            if self._held_grasp_lateral_bias is not None:
+                self._set_skill_lateral_bias(float(self._held_grasp_lateral_bias))
+            try:
+                placed = self._skills.execute_place(
+                    target_center,
+                    approach_offset=self.PLACE_APPROACH_OFFSET,
+                    drop_offset=self.PLACE_DROP_OFFSET,
+                    _placed_object=held_name,
+                    _held_xy_offset_world=self._held_xy_offset_world,
+                    allow_position_only_fallback=False,
+                    skill_description=skill_description,
+                )
+            finally:
+                self._set_skill_lateral_bias(original_bias)
             if placed:
                 self._clear_held_spec()
             return placed
@@ -333,19 +362,25 @@ class OpenArmSkills(BaseTabletopCaPSkills):
             target_rotation_world = np.asarray(grasp_spec["target_rotation_world"], dtype=np.float64)
             approach_direction_world = np.asarray(grasp_spec["approach_direction_world"], dtype=np.float64)
 
-        placed = self._skills.execute_place(
-            target_center,
-            approach_offset=self.PLACE_APPROACH_OFFSET,
-            drop_offset=self.PLACE_DROP_OFFSET,
-            _placed_object=held_name,
-            _held_xy_offset_world=self._held_xy_offset_world,
-            target_rotation_world=target_rotation_world,
-            approach_direction_world=approach_direction_world,
-            required_tool_axis_world=np.asarray(target_rotation_world, dtype=np.float64)[:, 2],
-            required_tool_axis_tolerance_deg=self.TOP_DOWN_ALIGNMENT_TOLERANCE_DEG,
-            allow_position_only_fallback=False,
-            skill_description=skill_description,
-        )
+        original_bias = self._get_skill_lateral_bias()
+        if self._held_grasp_lateral_bias is not None:
+            self._set_skill_lateral_bias(float(self._held_grasp_lateral_bias))
+        try:
+            placed = self._skills.execute_place(
+                target_center,
+                approach_offset=self.PLACE_APPROACH_OFFSET,
+                drop_offset=self.PLACE_DROP_OFFSET,
+                _placed_object=held_name,
+                _held_xy_offset_world=self._held_xy_offset_world,
+                target_rotation_world=target_rotation_world,
+                approach_direction_world=approach_direction_world,
+                required_tool_axis_world=np.asarray(target_rotation_world, dtype=np.float64)[:, 2],
+                required_tool_axis_tolerance_deg=self.TOP_DOWN_ALIGNMENT_TOLERANCE_DEG,
+                allow_position_only_fallback=False,
+                skill_description=skill_description,
+            )
+        finally:
+            self._set_skill_lateral_bias(original_bias)
         if placed:
             self._clear_held_spec()
         return placed

@@ -175,8 +175,10 @@ def _merge_shape_to_place_config(task_doc: dict[str, Any], active_shape: dict[st
     for key, value in config.get("physics", {}).items():
         physics[key] = deepcopy(value)
 
-    randomize = active_shape.setdefault("randomize", {})
-    _deep_update(randomize, config.get("randomize", {}))
+    config_randomize = config.get("randomize", {})
+    if isinstance(config_randomize, dict) and config_randomize:
+        randomize = active_shape.setdefault("randomize", {})
+        _deep_update(randomize, config_randomize)
 
 
 def _deep_update(target: dict[str, Any], source: dict[str, Any]) -> None:

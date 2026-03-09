@@ -158,15 +158,44 @@ python3 scripts/export_dataset.py <raw_dataset_dir> --source-type sim_raw --outp
 python3 scripts/preprocess_dataset.py <export_dir> --output-dir outputs/preprocessed_datasets
 ```
 
+### LeRobot 변환이 스킵됨
+
+`run_data_collection.py` 끝에서 아래처럼 보이면:
+
+```text
+LeRobot conversion skipped (lerobot package not available)
+```
+
+이 경우 raw dataset은 정상 생성되었을 수 있다. host Python에 `lerobot`를 설치한 뒤 별도 변환/검증을 돌린다.
+
+```bash
+python3 scripts/convert_lerobot_dataset.py <raw_dataset_dir> --repo-id local/<dataset_name>
+python3 scripts/check_lerobot_dataset.py <local_lerobot_dir> --repo-id local/<dataset_name>
+```
+
 ## 5. Export / Preprocess
 
 ### export는 됐는데 schema가 헷갈림
 
-기본값은 `adc_compatible`이다. current TCP가 필요한 분석용 확장 schema만 `canonical_training`을 명시적으로 선택한다.
+기본값은 `adc_compatible`이다. 기본 학습 입력에는 `observation.tcp.robot_xyzrpy`와 `observation.gripper_state`가 포함된다. world-frame TCP나 clean current/goal TCP 전체가 필요할 때만 `canonical_training`을 명시적으로 선택한다.
 
 ### `adc_raw` export가 실패
 
 이 경로는 host Python에 `pyarrow`, `pandas`, `datasets`, `lerobot`가 필요하다. 실제 ADC dataset root와 robot config도 함께 필요하다.
+
+### Hub 업로드가 안 됨
+
+기본 인증은 `HF_TOKEN` env var 또는 기존 `huggingface-cli login` 세션이다.
+
+```bash
+python3 scripts/publish_lerobot_dataset.py \
+  <local_lerobot_dir> \
+  --repo-id <org>/<dataset_name> \
+  --local-repo-id local/<dataset_name> \
+  --private
+```
+
+업로드 전에 local 검증을 먼저 통과시키는 게 안전하다.
 
 ### raw를 바로 학습에 넣고 싶음
 

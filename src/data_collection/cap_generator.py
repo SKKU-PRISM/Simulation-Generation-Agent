@@ -14,16 +14,20 @@ import numpy as np
 
 from .config import RobotSimConfig
 
-SUPPORTED_RELATIONS = {"on_top_of", "stacked", "at_position", "on_surface"}
-UNSUPPORTED_KEYWORDS = (
-    "cabinet",
-    "drawer",
-    "peg",
-    "plug",
-    "insert",
+SUPPORTED_RELATIONS = {
+    "on_top_of",
+    "stacked",
+    "at_position",
+    "on_surface",
+    "inside_tray",
+    "above",
+    "height_above",
+    "position_above",
+    "inserted_into",
+    "height_below",
     "upright",
-    "receptacle",
-)
+    "in_slot",
+}
 REFUSAL_MARKERS = (
     "i'm sorry",
     "i cannot assist",
@@ -31,6 +35,37 @@ REFUSAL_MARKERS = (
     "cannot assist with that request",
     "can't assist with that request",
 )
+
+
+def _collect_goal_conditions(task_doc: dict[str, Any]) -> list[dict[str, Any]]:
+    """Normalize goal conditions across task schemas."""
+
+    goal = task_doc.get("goal", {})
+    success_criteria = goal.get("success_criteria", {})
+    conditions: list[dict[str, Any]] = []
+
+    if isinstance(success_criteria, dict):
+        for cond in success_criteria.get("conditions", []):
+            if isinstance(cond, dict):
+                conditions.append(dict(cond))
+        stacking_order = success_criteria.get("stacking_order")
+        if isinstance(stacking_order, list):
+            for idx in range(1, len(stacking_order)):
+                top = stacking_order[idx]
+                bottom = stacking_order[idx - 1]
+                if isinstance(top, str) and isinstance(bottom, str):
+                    conditions.append(
+                        {
+                            "subject": top,
+                            "target": bottom,
+                            "relation": "on_top_of",
+                        }
+                    )
+
+    for cond in goal.get("conditions", []):
+        if isinstance(cond, dict):
+            conditions.append(dict(cond))
+    return conditions
 
 
 def _is_primary_robot_asset(asset: dict[str, Any]) -> bool:
@@ -52,20 +87,76 @@ def _is_primary_robot_asset(asset: dict[str, Any]) -> bool:
 def _goal_target_names(task_doc: dict[str, Any]) -> set[str]:
     """Collect goal target asset names referenced by the task."""
 
-    goal = task_doc.get("goal", {})
     targets: set[str] = set()
-
-    conditions: list[dict[str, Any]] = []
-    success_criteria = goal.get("success_criteria", {})
-    if isinstance(success_criteria, dict):
-        conditions.extend(success_criteria.get("conditions", []))
-    conditions.extend(goal.get("conditions", []))
-
-    for cond in conditions:
+    for cond in _collect_goal_conditions(task_doc):
         target = cond.get("target")
         if isinstance(target, str):
             targets.add(target)
     return targets
+
+
+def _is_named_placement_target(name: str, asset: dict[str, Any]) -> bool:
+    """Return whether an asset should be exposed as a named placement target."""
+
+    name_lower = name.lower()
+    if "wall" in name_lower:
+        return False
+    if any(
+        token in name_lower
+        for token in (
+            "zone",
+            "marker",
+            "tray",
+            "bin",
+            "anchor",
+            "target",
+            "collection",
+            "command_pose",
+            "handle",
+            "hole",
+            "slot",
+            "cutout",
+            "receptacle",
+        )
+    ):
+        return True
+    if "pose" in name_lower and asset.get("type") in {"rigid", "primitive", "static"}:
+        return True
+    return False
+
+
+def _support_target_names(task_doc: dict[str, Any]) -> set[str]:
+    """Collect static or quasi-static placement targets that should reach the prompt."""
+
+    targets = _goal_target_names(task_doc)
+    success_criteria = task_doc.get("goal", {}).get("success_criteria", {})
+
+    for asset in task_doc.get("assets", []):
+        name = asset.get("name")
+        if not isinstance(name, str):
+            continue
+        if _is_named_placement_target(name, asset):
+            targets.add(name)
+
+    if isinstance(success_criteria, dict) and success_criteria.get("inside_tray"):
+        for asset in task_doc.get("assets", []):
+            name = asset.get("name")
+            if not isinstance(name, str):
+                continue
+            if "tray_base" in name.lower():
+                targets.add(name)
+    return targets
+
+
+def _goal_subject_names(task_doc: dict[str, Any]) -> set[str]:
+    """Collect goal subject asset names referenced by the task."""
+
+    subjects: set[str] = set()
+    for cond in _collect_goal_conditions(task_doc):
+        subject = cond.get("subject", cond.get("object"))
+        if isinstance(subject, str):
+            subjects.add(subject)
+    return subjects
 
 
 def _infer_ordered_objects(
@@ -74,14 +165,171 @@ def _infer_ordered_objects(
 ) -> list[str]:
     """Infer manipulation order from object names mentioned in the task description."""
 
+    def _candidate_index(description: str, candidate: str) -> int:
+        pattern = rf"(?<![a-z0-9_]){re.escape(candidate)}(?![a-z0-9_])"
+        match = re.search(pattern, description)
+        return match.start() if match else -1
+
     description = task_description.lower()
     ordered: list[tuple[int, str]] = []
-    for name in translated_positions:
-        idx = description.find(name.lower())
-        if idx >= 0:
-            ordered.append((idx, name))
+    seen: set[str] = set()
+    for name, info in translated_positions.items():
+        task_role = str(info.get("task_role", ""))
+        if task_role in {"placement_target", "target_marker", "support_surface", "goal_target"}:
+            continue
+        candidates = [name.lower()]
+        for key in ("color_name", "asset_label"):
+            value = info.get(key)
+            if isinstance(value, str):
+                candidates.append(value.lower())
+        for alias in info.get("aliases") or []:
+            if isinstance(alias, str):
+                candidates.append(alias.lower())
+
+        candidate_indices = [_candidate_index(description, candidate) for candidate in candidates if candidate]
+        candidate_indices = [idx for idx in candidate_indices if idx >= 0]
+        if candidate_indices:
+            key = (min(candidate_indices), name)
+            if name not in seen:
+                ordered.append(key)
+                seen.add(name)
     ordered.sort()
     return [name for _, name in ordered]
+
+
+def _infer_color_name(asset: dict[str, Any], name: str) -> str | None:
+    """Infer a coarse color label from asset metadata."""
+
+    searchable = " ".join(
+        str(x)
+        for x in (
+            name,
+            asset.get("asset_path", ""),
+            asset.get("semantic_tag", ""),
+            asset.get("semantic_label", ""),
+        )
+    ).lower()
+    for color in (
+        "blue",
+        "red",
+        "green",
+        "yellow",
+        "orange",
+        "purple",
+        "rose",
+        "pink",
+        "gold",
+        "white",
+        "black",
+        "gray",
+        "grey",
+        "brown",
+    ):
+        if color in searchable:
+            return color
+    return None
+
+
+def _infer_asset_label(asset: dict[str, Any], name: str, shape_type: str) -> str:
+    """Build a compact natural-language label for an asset."""
+
+    color_name = _infer_color_name(asset, name)
+    tokens = [color_name, shape_type if shape_type != "unknown" else None]
+    asset_label = " ".join(token for token in tokens if token).strip()
+    if asset_label and not (color_name and shape_type == "unknown"):
+        return asset_label
+
+    asset_path = str(asset.get("asset_path", "")).strip()
+    if asset_path:
+        stem = asset_path.rsplit("/", 1)[-1].replace(".usd", "").replace("_", " ")
+        if stem:
+            return stem
+    return name.replace("_", " ")
+
+
+def _infer_task_role(
+    name: str,
+    asset: dict[str, Any],
+    subject_names: set[str],
+    target_names: set[str],
+) -> str:
+    """Infer a coarse task role for prompt grounding."""
+
+    name_lower = name.lower()
+    asset_type = str(asset.get("type", "")).lower()
+
+    if name in subject_names and name in target_names:
+        return "subject_and_target"
+    if name in subject_names:
+        return "goal_subject"
+    if "handle" in name_lower:
+        return "handle_target"
+    if any(token in name_lower for token in ("hole", "slot", "cutout", "receptacle")):
+        return "insertion_target"
+    if "tray" in name_lower or "bin" in name_lower or "zone" in name_lower or "marker" in name_lower:
+        return "placement_target"
+    if name in target_names:
+        if "tray" in name_lower or "bin" in name_lower or "zone" in name_lower:
+            return "placement_target"
+        if "marker" in name_lower or "pose" in name_lower:
+            return "target_marker"
+        if asset_type == "static" or "table" in name_lower:
+            return "support_surface"
+        return "goal_target"
+    if asset_type == "static":
+        return "support_surface"
+    return "movable_object"
+
+
+def _summarize_goal_roles(name: str, conditions: list[dict[str, Any]]) -> list[str]:
+    """Summarize how an object participates in goal conditions."""
+
+    roles: list[str] = []
+    for cond in conditions:
+        relation = str(cond.get("relation", cond.get("type", "")) or "").lower()
+        subject = cond.get("subject", cond.get("object"))
+        target = cond.get("target")
+        if subject == name and relation:
+            roles.append(f"subject:{relation}")
+        if target == name and relation:
+            roles.append(f"target:{relation}")
+    return sorted(set(roles))
+
+
+def _attach_task_role_metadata(
+    task_doc: dict[str, Any],
+    translated: dict[str, dict[str, Any]],
+    assets_by_name: dict[str, dict[str, Any]],
+) -> None:
+    """Attach task-role and alias metadata derived from the YAML goal."""
+
+    conditions = _collect_goal_conditions(task_doc)
+    subject_names = _goal_subject_names(task_doc)
+    target_names = _goal_target_names(task_doc)
+
+    for name, info in translated.items():
+        asset = assets_by_name.get(name, {})
+        color_name = _infer_color_name(asset, name)
+        shape_type = str(info.get("shape_type", "unknown"))
+        aliases = [
+            alias
+            for alias in (
+                name.replace("_", " "),
+                _infer_asset_label(asset, name, shape_type),
+                f"{color_name} {shape_type}" if color_name and shape_type != "unknown" else None,
+            )
+            if alias
+        ]
+        deduped_aliases: list[str] = []
+        for alias in aliases:
+            if alias not in deduped_aliases:
+                deduped_aliases.append(alias)
+
+        info["color_name"] = color_name
+        info["asset_label"] = _infer_asset_label(asset, name, shape_type)
+        info["aliases"] = deduped_aliases
+        info["task_role"] = _infer_task_role(name, asset, subject_names, target_names)
+        info["goal_roles"] = _summarize_goal_roles(name, conditions)
 
 
 @dataclass(frozen=True)
@@ -107,6 +355,15 @@ class CaPGenerationResult:
     raw_response: str
 
 
+@dataclass(frozen=True)
+class TaskCapability:
+    """High-level affordance family inferred from the YAML goal."""
+
+    family: str
+    supported: bool
+    reason: str
+
+
 def select_cap_profile(robot_cfg: RobotSimConfig) -> CaPProfile:
     """Return the CaP profile for the requested robot."""
 
@@ -118,6 +375,19 @@ def select_cap_profile(robot_cfg: RobotSimConfig) -> CaPProfile:
 - `gripper_close(skill_description=None)` — close the gripper while holding arm pose.
 - `execute_pick_object(object_position, object_name=None, skill_description=None)` — descend to the object's grasp height and grasp it. Always pass the explicit `object_name`.
 - `execute_place_object(place_position, target_name=None, is_table=True, skill_description=None)` — descend to the placement height and release the held object. Always pass `target_name` for named targets; it is required when `is_table=False`.
+- `execute_place_on_target(target_name, skill_description=None)` — place the currently held object onto a named tabletop target such as a marker, zone, anchor, or support surface.
+- `execute_place_in_container(container_name, skill_description=None)` — place the currently held object into a named tray, bin, or container anchor.
+- `execute_stack_on_object(bottom_object_name, skill_description=None)` — place the currently held object on top of another object.
+- `execute_pick_and_place_on_target(object_name, target_name, skill_description=None)` — pick a named object and place it onto a named tabletop target.
+- `execute_pick_and_place_in_container(object_name, container_name, skill_description=None)` — pick a named object and place it into a tray/bin/container target.
+- `execute_pick_and_stack_on_object(object_name, bottom_object_name, skill_description=None)` — pick a named object and stack it onto another named object.
+- `execute_lift_to_pose(target_name, skill_description=None)` — move the currently held object to a named commanded pose while keeping the gripper closed.
+- `execute_pick_and_lift_to_pose(object_name, target_name, skill_description=None)` — pick a named object and lift/hold it at a named commanded pose.
+- `execute_pick_and_place_on_support(object_name, support_name, skill_description=None)` — pick a named object and place it onto a named elevated support surface.
+- `execute_pull_handle_open(handle_name, open_fraction=None, skill_description=None)` — grasp a named handle and pull it along its configured open axis.
+- `execute_pick_and_place_upright(object_name, support_name, skill_description=None)` — pick a named object and place it upright on a named support surface.
+- `execute_pick_and_insert_into_target(object_name, target_name, skill_description=None)` — pick a named object, align it with a named insertion target, and insert it along the target axis.
+- `execute_pick_and_fit_into_slot(object_name, target_name, skill_description=None)` — pick a named object and place it flush into a named slot or cutout target.
 """
     if robot_cfg.name == "franka":
         return CaPProfile(
@@ -172,46 +442,60 @@ def select_cap_profile(robot_cfg: RobotSimConfig) -> CaPProfile:
     raise ValueError(f"Unsupported CaP profile for robot '{robot_cfg.name}'")
 
 
-def is_supported_tabletop_task(task_doc: dict[str, Any]) -> tuple[bool, str]:
-    """Return whether the task fits the current v1 tabletop CaP profile."""
+def assess_task_capability(task_doc: dict[str, Any]) -> TaskCapability:
+    """Infer the task's primary affordance family and current support status."""
 
-    task_info = task_doc.get("task", {})
     goal = task_doc.get("goal", {})
-    haystack = " ".join(
-        str(x)
-        for x in (
-            task_info.get("name", ""),
-            task_info.get("description", ""),
-            goal.get("description", ""),
-        )
-    ).lower()
-
-    for keyword in UNSUPPORTED_KEYWORDS:
-        if keyword in haystack:
-            return False, f"unsupported keyword '{keyword}' in task description"
-
-    # Any non-robot articulated asset typically implies cabinet/drawer/door style tasks.
-    for asset in task_doc.get("assets", []):
-        if asset.get("type") == "articulation" and not _is_primary_robot_asset(asset):
-            return False, f"unsupported articulated asset '{asset.get('name', 'unknown')}'"
-
-    conditions: list[dict[str, Any]] = []
+    conditions = _collect_goal_conditions(task_doc)
     success_criteria = goal.get("success_criteria", {})
-    if isinstance(success_criteria, dict):
-        conditions.extend(success_criteria.get("conditions", []))
-        if "stacking_order" in success_criteria:
-            return True, "supported stacking order"
-    conditions.extend(goal.get("conditions", []))
+    condition_relations = {
+        str(cond.get("type", cond.get("relation", "")) or "").lower()
+        for cond in conditions
+        if isinstance(cond, dict)
+    }
+
+    if isinstance(success_criteria, dict) and success_criteria.get("inside_tray"):
+        if condition_relations & {"on_top_of", "stacked"}:
+            return TaskCapability("container_stack", True, "supported tray/container stacking")
+        return TaskCapability("container_transfer", True, "supported tray/bin placement")
+
+    if "in_slot" in condition_relations:
+        return TaskCapability("slot_fit", True, "supported slot/cutout fitting")
+
+    if any(rel in {"inserted_into", "height_below"} for rel in condition_relations):
+        return TaskCapability("axial_insertion", True, "supported alignment/insertion")
+
+    if "upright" in condition_relations:
+        return TaskCapability("upright_placement", True, "supported upright placement")
+
+    if "position_above" in condition_relations:
+        return TaskCapability("articulated_pull", True, "supported articulated pull")
+
+    if "height_above" in condition_relations:
+        return TaskCapability("lift_hold", True, "supported lift/hold relation")
+
+    if "above" in condition_relations:
+        return TaskCapability("support_surface_transfer", True, "supported elevated support placement")
+
+    if condition_relations & {"on_top_of", "stacked"}:
+        return TaskCapability("stack", True, "supported stacking order")
 
     if not conditions:
-        return True, "no explicit unsupported conditions"
+        return TaskCapability("tabletop_transfer", True, "no explicit unsupported conditions")
 
     for cond in conditions:
-        relation = cond.get("type", cond.get("relation", "")).lower()
+        relation = str(cond.get("type", cond.get("relation", "")) or "").lower()
         if relation and relation not in SUPPORTED_RELATIONS:
-            return False, f"unsupported goal relation '{relation}'"
+            return TaskCapability("unsupported", False, f"unsupported goal relation '{relation}'")
 
-    return True, "supported tabletop relations"
+    return TaskCapability("tabletop_transfer", True, "supported tabletop relations")
+
+
+def is_supported_tabletop_task(task_doc: dict[str, Any]) -> tuple[bool, str]:
+    """Backward-compatible support check used by the generator and tests."""
+
+    capability = assess_task_capability(task_doc)
+    return capability.supported, capability.reason
 
 
 def translate_scene_state(
@@ -227,7 +511,7 @@ def translate_scene_state(
     }
 
     translated: dict[str, dict[str, Any]] = {}
-    goal_targets = _goal_target_names(task_doc)
+    goal_targets = _support_target_names(task_doc)
     names_to_include = set(scene_state.keys()) | goal_targets
 
     for name in names_to_include:
@@ -253,6 +537,18 @@ def translate_scene_state(
         position = list(info.get("position", [0.0, 0.0, 0.0]))
         if len(position) != 3:
             continue
+        asset_position = asset.get("position")
+        if (
+            isinstance(asset_position, (list, tuple))
+            and len(asset_position) == 3
+            and float(position[2]) < -0.2
+            and float(asset_position[2]) >= 0.0
+        ):
+            position = [
+                float(asset_position[0]),
+                float(asset_position[1]),
+                float(asset_position[2]),
+            ]
 
         half_height = _estimate_half_height(asset, position)
         half_extents = _estimate_half_extents(asset, position, half_height)
@@ -270,7 +566,394 @@ def translate_scene_state(
         }
 
     _attach_topdown_affordances(translated)
+    _attach_task_role_metadata(task_doc, translated, assets_by_name)
+    _inject_synthetic_targets(task_doc, translated, assets_by_name)
     return translated
+
+
+def _inject_synthetic_targets(
+    task_doc: dict[str, Any],
+    translated: dict[str, dict[str, Any]],
+    assets_by_name: dict[str, dict[str, Any]],
+) -> None:
+    """Inject synthetic target anchors needed for prompt grounding and verification."""
+
+    goal = task_doc.get("goal", {})
+    success_criteria = task_doc.get("goal", {}).get("success_criteria", {})
+    if isinstance(success_criteria, dict) and success_criteria.get("inside_tray"):
+        tray_center = success_criteria.get("tray_center")
+        if isinstance(tray_center, (list, tuple)) and len(tray_center) == 2:
+            tray_half_extent = float(success_criteria.get("tray_half_extent", 0.0))
+
+            tray_top_z = 0.0
+            for asset_name, asset in assets_by_name.items():
+                if "tray_base" not in asset_name.lower():
+                    continue
+                asset_position = asset.get("position")
+                if not isinstance(asset_position, (list, tuple)) or len(asset_position) != 3:
+                    continue
+                half_height = _estimate_half_height(asset, list(asset_position))
+                tray_top_z = float(asset_position[2] + half_height)
+                break
+
+            translated["tray_anchor"] = {
+                "position": [float(tray_center[0]), float(tray_center[1]), tray_top_z],
+                "gripper_offset": 0.0,
+                "estimated_half_height": 0.0,
+                "estimated_half_extents": [tray_half_extent, tray_half_extent, 0.0],
+                "shape_type": "target_anchor",
+                "quaternion": [1.0, 0.0, 0.0, 0.0],
+                "color_name": None,
+                "asset_label": "tray anchor",
+                "aliases": ["tray anchor", "tray center"],
+                "task_role": "placement_target",
+                "goal_roles": ["target:inside_tray"],
+                "affordances": {},
+            }
+
+    needs_command_pose = any(
+        isinstance(cond, dict) and str(cond.get("target", "")).lower() == "command_pose"
+        for cond in _collect_goal_conditions(task_doc)
+    )
+    command_ranges = goal.get("command_ranges", {})
+    position_ranges = command_ranges.get("position", {}) if isinstance(command_ranges, dict) else {}
+    if needs_command_pose and isinstance(position_ranges, dict):
+        axes = []
+        for axis in ("x", "y", "z"):
+            axis_range = position_ranges.get(axis)
+            if isinstance(axis_range, (list, tuple)) and len(axis_range) == 2:
+                axes.append((float(axis_range[0]) + float(axis_range[1])) * 0.5)
+            else:
+                axes = []
+                break
+        if len(axes) == 3:
+            translated["command_pose"] = {
+                "position": axes,
+                "gripper_offset": 0.0,
+                "estimated_half_height": 0.0,
+                "estimated_half_extents": [0.0, 0.0, 0.0],
+                "shape_type": "target_anchor",
+                "quaternion": [1.0, 0.0, 0.0, 0.0],
+                "color_name": None,
+                "asset_label": "command pose",
+                "aliases": ["command pose", "target pose"],
+                "task_role": "placement_target",
+                "goal_roles": ["target:command_pose"],
+                "affordances": {},
+            }
+
+    conditions = _collect_goal_conditions(task_doc)
+
+    def _quat_to_rotation_matrix(quat_wxyz) -> np.ndarray:
+        quat = np.asarray(quat_wxyz if quat_wxyz is not None else [1.0, 0.0, 0.0, 0.0], dtype=np.float64)
+        w, x, y, z = quat
+        return np.array(
+            [
+                [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+            ],
+            dtype=np.float64,
+        )
+
+    def _rotation_matrix_to_quat(rotation: np.ndarray) -> list[float]:
+        rot = np.asarray(rotation, dtype=np.float64)
+        trace = float(np.trace(rot))
+        if trace > 0.0:
+            s = math.sqrt(trace + 1.0) * 2.0
+            w = 0.25 * s
+            x = (rot[2, 1] - rot[1, 2]) / s
+            y = (rot[0, 2] - rot[2, 0]) / s
+            z = (rot[1, 0] - rot[0, 1]) / s
+        elif rot[0, 0] > rot[1, 1] and rot[0, 0] > rot[2, 2]:
+            s = math.sqrt(1.0 + rot[0, 0] - rot[1, 1] - rot[2, 2]) * 2.0
+            w = (rot[2, 1] - rot[1, 2]) / s
+            x = 0.25 * s
+            y = (rot[0, 1] + rot[1, 0]) / s
+            z = (rot[0, 2] + rot[2, 0]) / s
+        elif rot[1, 1] > rot[2, 2]:
+            s = math.sqrt(1.0 + rot[1, 1] - rot[0, 0] - rot[2, 2]) * 2.0
+            w = (rot[0, 2] - rot[2, 0]) / s
+            x = (rot[0, 1] + rot[1, 0]) / s
+            y = 0.25 * s
+            z = (rot[1, 2] + rot[2, 1]) / s
+        else:
+            s = math.sqrt(1.0 + rot[2, 2] - rot[0, 0] - rot[1, 1]) * 2.0
+            w = (rot[1, 0] - rot[0, 1]) / s
+            x = (rot[0, 2] + rot[2, 0]) / s
+            y = (rot[1, 2] + rot[2, 1]) / s
+            z = 0.25 * s
+        quat = np.array([w, x, y, z], dtype=np.float64)
+        quat /= max(np.linalg.norm(quat), 1e-9)
+        return quat.tolist()
+
+    def _rotate_vector(quat_wxyz, vector) -> np.ndarray:
+        rotation = _quat_to_rotation_matrix(quat_wxyz)
+        return rotation @ np.asarray(vector, dtype=np.float64)
+
+    def _make_anchor(
+        name: str,
+        position: list[float],
+        *,
+        aliases: list[str],
+        asset_label: str,
+        task_role: str,
+        goal_roles: list[str],
+        quaternion: list[float] | None = None,
+        affordances: dict[str, Any] | None = None,
+        extra_fields: dict[str, Any] | None = None,
+    ) -> None:
+        translated[name] = {
+            "position": [float(position[0]), float(position[1]), float(position[2])],
+            "gripper_offset": 0.0,
+            "estimated_half_height": 0.0,
+            "estimated_half_extents": [0.0, 0.0, 0.0],
+            "shape_type": "target_anchor",
+            "quaternion": quaternion or [1.0, 0.0, 0.0, 0.0],
+            "color_name": None,
+            "asset_label": asset_label,
+            "aliases": aliases,
+            "task_role": task_role,
+            "goal_roles": goal_roles,
+            "affordances": affordances or {},
+        }
+        if extra_fields:
+            translated[name].update(extra_fields)
+
+    support_subject_to_alignment_target: dict[str, str] = {}
+    for cond in conditions:
+        if str(cond.get("relation", cond.get("type", "")) or "").lower() == "at_position":
+            subject = cond.get("subject", cond.get("object"))
+            target = cond.get("target")
+            if isinstance(subject, str) and isinstance(target, str):
+                support_subject_to_alignment_target[subject] = target
+
+    for cond in conditions:
+        relation = str(cond.get("relation", cond.get("type", "")) or "").lower()
+        subject = cond.get("subject", cond.get("object"))
+        target = cond.get("target")
+
+        if relation == "above" and isinstance(target, str):
+            anchor_name = f"{target}_top_surface"
+            if anchor_name in translated:
+                continue
+            align_target_name = (
+                support_subject_to_alignment_target.get(subject)
+                if isinstance(subject, str)
+                else None
+            )
+            anchor_pos: list[float] | None = None
+            if isinstance(align_target_name, str) and align_target_name in translated:
+                anchor_pos = list(translated[align_target_name]["position"])
+            else:
+                target_entry = translated.get(target)
+                if isinstance(target_entry, dict):
+                    anchor_pos = list(target_entry["position"])
+                else:
+                    asset = assets_by_name.get(target, {})
+                    asset_position = asset.get("position")
+                    if isinstance(asset_position, (list, tuple)) and len(asset_position) == 3:
+                        top_z = float(asset_position[2])
+                        if isinstance(asset.get("scale"), (list, tuple)) and len(asset["scale"]) == 3:
+                            top_z += float(asset["scale"][2]) / 2.0
+                        anchor_pos = [float(asset_position[0]), float(asset_position[1]), top_z]
+            if anchor_pos is None:
+                continue
+            _make_anchor(
+                anchor_name,
+                anchor_pos,
+                aliases=[f"{target.replace('_', ' ')} top surface", f"{target.replace('_', ' ')} support"],
+                asset_label=f"{target.replace('_', ' ')} top surface",
+                task_role="placement_target",
+                goal_roles=[f"target:{relation}"],
+                extra_fields={
+                    "support_asset_name": target,
+                    "support_alignment_target": align_target_name,
+                    "support_top_z": float(anchor_pos[2]),
+                },
+            )
+
+        if relation == "position_above":
+            cabinet_asset = next(
+                (
+                    asset for asset in assets_by_name.values()
+                    if asset.get("type") == "articulation" and isinstance(asset.get("handle"), dict)
+                ),
+                None,
+            )
+            if not cabinet_asset:
+                continue
+            handle_cfg = cabinet_asset.get("handle", {})
+            handle_name = handle_cfg.get("name")
+            cabinet_pos = cabinet_asset.get("position")
+            if (
+                not isinstance(handle_name, str)
+                or not isinstance(cabinet_pos, (list, tuple))
+                or len(cabinet_pos) != 3
+            ):
+                continue
+            cabinet_quat = cabinet_asset.get("rotation", [1.0, 0.0, 0.0, 0.0])
+            offset = handle_cfg.get("offset_position", [0.0, 0.0, 0.0])
+            handle_pos = np.asarray(cabinet_pos, dtype=np.float64) + _rotate_vector(cabinet_quat, offset)
+            cabinet_rot = _quat_to_rotation_matrix(cabinet_quat)
+            pull_axis = cabinet_rot @ np.array([1.0, 0.0, 0.0], dtype=np.float64)
+            handle_rot_local = _quat_to_rotation_matrix(handle_cfg.get("offset_rotation", [1.0, 0.0, 0.0, 0.0]))
+            handle_rot_world = cabinet_rot @ handle_rot_local
+            max_open = 0.0
+            for goal_cond in conditions:
+                if goal_cond.get("subject") == subject:
+                    max_open = max(max_open, float(goal_cond.get("value", 0.0) or 0.0))
+            _make_anchor(
+                handle_name,
+                handle_pos.tolist(),
+                aliases=[handle_name.replace("_", " "), "drawer handle", "top drawer handle"],
+                asset_label="drawer handle",
+                task_role="handle_target",
+                goal_roles=[f"target:{relation}"],
+                quaternion=_rotation_matrix_to_quat(handle_rot_world),
+                extra_fields={
+                    "target_rotation_world": handle_rot_world.tolist(),
+                    "pull_axis_world": (pull_axis / max(np.linalg.norm(pull_axis), 1e-9)).tolist(),
+                    "pull_distance": max(max_open, 0.25),
+                },
+            )
+
+        if relation in {"inserted_into", "height_below"} and isinstance(target, str) and target in translated:
+            entry = translated[target]
+            target_pos = np.asarray(entry["position"], dtype=np.float64)
+            extra_fields: dict[str, Any] = {}
+            if target == "hole":
+                hole_asset = assets_by_name.get(target, {})
+                hole_asset_pos = hole_asset.get("position")
+                if isinstance(hole_asset_pos, (list, tuple)) and len(hole_asset_pos) == 3:
+                    target_pos = np.asarray(hole_asset_pos, dtype=np.float64)
+                    entry["position"] = target_pos.tolist()
+                extra_fields = {
+                    "entry_position": [float(target_pos[0]), float(target_pos[1]), float(target_pos[2] + 0.05)],
+                    "target_position": [float(target_pos[0]), float(target_pos[1]), float(target_pos[2] - 0.02)],
+                    "insertion_axis_world": [0.0, 0.0, -1.0],
+                    "insertion_depth": 0.05,
+                    "required_depth": 0.02,
+                }
+            elif target == "box_wall_back":
+                box_center_x = None
+                if "box_wall_top" in assets_by_name:
+                    asset = assets_by_name["box_wall_top"]
+                    asset_pos = asset.get("position")
+                    scale = asset.get("scale")
+                    if (
+                        isinstance(asset_pos, (list, tuple))
+                        and len(asset_pos) == 3
+                        and isinstance(scale, (list, tuple))
+                        and len(scale) == 3
+                    ):
+                        box_center_x = float(asset_pos[0])
+                        front_x = box_center_x - float(scale[0]) / 2.0
+                    else:
+                        front_x = float(target_pos[0] - 0.13)
+                else:
+                    front_x = float(target_pos[0] - 0.13)
+                extra_fields = {
+                    "entry_position": [front_x, float(target_pos[1]), float(target_pos[2])],
+                    "target_position": target_pos.tolist(),
+                    "insertion_axis_world": [1.0, 0.0, 0.0],
+                    "insertion_depth": float(target_pos[0] - front_x),
+                    "required_depth": float(target_pos[0] - front_x) * 0.7,
+                }
+            elif target == "receptacle_back":
+                front_x = float(target_pos[0] - 0.010)
+                if "receptacle_frame_left" in assets_by_name:
+                    frame_pos = assets_by_name["receptacle_frame_left"].get("position")
+                    if isinstance(frame_pos, (list, tuple)) and len(frame_pos) == 3:
+                        front_x = float(frame_pos[0])
+                extra_fields = {
+                    "entry_position": [front_x, float(target_pos[1]), float(target_pos[2])],
+                    "target_position": target_pos.tolist(),
+                    "insertion_axis_world": [1.0, 0.0, 0.0],
+                    "insertion_depth": float(target_pos[0] - front_x),
+                    "required_depth": max(float(target_pos[0] - front_x) * 0.8, 0.005),
+                }
+            if extra_fields:
+                entry.update(extra_fields)
+            if (
+                isinstance(subject, str)
+                and subject == "peg_head"
+                and "peg_tail" in translated
+                and "peg" not in translated
+            ):
+                head_pos = np.asarray(translated["peg_head"]["position"], dtype=np.float64)
+                tail_pos = np.asarray(translated["peg_tail"]["position"], dtype=np.float64)
+                peg_mid = 0.5 * (head_pos + tail_pos)
+                peg_alias = dict(translated["peg_tail"])
+                peg_alias["position"] = peg_mid.tolist()
+                peg_alias["asset_label"] = "peg"
+                peg_alias["aliases"] = list(dict.fromkeys((peg_alias.get("aliases") or []) + ["peg"]))
+                peg_alias["grasp_object_name"] = "peg_tail"
+                peg_alias["goal_roles"] = [f"subject:{relation}"]
+                translated["peg"] = peg_alias
+
+        if relation == "in_slot":
+            dynamic_shapes = [
+                name
+                for name, asset in assets_by_name.items()
+                if name.startswith("shape_") and asset.get("type") == "rigid" and name in translated
+            ]
+            if isinstance(subject, str) and subject not in translated and len(dynamic_shapes) == 1:
+                source_name = dynamic_shapes[0]
+                source_entry = dict(translated[source_name])
+                source_entry["aliases"] = list(dict.fromkeys((source_entry.get("aliases") or []) + ["shape to place"]))
+                source_entry["asset_label"] = "shape to place"
+                source_entry["grasp_object_name"] = source_name
+                source_entry["goal_roles"] = [f"subject:{relation}"]
+                translated[subject] = source_entry
+
+                source_asset = assets_by_name.get(source_name, {})
+                tray_asset = assets_by_name.get("kit_tray", {})
+                tray_pos = np.asarray(tray_asset.get("position", [0.0, 0.0, 0.0]), dtype=np.float64)
+                tray_rot = _quat_to_rotation_matrix(tray_asset.get("rotation", [1.0, 0.0, 0.0, 0.0]))
+                local_slot = source_asset.get("slot_position_local", [0.0, 0.0, 0.0])
+                slot_world = tray_pos + tray_rot @ np.asarray(local_slot, dtype=np.float64)
+                slot_yaw = float(source_asset.get("slot_rotation_z", 0.0))
+                _make_anchor(
+                    str(target),
+                    slot_world.tolist(),
+                    aliases=["matching cutout", "matching slot"],
+                    asset_label="matching cutout",
+                    task_role="insertion_target",
+                    goal_roles=[f"target:{relation}"],
+                    extra_fields={
+                        "slot_position": slot_world.tolist(),
+                        "slot_yaw_deg": math.degrees(slot_yaw),
+                        "support_top_z": float(tray_pos[2]),
+                    },
+                )
+
+        if relation == "upright" and isinstance(subject, str) and subject in translated:
+            translated[subject]["upright_axis_local"] = [1.0, 0.0, 0.0]
+            translated[subject]["upright_target_rotation_world"] = (
+                np.array(
+                    [
+                        [0.0, 0.0, 1.0],
+                        [0.0, -1.0, 0.0],
+                        [1.0, 0.0, 0.0],
+                    ],
+                    dtype=np.float64,
+                )
+            ).tolist()
+
+    if "table" in _goal_target_names(task_doc) and "table_surface" not in translated:
+        table_asset = assets_by_name.get("table", {})
+        table_pos = table_asset.get("position")
+        if isinstance(table_pos, (list, tuple)) and len(table_pos) == 3:
+            _make_anchor(
+                "table_surface",
+                [float(table_pos[0]), float(table_pos[1]), 0.0],
+                aliases=["table surface", "table top"],
+                asset_label="table surface",
+                task_role="support_surface",
+                goal_roles=["target:table"],
+                extra_fields={"support_top_z": 0.0},
+            )
 
 
 def _footprint_radius_xy(info: dict[str, Any]) -> float:
@@ -365,6 +1048,87 @@ def _format_affordance_summary(translated_positions: dict[str, dict[str, Any]]) 
     return "\n".join(lines) if lines else "- No affordance metadata available."
 
 
+def _format_task_role_summary(translated_positions: dict[str, dict[str, Any]]) -> str:
+    """Format task-role metadata as compact prompt text."""
+
+    lines: list[str] = []
+    for name in sorted(translated_positions):
+        info = translated_positions[name]
+        aliases = ", ".join(info.get("aliases") or []) or "none"
+        goal_roles = ", ".join(info.get("goal_roles") or []) or "none"
+        color_name = info.get("color_name") or "unknown"
+        lines.append(
+            "- "
+            f"{name}: task_role={info.get('task_role', 'unknown')}, "
+            f"asset_label={info.get('asset_label', name)}, "
+            f"color_name={color_name}, "
+            f"aliases={aliases}, "
+            f"goal_roles={goal_roles}"
+        )
+    return "\n".join(lines) if lines else "- No task-role metadata available."
+
+
+def _format_goal_condition_lines(task_doc: dict[str, Any]) -> str:
+    """Render a compact goal-condition summary for the prompt."""
+
+    lines: list[str] = []
+    for cond in _collect_goal_conditions(task_doc):
+        subject = cond.get("subject", cond.get("object", "?"))
+        target = cond.get("target")
+        relation = str(cond.get("relation", cond.get("type", "")) or "unknown")
+        tolerance = cond.get("tolerance")
+        value = cond.get("value", cond.get("height"))
+        if target is not None:
+            detail = f"{subject} {relation} {target}"
+        elif value is not None:
+            detail = f"{subject} {relation} {value}"
+        else:
+            detail = f"{subject} {relation}"
+        if tolerance is not None:
+            detail += f" (tol={tolerance})"
+        lines.append(f"- {detail}")
+
+    success_criteria = task_doc.get("goal", {}).get("success_criteria", {})
+    if isinstance(success_criteria, dict):
+        extras = []
+        for key in ("xy_threshold", "height_diff", "height_threshold", "inside_tray", "tray_center", "tray_half_extent"):
+            if key in success_criteria:
+                extras.append(f"{key}={success_criteria[key]}")
+        if extras:
+            lines.append("- success_criteria: " + ", ".join(extras))
+
+    return "\n".join(lines) if lines else "- No explicit goal conditions."
+
+
+def _build_task_brief(
+    task_doc: dict[str, Any],
+    translated_positions: dict[str, dict[str, Any]],
+    task_description: str,
+) -> str:
+    """Build a structured task brief from the YAML goal and translated scene."""
+
+    task_info = task_doc.get("task", {})
+    goal = task_doc.get("goal", {})
+    ordered_objects = _infer_ordered_objects(task_description, translated_positions)
+    ordered_text = ", ".join(ordered_objects) if ordered_objects else "none"
+
+    subjects = sorted(_goal_subject_names(task_doc))
+    targets = sorted(_goal_target_names(task_doc))
+
+    return "\n".join(
+        [
+            f"- Task name: {task_info.get('name', 'UnknownTask')}",
+            f"- Task description: {task_description}",
+            f"- Goal description: {goal.get('description', '')}",
+            "- Treat the YAML goal mappings and task-role metadata below as authoritative.",
+            "- Do not invent alternative object-color remaps when `color_name`, `asset_label`, or aliases already identify the object.",
+            f"- Goal subjects: {', '.join(subjects) if subjects else 'none'}",
+            f"- Goal targets: {', '.join(targets) if targets else 'none'}",
+            f"- Ordered object mentions from the task text: {ordered_text}",
+        ]
+    )
+
+
 def _estimate_half_height(asset: dict[str, Any], position: list[float]) -> float:
     """Estimate half-height for tabletop objects from task metadata."""
 
@@ -375,9 +1139,14 @@ def _estimate_half_height(asset: dict[str, Any], position: list[float]) -> float
     if asset.get("type") == "primitive" and isinstance(scale, (list, tuple)) and len(scale) == 3:
         return max(float(scale[2]) / 2.0, 0.001)
 
+    position_z = float(position[2])
+    asset_position = asset.get("position")
+    if position_z < 0.0 and isinstance(asset_position, (list, tuple)) and len(asset_position) == 3:
+        position_z = float(asset_position[2])
+
     # For current supported tabletop tasks, rigid objects start on the table,
     # so center_z approximates half-height.
-    return max(float(position[2]), 0.001)
+    return max(position_z, 0.001)
 
 
 def _estimate_half_extents(
@@ -387,21 +1156,29 @@ def _estimate_half_extents(
 ) -> list[float]:
     """Estimate coarse half extents for object-relative grasp planning."""
 
+    primitive = str(asset.get("primitive", "")).lower()
     scale = asset.get("scale")
-    if isinstance(scale, (list, tuple)) and len(scale) == 3:
+    if primitive and isinstance(scale, (list, tuple)) and len(scale) == 3:
         return [
             max(float(scale[0]) / 2.0, 0.001),
             max(float(scale[1]) / 2.0, 0.001),
             max(float(scale[2]) / 2.0, 0.001),
         ]
 
-    primitive = str(asset.get("primitive", "")).lower()
     if primitive == "sphere":
         radius = max(float(half_height), 0.001)
         return [radius, radius, radius]
 
-    radius_guess = max(min(float(position[2]), float(half_height)), 0.001)
-    return [radius_guess, radius_guess, max(float(half_height), 0.001)]
+    shape_type = _infer_shape_type(asset)
+    hz = max(float(half_height), 0.001)
+    if shape_type in {"cube", "gear", "unknown"}:
+        return [hz, hz, hz]
+    if shape_type in {"cylinder", "can", "bottle", "mug"}:
+        radius = max(min(hz, 0.045), 0.012)
+        return [radius, radius, hz]
+    if shape_type == "box":
+        return [max(min(hz * 0.6, 0.05), 0.015), max(min(hz * 0.4, 0.04), 0.012), hz]
+    return [hz, hz, hz]
 
 
 def _infer_shape_type(asset: dict[str, Any]) -> str:
@@ -442,15 +1219,20 @@ class SimCaPGenerator:
     ) -> CaPGenerationResult:
         """Generate forward execution code and translated scene positions."""
 
-        supported, reason = is_supported_tabletop_task(task_doc)
-        if not supported:
-            raise ValueError(f"Task is outside the current CaP tabletop profile: {reason}")
+        capability = assess_task_capability(task_doc)
+        if not capability.supported:
+            raise ValueError(f"Task is outside the current CaP capability profile: {capability.reason}")
 
         translated_positions = translate_scene_state(task_doc, scene_state)
         if not translated_positions:
             raise ValueError("No manipulable rigid/primitive objects found for CaP code generation")
 
-        user_prompt = self._build_user_prompt(task_doc, translated_positions, task_description)
+        user_prompt = self._build_user_prompt(
+            task_doc,
+            translated_positions,
+            task_description,
+            capability_family=capability.family,
+        )
         last_error: ValueError | None = None
         for _attempt_idx in range(self.retry_max):
             raw_response = self.llm.generate(
@@ -492,6 +1274,7 @@ class SimCaPGenerator:
         task_doc: dict[str, Any],
         translated_positions: dict[str, dict[str, Any]],
         task_description: str | None = None,
+        capability_family: str | None = None,
     ) -> str:
         """Build the user prompt with task, robot, and scene context."""
 
@@ -502,9 +1285,13 @@ class SimCaPGenerator:
 
         goal_text = json.dumps(goal, indent=2, ensure_ascii=False)
         positions_text = pformat(translated_positions, sort_dicts=True, width=100)
+        task_brief = _build_task_brief(task_doc, translated_positions, task_description)
+        goal_condition_text = _format_goal_condition_lines(task_doc)
+        role_summary = _format_task_role_summary(translated_positions)
         affordance_summary = _format_affordance_summary(translated_positions)
-        example = self._build_code_example()
-        execution_hints = self._build_execution_hints(task_description, task_doc, translated_positions)
+        family = capability_family or assess_task_capability(task_doc).family
+        example = self._build_code_example(family=family)
+        execution_hints = self._build_execution_hints(task_description, task_doc, translated_positions, family=family)
 
         return f"""
 ### Task
@@ -514,6 +1301,12 @@ class SimCaPGenerator:
 ```json
 {goal_text}
 ```
+
+### Structured Task Brief
+{task_brief}
+
+### Goal Condition Summary
+{goal_condition_text}
 
 ### Robot
 - Name: {self.robot_cfg.full_name}
@@ -525,7 +1318,8 @@ class SimCaPGenerator:
 ### Scene Positions
 The dictionary below is available at runtime as `positions`.
 Each object's `position` is `[x, y, z_top]` in world frame meters.
-Each object may also provide `quaternion`, `shape_type`, `estimated_half_extents`, and `affordances`.
+Each object may also provide `quaternion`, `shape_type`, `estimated_half_extents`, `color_name`,
+`asset_label`, `aliases`, `task_role`, `goal_roles`, and `affordances`.
 `quaternion` is object local-frame orientation as `[w, x, y, z]`.
 For OpenArm, treat the affordance metadata as geometry facts about crowding and top-down feasibility.
 
@@ -533,11 +1327,17 @@ For OpenArm, treat the affordance metadata as geometry facts about crowding and 
 positions = {positions_text}
 ```
 
+### Task-Role Summary
+{role_summary}
+
 ### Affordance Summary
 {affordance_summary}
 
 ### Execution Hints
 {execution_hints}
+
+### Inferred Capability Family
+- `{family}`
 
 ### Available Skill API
 {self.profile.api_doc}
@@ -547,15 +1347,17 @@ positions = {positions_text}
 2. Create the skill object inside `execute_task()`.
 3. Always call `skills.connect()` before execution.
 4. Start with `skills.{self.profile.ready_method}(skill_description="...")`.
-5. End with `skills.{self.profile.closing_method}(skill_description="...")`.
-6. Prefer `execute_pick_object()` and `execute_place_object()` as the primary manipulation primitives.
+5. End with `skills.{self.profile.closing_method}(skill_description="...")` unless the YAML goal requires holding an object at a commanded pose (for example a lift task with `height_above`).
+6. Prefer the highest-level affordance method that matches the task family before falling back to raw pick/place calls.
 7. Do not add extra approach/lift/retreat `move_to_position()` calls unless the task explicitly needs an intermediate waypoint.
 8. For stacking or placing on another object, call `execute_place_object(..., is_table=False, ...)`.
 9. For placing on a table target marker, tray, bin, zone, or absolute tabletop location, call `execute_place_object(..., is_table=True, ...)`.
 10. Every skill call must include a unique `skill_description`.
 11. Always pass the explicit `object_name` to `execute_pick_object(...)`.
 12. Always pass the explicit `target_name` when placing relative to a named object or support surface. It is mandatory for `is_table=False`.
-13. Use only Python code. No comments explaining the answer outside the code itself.
+13. The YAML goal mappings are authoritative. Use `subject -> target` mappings exactly as given.
+14. If an object already has `color_name`, `asset_label`, or aliases, do not remap it to a different color or role.
+15. Use only Python code. No comments explaining the answer outside the code itself.
 
 ### Example Skeleton
 {example}
@@ -568,13 +1370,67 @@ Generate the complete executable Python file now.
         task_description: str,
         task_doc: dict[str, Any],
         translated_positions: dict[str, dict[str, Any]],
+        family: str | None = None,
     ) -> str:
         """Build task-specific hints to keep generated code on-policy."""
 
         goal = task_doc.get("goal", {})
+        conditions = _collect_goal_conditions(task_doc)
+        family = family or assess_task_capability(task_doc).family
         hints: list[str] = [
-            "- Finish the full task. Do not stop after the first successful pick-and-place."
+            "- Finish the full task. Do not stop after the first successful pick-and-place.",
+            "- Treat the YAML goal conditions as the source of truth if the free-form description is ambiguous.",
         ]
+        if family == "stack":
+            hints.append(
+                "- Use `execute_pick_and_stack_on_object(...)` for stack steps whenever possible."
+            )
+        elif family == "support_surface_transfer":
+            hints.append(
+                "- Use `execute_pick_and_place_on_support(...)` for elevated support-surface placement tasks."
+            )
+        elif family == "articulated_pull":
+            hints.append(
+                "- Use `execute_pull_handle_open(...)` with the named handle target instead of inventing manual waypoint code."
+            )
+        elif family == "upright_placement":
+            hints.append(
+                "- Use `execute_pick_and_place_upright(...)` so the runtime handles the upright placement controller."
+            )
+        elif family == "axial_insertion":
+            hints.append(
+                "- Use `execute_pick_and_insert_into_target(...)` so the runtime handles pre-alignment and guarded insertion."
+            )
+        elif family == "slot_fit":
+            hints.append(
+                "- Use `execute_pick_and_fit_into_slot(...)` for shape-to-cutout or slot-fitting tasks."
+            )
+        elif family == "container_stack":
+            hints.append(
+                "- Use `execute_pick_and_place_in_container(...)` to place the base object into the tray/container, then `execute_pick_and_stack_on_object(...)` for the remaining stack steps."
+            )
+        elif family == "container_transfer":
+            hints.append(
+                "- Use `execute_pick_and_place_in_container(...)` for tray/bin/container placement tasks whenever possible."
+            )
+        elif family == "lift_hold":
+            hints.append(
+                "- Use `execute_pick_and_lift_to_pose(..., target_name=\"command_pose\")` for commanded lift tasks."
+            )
+        else:
+            hints.append(
+                "- Use `execute_pick_and_place_on_target(...)` for simple marker/zone/support placement tasks whenever possible."
+            )
+        if conditions:
+            ordered_subjects = [
+                str(cond.get("subject", cond.get("object")))
+                for cond in conditions
+                if isinstance(cond, dict) and cond.get("subject", cond.get("object"))
+            ]
+            if ordered_subjects:
+                hints.append(
+                    "- Execute the goal conditions in the same order they are listed unless the task text explicitly requires a different order."
+                )
 
         ordered_objects = _infer_ordered_objects(task_description, translated_positions)
         description_lower = task_description.lower()
@@ -590,8 +1446,11 @@ Generate the complete executable Python file now.
                 name for name in translated_positions
                 if name not in ordered_objects and "tray" in name.lower()
             ]
-            if "inside a tray" in description_lower or tray_targets:
-                base_target = tray_targets[0] if tray_targets else "the tray base"
+            if "inside a tray" in description_lower or "tray_anchor" in translated_positions or tray_targets:
+                if "tray_anchor" in translated_positions:
+                    base_target = "tray_anchor"
+                else:
+                    base_target = tray_targets[0] if tray_targets else "the tray base"
                 hints.append(
                     f"- Move the first listed object into `{base_target}` to form the base, "
                     "then stack the remaining objects on top of it."
@@ -601,8 +1460,6 @@ Generate the complete executable Python file now.
                     f"- Treat `{ordered_objects[0]}` as the base object already on the table. "
                     "Do not pick or relocate it unless the task explicitly requires a new base location."
                 )
-
-        conditions = goal.get("conditions", [])
         if conditions:
             goal_mappings = []
             for cond in conditions:
@@ -617,10 +1474,24 @@ Generate the complete executable Python file now.
                     goal_mappings.append(f"`{subject}` on `{target}`")
             if goal_mappings:
                 hints.append("- Respect these exact goal mappings: " + ", ".join(goal_mappings) + ".")
+                hints.append(
+                    "- When an object name has matching aliases or color metadata, use that object directly instead of reassigning roles."
+                )
 
         if not conditions and len(ordered_objects) > 1:
             hints.append(
                 "- Manipulate each named object in the order implied by the task description."
+            )
+
+        if any(
+            str(cond.get("relation", cond.get("type", ""))).lower() == "height_above"
+            for cond in conditions
+        ):
+            hints.append(
+                "- For lift goals, keep the gripper closed at the commanded pose; do not place or release the object."
+            )
+            hints.append(
+                "- Do not call `execute_place_object()` or reopen the gripper for a lift task unless the YAML explicitly asks for a release."
             )
 
         if self.robot_cfg.name == "openarm":
@@ -636,21 +1507,70 @@ Generate the complete executable Python file now.
 
         return "\n".join(hints)
 
-    def _build_code_example(self) -> str:
+    def _build_code_example(self, family: str | None = None) -> str:
         """Build a short API-faithful example for the current embodiment."""
 
         ready_desc = "move to the ready pose before starting the task"
         close_desc = "return to the ready pose after completing the task"
-        pick_call = """        skills.execute_pick_object(
-            pick_pos,
+        family = family or "tabletop_transfer"
+        if family == "stack":
+            action_call = """        skills.execute_pick_and_stack_on_object(
             object_name=\"object_name\",
-            skill_description=\"pick object_name from the tabletop\",
+            bottom_object_name=\"target_name\",
+            skill_description=\"stack object_name on target_name\",
         )"""
-        place_call = """        skills.execute_place_object(
-            target_pos,
+        elif family == "support_surface_transfer":
+            action_call = """        skills.execute_pick_and_place_on_support(
+            object_name=\"object_name\",
+            support_name=\"target_name\",
+            skill_description=\"pick object_name and place it on the named support surface\",
+        )"""
+        elif family == "articulated_pull":
+            action_call = """        skills.execute_pull_handle_open(
+            handle_name=\"target_name\",
+            skill_description=\"grasp the named handle and pull it open\",
+        )"""
+        elif family == "upright_placement":
+            action_call = """        skills.execute_pick_and_place_upright(
+            object_name=\"object_name\",
+            support_name=\"target_name\",
+            skill_description=\"pick object_name and place it upright on target_name\",
+        )"""
+        elif family == "axial_insertion":
+            action_call = """        skills.execute_pick_and_insert_into_target(
+            object_name=\"object_name\",
             target_name=\"target_name\",
-            is_table=False,
-            skill_description=\"place object_name onto target_name\",
+            skill_description=\"pick object_name and insert it into target_name\",
+        )"""
+        elif family == "slot_fit":
+            action_call = """        skills.execute_pick_and_fit_into_slot(
+            object_name=\"object_name\",
+            target_name=\"target_name\",
+            skill_description=\"pick object_name and fit it into target_name\",
+        )"""
+        elif family == "container_transfer":
+            action_call = """        skills.execute_pick_and_place_in_container(
+            object_name=\"object_name\",
+            container_name=\"target_name\",
+            skill_description=\"place object_name into the target container\",
+        )"""
+        elif family == "container_stack":
+            action_call = """        skills.execute_pick_and_place_in_container(
+            object_name=\"object_name\",
+            container_name=\"target_name\",
+            skill_description=\"place the base object into the target container\",
+        )"""
+        elif family == "lift_hold":
+            action_call = """        skills.execute_pick_and_lift_to_pose(
+            object_name=\"object_name\",
+            target_name=\"target_name\",
+            skill_description=\"pick object_name and hold it at target_name\",
+        )"""
+        else:
+            action_call = """        skills.execute_pick_and_place_on_target(
+            object_name=\"object_name\",
+            target_name=\"target_name\",
+            skill_description=\"pick object_name and place it on target_name\",
         )"""
         return f"""from {self.profile.module_name} import {self.profile.class_name}
 
@@ -666,8 +1586,7 @@ def execute_task():
         target_obj = positions["target_name"]
         target_pos = target_obj["position"]
 
-{pick_call}
-{place_call}
+{action_call}
         skills.{self.profile.closing_method}(skill_description="{close_desc}")
     finally:
         skills.disconnect()

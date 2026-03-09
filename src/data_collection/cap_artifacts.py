@@ -93,3 +93,24 @@ def save_judge_images(
         Image.fromarray(image).save(out_path)
         saved_paths.append(str(out_path))
     return saved_paths
+
+
+def write_json_artifact(path: str | Path, payload: dict[str, Any] | list[Any]) -> str:
+    """Persist a JSON artifact and return its path."""
+
+    out_path = Path(path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return str(out_path)
+
+
+def write_text_artifact(path: str | Path, text: str) -> str:
+    """Persist a plain-text artifact and return its path."""
+
+    out_path = Path(path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(text, encoding="utf-8")
+    return str(out_path)

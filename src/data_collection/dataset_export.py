@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 ADC_COMPATIBLE_SCHEMA = "adc_compatible"
 CANONICAL_TRAINING_SCHEMA = "canonical_training"
 SUPPORTED_EXPORT_SCHEMAS = (ADC_COMPATIBLE_SCHEMA, CANONICAL_TRAINING_SCHEMA)
-SCHEMA_VERSION = "2026-03-08"
+SCHEMA_VERSION = "2026-03-09"
 
 
 @dataclass(frozen=True)
@@ -145,6 +145,17 @@ def export_sim_raw_dataset(
         actions = np.load(ep_dir / "actions.npy").astype(np.float32)
         tcp_world = _load_pose_array(ep_dir / "tcp_world_xyzrpy.npy", length=states.shape[0])
         tcp_robot = _load_pose_array(ep_dir / "tcp_robot_xyzrpy.npy", length=states.shape[0])
+        gripper_state_native = _load_gripper_state_array(
+            ep_dir / "gripper_state.npy",
+            length=states.shape[0],
+            fallback_joint_matrix=states,
+            arm_dofs=robot_cfg.arm_dofs,
+        )
+        goal_robot_dense = (
+            _load_pose_array(ep_dir / "goal_robot_xyzrpy.npy", length=states.shape[0])
+            if (ep_dir / "goal_robot_xyzrpy.npy").exists()
+            else None
+        )
 
         with open(ep_dir / "skills.json") as f:
             skills = json.load(f)
@@ -168,7 +179,11 @@ def export_sim_raw_dataset(
                 total_dofs=len(joint_names),
             )
             goal_world[t] = _as_pose_array(skill.get("goal_world_xyzrpy"))
-            goal_robot[t] = _as_pose_array(skill.get("goal_robot_xyzrpy"))
+            goal_robot[t] = (
+                goal_robot_dense[t]
+                if goal_robot_dense is not None
+                else _as_pose_array(skill.get("goal_robot_xyzrpy"))
+            )
             goal_gripper_native[t, 0] = float(skill.get("goal_gripper", 0.0))
 
         np.save(export_ep_dir / "observation.state.npy", normalize_joint_matrix(states, norm_spec))
@@ -181,6 +196,10 @@ def export_sim_raw_dataset(
             export_ep_dir / "skill.goal_position.gripper.npy",
             normalize_gripper_array(goal_gripper_native, norm_spec),
         )
+        np.save(
+            export_ep_dir / "observation.gripper_state.npy",
+            normalize_gripper_array(gripper_state_native, norm_spec),
+        )
         np.save(export_ep_dir / "skill.progress.npy", progress)
         _write_json(export_ep_dir / "skill.natural_language.json", labels)
         _write_json(export_ep_dir / "skill.type.json", types)
@@ -189,6 +208,7 @@ def export_sim_raw_dataset(
             legacy_world = compose_adc_legacy_world_xyzrpy(goal_world, goal_robot)
             np.save(export_ep_dir / "skill.goal_position.world_xyzrpy.npy", legacy_world)
             np.save(export_ep_dir / "skill.goal_position.robot_xyzrpy.npy", goal_robot)
+            np.save(export_ep_dir / "observation.tcp.robot_xyzrpy.npy", tcp_robot)
         else:
             np.save(export_ep_dir / "observation.tcp.world_xyzrpy.npy", tcp_world)
             np.save(export_ep_dir / "observation.tcp.robot_xyzrpy.npy", tcp_robot)
@@ -276,6 +296,7 @@ def export_adc_raw_dataset(
             [[_coerce_scalar(row.get("skill.goal_position.gripper"))] for row in ep_rows],
             dtype=np.float32,
         )
+        gripper_state = obs_state[:, ctx.arm_dofs : ctx.arm_dofs + 1].astype(np.float32, copy=False)
         progress = np.asarray(
             [[_coerce_scalar(row.get("skill.progress"))] for row in ep_rows],
             dtype=np.float32,
@@ -287,10 +308,14 @@ def export_adc_raw_dataset(
         np.save(export_ep_dir / "action.npy", action)
         np.save(export_ep_dir / "skill.goal_position.joint.npy", goal_joint)
         np.save(export_ep_dir / "skill.goal_position.gripper.npy", goal_gripper)
+        np.save(export_ep_dir / "observation.gripper_state.npy", gripper_state)
         np.save(export_ep_dir / "skill.progress.npy", progress)
         _write_json(export_ep_dir / "skill.natural_language.json", labels)
         _write_json(export_ep_dir / "skill.type.json", types)
 
+        tcp_robot = np.stack(
+            [compute_adc_tcp_robot_xyzrpy(ctx, row["observation.state"]) for row in ep_rows]
+        ).astype(np.float32)
         if schema == ADC_COMPATIBLE_SCHEMA:
             goal_world = np.stack(
                 [_coerce_pose_array_from_row(row.get("skill.goal_position.world_xyzrpy")) for row in ep_rows]
@@ -300,12 +325,10 @@ def export_adc_raw_dataset(
             ).astype(np.float32)
             np.save(export_ep_dir / "skill.goal_position.world_xyzrpy.npy", goal_world)
             np.save(export_ep_dir / "skill.goal_position.robot_xyzrpy.npy", goal_robot)
+            np.save(export_ep_dir / "observation.tcp.robot_xyzrpy.npy", tcp_robot)
         else:
             tcp_world = np.stack(
                 [compute_adc_tcp_world_xyzrpy(ctx, row["observation.state"]) for row in ep_rows]
-            ).astype(np.float32)
-            tcp_robot = np.stack(
-                [compute_adc_tcp_robot_xyzrpy(ctx, row["observation.state"]) for row in ep_rows]
             ).astype(np.float32)
             goal_tcp_world = np.stack(
                 [compute_adc_tcp_world_xyzrpy(ctx, row["skill.goal_position.joint"]) for row in ep_rows]
@@ -471,6 +494,8 @@ def build_export_manifest(
         field_semantics = {
             "observation.state": "normalized full controllable joint state in ADC-compatible range [-100, 100]",
             "action": "normalized full controllable joint target in ADC-compatible range [-100, 100]",
+            "observation.gripper_state": "normalized 1D gripper state in ADC-compatible range [-100, 100]",
+            "observation.tcp.robot_xyzrpy": "current TCP pose in robot-base frame [x,y,z,roll,pitch,yaw]",
             "skill.goal_position.joint": "normalized full controllable joint goal in ADC-compatible range [-100, 100]",
             "skill.goal_position.gripper": "normalized scalar gripper goal in ADC-compatible range [-100, 100]",
             "skill.goal_position.world_xyzrpy": "ADC legacy world target semantics (world xyz + robot-frame rpy)",
@@ -480,6 +505,7 @@ def build_export_manifest(
         field_semantics = {
             "observation.state": "normalized full controllable joint state in range [-100, 100]",
             "action": "normalized full controllable joint target in range [-100, 100]",
+            "observation.gripper_state": "normalized 1D gripper state in range [-100, 100]",
             "skill.goal_position.joint": "normalized full controllable joint goal in range [-100, 100]",
             "skill.goal_position.gripper": "normalized scalar gripper goal in range [-100, 100]",
             "observation.tcp.world_xyzrpy": "current TCP pose in world frame [x,y,z,roll,pitch,yaw]",
@@ -501,6 +527,7 @@ def build_export_manifest(
         "arm_joint_names": list(robot_cfg.arm_joint_names),
         "finger_joint_names": list(robot_cfg.finger_joint_names),
         "gripper_type": robot_cfg.gripper_type,
+        "gripper_state_dim": 1,
         "joint_shape_policy": "full_controllable_dofs",
         "normalization_spec": {
             "range": [-100.0, 100.0],
@@ -523,7 +550,10 @@ def build_export_manifest(
         "robot_base_definition": "articulation root for sim_raw, calibrated base_link for adc_raw",
         "tcp_definition": "ee_frame_tcp if present, else ee_frame_body + offset_position",
         "gripper_scalar_definition": (
-            "Normalized scalar open/close target exported separately from the full-DOF joint vector"
+            "Normalized 1D primary gripper command coordinate exported separately from the full-DOF joint vector"
+        ),
+        "gripper_state_definition": (
+            "Current 1D gripper state using the robot's primary gripper command coordinate"
         ),
         "camera_names": camera_names,
         "image_mode": image_mode,
@@ -716,6 +746,31 @@ def _load_pose_array(path: Path, *, length: int) -> np.ndarray:
     if path.exists():
         return np.load(path).astype(np.float32)
     return np.zeros((length, 6), dtype=np.float32)
+
+
+def _load_gripper_state_array(
+    path: Path,
+    *,
+    length: int,
+    fallback_joint_matrix: np.ndarray,
+    arm_dofs: int,
+) -> np.ndarray:
+    if path.exists():
+        values = np.load(path).astype(np.float32)
+        if values.ndim == 1:
+            values = values[:, None]
+        if values.shape == (length, 1):
+            return values
+        raise ValueError(f"Expected gripper state shape ({length}, 1), got {values.shape}")
+
+    fallback = np.asarray(fallback_joint_matrix, dtype=np.float32)
+    if fallback.ndim != 2 or fallback.shape[0] != length:
+        raise ValueError(
+            f"Expected fallback joint matrix shape ({length}, N), got {fallback.shape}"
+        )
+    if fallback.shape[1] <= arm_dofs:
+        return np.zeros((length, 1), dtype=np.float32)
+    return fallback[:, arm_dofs : arm_dofs + 1].astype(np.float32, copy=False)
 
 
 def _as_pose_array(value: Any) -> np.ndarray:

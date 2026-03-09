@@ -19,6 +19,7 @@
 | `docs/task_yaml_spec.md` | task YAML 작성/수정 규약 |
 | `docs/tasks_overview.md` | task 상태 보드와 검증 evidence |
 | `docs/task_descriptions_ko.md` | task 한글 설명과 추천 shortlist |
+| `docs/franka_tasks_summary.md` | Franka task 24개 전용 요약과 현재 성공 상태 |
 | `docs/task_taxonomy.md` | corpus 분류/집계표 |
 | `docs/isaaclab_env_config_guide.md` | IsaacLab env config 심화 가이드 |
 

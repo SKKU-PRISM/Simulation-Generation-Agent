@@ -22,6 +22,8 @@ YAML task 문서에서 시작해 IsaacLab 환경 생성, 선택적 Isaac Sim 시
    IsaacLab env 위에서 detect -> plan -> execute -> judge -> record -> `raw_dataset/`
 4. **학습 준비**  
    `raw_dataset/` -> `export_dataset.py` (기본 `adc_compatible`) -> `preprocess_dataset.py`
+5. **선택적 LeRobot 변환/배포**  
+   `convert_lerobot_dataset.py` -> `check_lerobot_dataset.py` -> `publish_lerobot_dataset.py`
 
 ## Quick Start
 
@@ -64,6 +66,14 @@ python3 scripts/export_dataset.py outputs/data_collection/<run_dir>/raw_dataset 
 
 python3 scripts/preprocess_dataset.py outputs/exported_datasets/<export_dir> \
   --output-dir outputs/preprocessed_datasets
+
+# optional: local LeRobot dataset + Hub upload
+python3 scripts/convert_lerobot_dataset.py outputs/data_collection/<run_dir>/raw_dataset \
+  --repo-id local/franka_stack_sim
+python3 scripts/check_lerobot_dataset.py outputs/data_collection/<run_dir>/local/franka_stack_sim \
+  --repo-id local/franka_stack_sim
+python3 scripts/publish_lerobot_dataset.py outputs/data_collection/<run_dir>/local/franka_stack_sim \
+  --repo-id <org>/franka_stack_sim --local-repo-id local/franka_stack_sim --private
 ```
 
 세부 설치, 옵션, 결과 해석은 `docs/getting_started.md`, `docs/usage.md`, `docs/dataset_alignment_and_export.md`를 본다.

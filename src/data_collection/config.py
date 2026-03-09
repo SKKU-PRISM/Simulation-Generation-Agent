@@ -114,6 +114,7 @@ class RobotSimConfig:
     max_reach: float = 0.855
     tabletop_reach: float = 0.75
     workspace_envelope: dict[str, list[float]] = field(default_factory=dict)
+    ik_backend: str = "auto"  # "auto" | "pinocchio" | "differential_ik"
 
     # Asset
     usd_path: str = ""
@@ -312,6 +313,7 @@ def load_robot_config(robot_name: str) -> RobotSimConfig:
         max_reach=kinematics.get("max_reach", 1.0),
         tabletop_reach=kinematics.get("tabletop_reach", 0.75),
         workspace_envelope=kinematics.get("workspace_envelope", {}),
+        ik_backend=str(kinematics.get("ik_backend", "auto")),
         usd_path=asset.get("usd_path", ""),
         prim_path=asset.get("prim_path", "/World/Robot"),
         urdf_path=_resolve_urdf_path(asset.get("urdf_path", "")),

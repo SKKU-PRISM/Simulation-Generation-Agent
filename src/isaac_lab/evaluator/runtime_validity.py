@@ -10,6 +10,7 @@ from rich.console import Console
 from .parser import _check, EnvCfgParser
 
 console = Console()
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 # ---------------------------------------------------------------------------

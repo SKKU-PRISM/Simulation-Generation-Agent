@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -17,10 +18,14 @@ def build_assembling_kits_template(task_doc: dict, robot: str) -> dict[str, str]
     assets = {asset["name"]: asset for asset in task_doc.get("assets", []) if asset.get("name")}
     robot_asset = next(asset for asset in task_doc.get("assets", []) if asset.get("type") == "articulation")
     camera_cfg = task_doc.get("camera", {})
+    active_shape_name = _find_active_shape_name(task_doc)
 
-    static_asset_names = ["table", "kit_tray", "shape_09", "shape_11", "shape_12", "shape_15", "shape_17"]
-    scene_assets = "\n\n".join(_build_asset_block(assets[name]) for name in static_asset_names if name in assets)
+    scene_blocks = [_build_static_asset_block(asset) for asset in assets.values() if asset.get("name") != robot_asset.get("name")]
+    scene_assets = "\n\n".join(scene_blocks)
     robot_imports, robot_setup = _build_robot_setup(robot, robot_asset)
+    randomization_event = ""
+    if active_shape_name and active_shape_name in assets:
+        randomization_event = _build_reset_event_block(assets[active_shape_name])
 
     env_cfg = f'''# Copyright (c) 2026, The Isaac Lab Project Developers.
 # All rights reserved.
@@ -28,6 +33,8 @@ def build_assembling_kits_template(task_doc: dict, robot: str) -> dict[str, str]
 # SPDX-License-Identifier: BSD-3-Clause
 
 from dataclasses import MISSING
+import math
+import random
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg
@@ -39,10 +46,51 @@ from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
+from isaaclab.sim.utils.stage import get_current_stage
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
+from pxr import Gf, UsdGeom
 {robot_imports}
 import mdp as mdp
+
+
+def _quat_multiply(q1, q2):
+    w1, x1, y1, z1 = q1
+    w2, x2, y2, z2 = q2
+    return (
+        w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+        w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+        w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+        w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2,
+    )
+
+
+def randomize_static_asset_pose(env, env_ids, prim_path, base_pos, base_quat, position_range, yaw_range=None):
+    del env, env_ids
+    stage = get_current_stage()
+    prim = stage.GetPrimAtPath(prim_path)
+    if not prim or not prim.IsValid():
+        raise RuntimeError(f"Could not find prim to randomize: {{prim_path}}")
+
+    xformable = UsdGeom.Xformable(prim)
+    ordered_ops = {{op.GetOpName(): op for op in xformable.GetOrderedXformOps()}}
+    translate_op = ordered_ops.get("xformOp:translate") or xformable.AddTranslateOp()
+    orient_op = ordered_ops.get("xformOp:orient") or xformable.AddOrientOp()
+
+    dx = random.uniform(*position_range.get("x", (0.0, 0.0)))
+    dy = random.uniform(*position_range.get("y", (0.0, 0.0)))
+    dz = random.uniform(*position_range.get("z", (0.0, 0.0)))
+    pos = (base_pos[0] + dx, base_pos[1] + dy, base_pos[2] + dz)
+
+    quat = tuple(base_quat)
+    if yaw_range is not None:
+        yaw = random.uniform(*yaw_range)
+        half_yaw = 0.5 * yaw
+        delta_quat = (math.cos(half_yaw), 0.0, 0.0, math.sin(half_yaw))
+        quat = _quat_multiply(quat, delta_quat)
+
+    translate_op.Set(Gf.Vec3f(*[float(value) for value in pos]))
+    orient_op.Set(Gf.Quatf(float(quat[0]), Gf.Vec3f(float(quat[1]), float(quat[2]), float(quat[3]))))
 
 
 @configclass
@@ -92,6 +140,7 @@ class ObservationsCfg:
 @configclass
 class EventCfg:
     reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
+{_indent(randomization_event, 4) if randomization_event else ""}
 
 
 @configclass
@@ -254,7 +303,7 @@ if __name__ == "__main__":
     }
 
 
-def _build_asset_block(asset: dict) -> str:
+def _build_static_asset_block(asset: dict[str, Any]) -> str:
     spawn_lines = [
         f"usd_path={_python_path_literal(asset['asset_path'])},",
         f"scale={_tuple(asset.get('scale', [1.0, 1.0, 1.0]))},",
@@ -284,6 +333,56 @@ def _build_asset_block(asset: dict) -> str:
     ),
 )'''
 
+
+def _build_reset_event_block(asset: dict[str, Any]) -> str:
+    randomize = asset.get("randomize", {})
+    position = randomize.get("position", {}) if isinstance(randomize, dict) else {}
+    orientation = randomize.get("orientation", {}) if isinstance(randomize, dict) else {}
+    pose_range: dict[str, tuple[float, float]] = {}
+
+    for axis in ("x", "y", "z"):
+        value = position.get(axis)
+        if isinstance(value, (list, tuple)) and len(value) == 2:
+            pose_range[axis] = (float(value[0]), float(value[1]))
+        elif isinstance(value, (int, float)):
+            pose_range[axis] = (float(value), float(value))
+    if "yaw" in orientation:
+        yaw = orientation["yaw"]
+        if isinstance(yaw, (list, tuple)) and len(yaw) == 2:
+            pose_range["yaw"] = (float(yaw[0]), float(yaw[1]))
+        elif isinstance(yaw, (int, float)):
+            pose_range["yaw"] = (float(yaw), float(yaw))
+
+    if not pose_range:
+        return ""
+
+    return "\n".join(
+        [
+            f"randomize_{asset['name']} = EventTerm(",
+            "    func=randomize_static_asset_pose,",
+            '    mode="reset",',
+            "    params={",
+            f"        \"prim_path\": {asset.get('prim_path', f'/World/{asset['name']}')!r},",
+            f"        \"base_pos\": {_tuple(asset.get('position', [0.0, 0.0, 0.0]))},",
+            f"        \"base_quat\": {_tuple(asset.get('rotation', [1.0, 0.0, 0.0, 0.0]))},",
+            f"        \"position_range\": { {axis: pose_range[axis] for axis in ('x', 'y', 'z') if axis in pose_range}!r},",
+            f"        \"yaw_range\": {pose_range.get('yaw')!r},",
+            "    },",
+            ")",
+        ]
+    )
+
+
+def _find_active_shape_name(task_doc: dict[str, Any]) -> str | None:
+    episode = task_doc.get("episode", {})
+    resolved_name = episode.get("resolved_shape_to_place")
+    if isinstance(resolved_name, str):
+        return resolved_name
+
+    for asset in task_doc.get("assets", []):
+        if asset.get("type") == "rigid" and str(asset.get("name", "")).startswith("shape_"):
+            return asset["name"]
+    return None
 
 def _build_robot_setup(robot: str, robot_asset: dict) -> tuple[str, str]:
     initial_joint_values = dict(robot_asset.get("initial_joints", {}))

@@ -39,6 +39,101 @@ logger = logging.getLogger(__name__)
 ISAACLAB_PATH = str(get_default_isaaclab_path())
 CONDA_ENV = "env_isaaclab"
 
+TEXTURE_PRESERVE_DIRECT_USD = {
+    "sm_mug_a2.usd": {
+        "asset_family": "mug",
+        "loader_policy": "preserve_visual_usd_with_injected_physics",
+        "physics_strategy": "child_mesh_injection",
+        "physics_target_prim_basename": "SM_Mug_A2",
+        "default_mass": 0.18,
+        "notes": "Keep the original textured USD and inject rigid/collision properties instead of proxying.",
+    },
+    "007_tuna_fish_can.usd": {
+        "asset_family": "tuna_can",
+        "loader_policy": "preserve_visual_usd_with_injected_physics",
+        "physics_strategy": "child_mesh_injection",
+        "physics_target_prim_basename": "_07_tuna_fish_can",
+        "default_mass": 0.12,
+        "notes": "Keep the original YCB textured USD and add physics at spawn time instead of using a cylinder proxy.",
+    },
+}
+
+TEXTURE_AUDIT_DIRECT_USD = {
+    "004_sugar_box.usd": {
+        "asset_family": "sugar_box",
+        "loader_policy": "audit_axis_aligned_variant",
+        "notes": "Compare Axis_Aligned_Physics visual fidelity against the canonical Axis_Aligned asset.",
+    },
+    "005_tomato_soup_can.usd": {
+        "asset_family": "tomato_soup_can",
+        "loader_policy": "audit_axis_aligned_variant",
+        "notes": "Audit material bindings and asset-root resolution for the YCB can visual asset.",
+    },
+    "006_mustard_bottle.usd": {
+        "asset_family": "mustard_bottle",
+        "loader_policy": "audit_axis_aligned_variant",
+        "notes": "Audit material bindings and asset-root resolution for the YCB bottle visual asset.",
+    },
+    "025_mug.usd": {
+        "asset_family": "ycb_mug",
+        "loader_policy": "audit_axis_aligned_variant",
+        "notes": "Audit YCB mug material bindings when used directly from Axis_Aligned assets.",
+    },
+}
+
+
+def classify_texture_asset_path(asset_path: str) -> dict[str, object] | None:
+    """Return texture-sensitive asset handling metadata for known Isaac Sim props."""
+    asset_path = str(asset_path or "").strip()
+    if not asset_path:
+        return None
+    lowered = asset_path.lower()
+
+    for suffix, meta in TEXTURE_PRESERVE_DIRECT_USD.items():
+        if suffix in lowered:
+            return {
+                "asset_path": asset_path,
+                "path_suffix": suffix,
+                **meta,
+            }
+
+    for suffix, meta in TEXTURE_AUDIT_DIRECT_USD.items():
+        if suffix in lowered:
+            return {
+                "asset_path": asset_path,
+                "path_suffix": suffix,
+                **meta,
+            }
+
+    return None
+
+
+def should_preserve_textured_usd(asset_path: str) -> bool:
+    record = classify_texture_asset_path(asset_path)
+    return bool(record and record.get("loader_policy") == "preserve_visual_usd_with_injected_physics")
+
+
+def build_task_texture_audit(task_doc: dict) -> list[dict[str, object]]:
+    """Build a per-task audit record for texture-sensitive Isaac Sim assets."""
+    task_name = str((task_doc or {}).get("task", {}).get("name", "unknown"))
+    records: list[dict[str, object]] = []
+    for asset in (task_doc or {}).get("assets", []):
+        if not isinstance(asset, dict):
+            continue
+        record = classify_texture_asset_path(asset.get("asset_path", ""))
+        if record is None:
+            continue
+        records.append(
+            {
+                "task_name": task_name,
+                "asset_name": asset.get("name", ""),
+                "asset_type": asset.get("type", ""),
+                "source": asset.get("source", ""),
+                **record,
+            }
+        )
+    return records
+
 
 class DataCollectionPipeline:
     """
@@ -146,6 +241,9 @@ class DataCollectionPipeline:
             "total_episodes": total_episodes,
             "output_dir": str(self.output_dir),
             "raw_dataset": str(raw_data_dir) if raw_data_dir.exists() else None,
+            "front_video_generated": bool(results.get("front_video_generated", False)),
+            "front_video_path": results.get("front_video_path"),
+            "front_video_episode": results.get("front_video_episode"),
             "results": results,
             "robot": self.robot_name,
             "task": self.task_doc.get("task", {}).get("name", "unknown"),
@@ -237,17 +335,24 @@ class DataCollectionPipeline:
         with open(config_json_path, "w") as f:
             json.dump(config_data, f, indent=2)
 
+        texture_audit_path = self.output_dir / "texture_asset_audit.json"
+        with open(texture_audit_path, "w") as f:
+            json.dump(build_task_texture_audit(self.task_doc), f, indent=2)
+
         # Generate the runner script
         # NOTE: AppLauncher MUST be initialized before any physics imports
         headless_val = self.config.env_headless
         script = textwrap.dedent(f'''\
             """Auto-generated data collection runner for IsaacLab."""
             import argparse
+            from dataclasses import MISSING
             import json
             import sys
             import os
             import re
+            import time
             import traceback
+            from datetime import datetime
 
             # === AppLauncher MUST be first (before any physics imports) ===
             from isaaclab.app import AppLauncher
@@ -258,7 +363,6 @@ class DataCollectionPipeline:
             args.headless = {headless_val}
             args.num_envs = {self.config.env_num_envs}
             args.enable_cameras = True  # Always enable cameras (EGL in headless, X11 in GUI)
-            args.rendering_mode = "performance"  # Rasterization only (no RTX path tracing) — fast shader compile
             app_launcher = AppLauncher(args)
             simulation_app = app_launcher.app
 
@@ -272,6 +376,47 @@ class DataCollectionPipeline:
             sys.path.insert(0, "{(PROJECT_ROOT / 'src' / 'data_collection' / 'cap_runtime').resolve()}")
 
             from isaaclab.envs import ManagerBasedRLEnv
+
+            MARKER_FILE = os.path.join("{Path(self.output_dir).resolve()}", "COLLECTION_COMPLETE_MARKER")
+            USE_VLM_JUDGE = {self.config.use_vlm_judge}
+            STARTUP_DIAGNOSTICS_PATH = os.path.join("{Path(self.output_dir).resolve()}", "startup_diagnostics.json")
+            PHASE_TRACE_PATH = os.path.join("{Path(self.output_dir).resolve()}", "phase_trace.json")
+            HEARTBEAT_PATH = os.path.join("{Path(self.output_dir).resolve()}", "last_heartbeat.json")
+            STDERR_TAIL_PATH = os.path.join("{Path(self.output_dir).resolve()}", "stderr_tail.txt")
+
+            def _early_write_json(path, payload):
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, indent=2)
+
+            def _early_write_text(path, text):
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+
+            def _early_record_phase(phase, status="ok", **details):
+                payload = []
+                if os.path.exists(PHASE_TRACE_PATH):
+                    try:
+                        with open(PHASE_TRACE_PATH, "r", encoding="utf-8") as f:
+                            loaded = json.load(f)
+                        if isinstance(loaded, list):
+                            payload = loaded
+                    except Exception:
+                        payload = []
+                event = {{
+                    "timestamp": datetime.now().isoformat(),
+                    "phase": phase,
+                    "status": status,
+                }}
+                if details:
+                    event["details"] = details
+                payload.append(event)
+                _early_write_json(PHASE_TRACE_PATH, payload)
+                _early_write_json(HEARTBEAT_PATH, event)
+                return event
+
+            _early_record_phase("script_boot", "ok", env_dir="{Path(self.env_dir).resolve()}")
 
             def _patch_generated_env_cfg_source():
                 """Patch common import-time issues in generated env_cfg.py files."""
@@ -308,6 +453,127 @@ class DataCollectionPipeline:
 
                     return "\\n".join(patched_lines), replaced
 
+                def _rewrite_initial_state_scale_arg(content):
+                    lines = content.splitlines()
+                    patched_lines = []
+                    in_initial_state = False
+                    paren_depth = 0
+                    replaced = False
+
+                    for line in lines:
+                        if "InitialStateCfg(" in line:
+                            in_initial_state = True
+                            paren_depth = line.count("(") - line.count(")")
+                        elif in_initial_state:
+                            paren_depth += line.count("(") - line.count(")")
+
+                        if in_initial_state and "scale=" in line:
+                            new_line = re.sub(
+                                r",\s*scale\s*=\s*(\[[^\]]*\]|\([^\)]*\))",
+                                "",
+                                line,
+                            )
+                            if new_line != line:
+                                line = new_line
+                                replaced = True
+
+                        patched_lines.append(line)
+
+                        if in_initial_state and paren_depth <= 0:
+                            in_initial_state = False
+                            paren_depth = 0
+
+                    return "\\n".join(patched_lines), replaced
+
+                def _rewrite_articulation_joints_arg(content):
+                    lines = content.splitlines()
+                    patched_lines = []
+                    in_articulation = False
+                    paren_depth = 0
+                    skip_joints = False
+                    joints_brace_depth = 0
+                    replaced = False
+                    articulation_target = None
+                    articulation_indent = ""
+                    articulation_joints_lines = []
+
+                    articulation_pattern = re.compile(
+                        r'^(?P<indent>\s*)(?P<target>self\.scene\.[A-Za-z_][A-Za-z0-9_]*)\s*=\s*ArticulationCfg\('
+                    )
+
+                    def _flush_articulation_joint_assignment():
+                        nonlocal articulation_joints_lines
+                        if not articulation_target or not articulation_joints_lines:
+                            articulation_joints_lines = []
+                            return
+                        normalized = articulation_joints_lines[:]
+                        for idx in range(len(normalized) - 1, -1, -1):
+                            stripped = normalized[idx].rstrip()
+                            if not stripped:
+                                continue
+                            if stripped.endswith(","):
+                                normalized[idx] = stripped[:-1]
+                            else:
+                                normalized[idx] = stripped
+                            break
+                        first_line = normalized[0].lstrip()
+                        patched_lines.append(
+                            f"{{articulation_indent}}{{articulation_target}}.init_state.joint_pos = {{first_line}}"
+                        )
+                        patched_lines.extend(normalized[1:])
+                        articulation_joints_lines = []
+
+                    for line in lines:
+                        if not in_articulation:
+                            match = articulation_pattern.match(line)
+                            if match:
+                                in_articulation = True
+                                articulation_target = match.group("target")
+                                articulation_indent = match.group("indent")
+                                articulation_joints_lines = []
+                                paren_depth = line.count("(") - line.count(")")
+                            patched_lines.append(line)
+                            continue
+
+                        if skip_joints:
+                            articulation_joints_lines.append(line)
+                            joints_brace_depth += line.count("{") - line.count("}")
+                            if joints_brace_depth <= 0:
+                                skip_joints = False
+                                replaced = True
+                            paren_depth += line.count("(") - line.count(")")
+                            if paren_depth <= 0:
+                                _flush_articulation_joint_assignment()
+                                in_articulation = False
+                                articulation_target = None
+                                articulation_indent = ""
+                            continue
+
+                        if "joints=" in line:
+                            _, rhs = line.split("joints=", 1)
+                            articulation_joints_lines = [rhs]
+                            joints_brace_depth = rhs.count("{") - rhs.count("}")
+                            skip_joints = joints_brace_depth > 0
+                            if not skip_joints:
+                                replaced = True
+                            paren_depth += line.count("(") - line.count(")")
+                            if paren_depth <= 0:
+                                _flush_articulation_joint_assignment()
+                                in_articulation = False
+                                articulation_target = None
+                                articulation_indent = ""
+                            continue
+
+                        patched_lines.append(line)
+                        paren_depth += line.count("(") - line.count(")")
+                        if paren_depth <= 0:
+                            _flush_articulation_joint_assignment()
+                            in_articulation = False
+                            articulation_target = None
+                            articulation_indent = ""
+
+                    return "\\n".join(patched_lines), replaced
+
                 patched_text = re.sub(
                     r'^(?P<indent>\\s*)super\\(\\).__post_init__\\(\\)\\s*$',
                     (
@@ -318,7 +584,15 @@ class DataCollectionPipeline:
                     env_cfg_text,
                     flags=re.MULTILINE,
                 )
+                patched_text = re.sub(
+                    r'^(?P<indent>\\s*)(?P<name>[A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*MISSING\\s*$',
+                    r'\\g<indent>\\g<name>: object = MISSING',
+                    patched_text,
+                    flags=re.MULTILINE,
+                )
                 patched_text, patched_implicit_joint_names = _rewrite_implicit_actuator_joint_names(patched_text)
+                patched_text, patched_initial_state_scale = _rewrite_initial_state_scale_arg(patched_text)
+                patched_text, patched_articulation_joints = _rewrite_articulation_joints_arg(patched_text)
 
                 if patched_text != env_cfg_text:
                     with open(env_cfg_path, "w", encoding="utf-8") as f:
@@ -326,8 +600,14 @@ class DataCollectionPipeline:
                     patch_notes = []
                     if "super().__post_init__()" in env_cfg_text:
                         patch_notes.append("guarded super().__post_init__()")
+                    if re.search(r'^\\s*[A-Za-z_][A-Za-z0-9_]*\\s*=\\s*MISSING\\s*$', env_cfg_text, flags=re.MULTILINE):
+                        patch_notes.append("annotated bare MISSING fields")
                     if patched_implicit_joint_names:
                         patch_notes.append("rewrote ImplicitActuatorCfg joint_names -> joint_names_expr")
+                    if patched_initial_state_scale:
+                        patch_notes.append("dropped unsupported InitialStateCfg scale arg")
+                    if patched_articulation_joints:
+                        patch_notes.append("rewrote ArticulationCfg joints -> init_state.joint_pos")
                     print(f"Patched generated env_cfg.py: {{patch_notes}}")
 
             def _install_generated_mdp_stubs():
@@ -387,23 +667,113 @@ class DataCollectionPipeline:
             _install_generated_mdp_stubs()
 
             # Import generated environment config
-            from env_cfg import *  # noqa: F403
+            try:
+                from env_cfg import *  # noqa: F403
+                _early_record_phase("env_cfg_import", "ok")
+            except Exception as exc:
+                tb_text = traceback.format_exc()
+                _early_record_phase("env_cfg_import", "error", error=str(exc), category="env_cfg_import_failed")
+                _early_write_json(
+                    STARTUP_DIAGNOSTICS_PATH,
+                    {{
+                        "failure_phase": "env_cfg_import",
+                        "failure_category": "env_cfg_import_failed",
+                        "exception_type": type(exc).__name__,
+                        "message": str(exc),
+                        "traceback": tb_text,
+                        "last_phase": "env_cfg_import",
+                        "updated_at": datetime.now().isoformat(),
+                    }},
+                )
+                _early_write_text(STDERR_TAIL_PATH, tb_text)
+                raise
 
             # Import data collection modules
             from src.data_collection.config import load_robot_config
+            from src.data_collection.pipeline import classify_texture_asset_path, should_preserve_textured_usd
             from src.data_collection.sim_robot_interface import SimRobotInterface
             from src.data_collection.sim_detector import SimDetector
             from src.data_collection.sim_camera import SimCamera, MultiCameraManager, inject_cameras_into_scene, SceneCameraManager
             from src.data_collection.sim_recorder import SimRecorder, RecorderStorageError
             from src.data_collection.sim_skills import SimSkills, create_ik_solver
-            from src.data_collection.cap_artifacts import make_episode_run_dir, save_code_generation_artifacts, save_execution_context, save_judge_images
+            from src.data_collection.textured_usd_spawn import spawn_textured_usd_with_child_physics
+            from src.data_collection.cap_artifacts import (
+                make_episode_run_dir,
+                save_code_generation_artifacts,
+                save_execution_context,
+                save_judge_images,
+                write_json_artifact,
+                write_text_artifact,
+            )
             from src.data_collection.cap_generator import SimCaPGenerator, is_supported_tabletop_task, select_cap_profile
             from src.data_collection.cap_runtime import CaPRuntimeContext
             from src.data_collection.cap_runtime.skills.base import PolicyFallbackBlockedError
             from src.data_collection.sim_judge import SimJudge
 
-            MARKER_FILE = os.path.join("{Path(self.output_dir).resolve()}", "COLLECTION_COMPLETE_MARKER")
-            USE_VLM_JUDGE = {self.config.use_vlm_judge}
+            def _load_existing_json(path, default):
+                if not os.path.exists(path):
+                    return default
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        payload = json.load(f)
+                    return payload
+                except Exception:
+                    return default
+
+            _PHASE_TRACE = _load_existing_json(PHASE_TRACE_PATH, [])
+            _STARTUP_DIAGNOSTICS = _load_existing_json(STARTUP_DIAGNOSTICS_PATH, {{}})
+            _LAST_PHASE = _PHASE_TRACE[-1]["phase"] if _PHASE_TRACE else "script_boot"
+
+            def _write_phase_trace():
+                write_json_artifact(PHASE_TRACE_PATH, _PHASE_TRACE)
+
+            def _record_phase(phase, status="ok", **details):
+                global _LAST_PHASE
+                event = {{
+                    "timestamp": datetime.now().isoformat(),
+                    "phase": phase,
+                    "status": status,
+                }}
+                if details:
+                    event["details"] = details
+                _PHASE_TRACE.append(event)
+                _LAST_PHASE = phase
+                _write_phase_trace()
+                write_json_artifact(HEARTBEAT_PATH, event)
+                return event
+
+            def _update_startup_diagnostics(**updates):
+                _STARTUP_DIAGNOSTICS.update(updates)
+                _STARTUP_DIAGNOSTICS["last_phase"] = _LAST_PHASE
+                _STARTUP_DIAGNOSTICS["updated_at"] = datetime.now().isoformat()
+                write_json_artifact(STARTUP_DIAGNOSTICS_PATH, _STARTUP_DIAGNOSTICS)
+
+            def _write_exception_artifacts(exc, failure_phase, failure_category):
+                tb_text = traceback.format_exc()
+                payload = {{
+                    "exception_type": type(exc).__name__,
+                    "message": str(exc),
+                    "failure_phase": failure_phase,
+                    "failure_category": failure_category,
+                    "traceback": tb_text,
+                }}
+                _update_startup_diagnostics(**payload)
+                write_text_artifact(STDERR_TAIL_PATH, tb_text)
+                _record_phase(failure_phase, "error", error=str(exc), category=failure_category)
+                return payload
+
+            def _classify_pipeline_failure(exc):
+                exc_text = f"{{type(exc).__name__}}: {{exc}}"
+                lowered = exc_text.lower()
+                if "unsupported by current cap tabletop profile" in lowered:
+                    return "unsupported_profile"
+                if "xformprimview" in lowered and "has no attribute 'data'" in lowered:
+                    return "env_observation_crash"
+                if "vlm judge unavailable" in lowered:
+                    return "judge_unavailable"
+                if "cap generator unavailable" in lowered or "model did not return executable cap code" in lowered:
+                    return "codegen_failure"
+                return "pipeline_error"
 
             def _find_env_cfg_class():
                 \"\"\"Find the EnvCfg class from module globals (imported via env_cfg).\"\"\"
@@ -431,6 +801,20 @@ class DataCollectionPipeline:
                 replace `RigidObjectCfg` with `AssetBaseCfg`.
                 \"\"\"
                 patched_terms = []
+
+                def _uses_xform_scene_entity(asset_name):
+                    if not isinstance(task_doc, dict):
+                        return False
+                    for asset in task_doc.get("assets", []):
+                        if asset.get("name") != asset_name:
+                            continue
+                        physics = asset.get("physics", {{}}) or {{}}
+                        if asset.get("type") == "static":
+                            return True
+                        if asset.get("type") in {{"rigid", "primitive"}} and not bool(physics.get("rigid_body", False)):
+                            return True
+                    return False
+
                 observations = getattr(env_cfg, "observations", None)
                 if observations is not None:
                     for group_name, group_cfg in vars(observations).items():
@@ -444,6 +828,19 @@ class DataCollectionPipeline:
                                 continue
 
                             func_name = getattr(getattr(term_cfg, "func", None), "__name__", "")
+                            asset_cfg = params.get("asset_cfg") or params.get("robot_cfg")
+                            asset_name = getattr(asset_cfg, "name", None)
+                            if (
+                                isinstance(asset_name, str)
+                                and func_name in {{"root_pos_w", "root_quat_w", "root_lin_vel_w", "root_ang_vel_w", "root_state_w"}}
+                                and _uses_xform_scene_entity(asset_name)
+                            ):
+                                setattr(group_cfg, term_name, None)
+                                patched_terms.append(
+                                    f"{{group_name}}/{{term_name}} (disabled xform root observation for {{asset_name}})"
+                                )
+                                continue
+
                             if (
                                 "robot_cfg" in params
                                 and "asset_cfg" not in params
@@ -457,6 +854,12 @@ class DataCollectionPipeline:
 
                             body_name = params.pop("body_name")
                             asset_cfg = params.get("asset_cfg")
+                            if asset_cfg is None:
+                                asset_cfg = SceneEntityCfg("robot")
+                                params["asset_cfg"] = asset_cfg
+                                patched_terms.append(
+                                    f"{{group_name}}/{{term_name}} (default asset_cfg=robot)"
+                                )
                             if asset_cfg is not None and hasattr(asset_cfg, "body_names"):
                                 asset_cfg.body_names = body_name
                                 patched_terms.append(f"{{group_name}}/{{term_name}} (body_name->body_names)")
@@ -467,6 +870,42 @@ class DataCollectionPipeline:
                 patched_scene_assets = []
                 scene = getattr(env_cfg, "scene", None)
                 if scene is not None and isinstance(task_doc, dict):
+                    for attr_name, attr_value in list(vars(scene).items()):
+                        if attr_name.startswith("_") or attr_value is None:
+                            continue
+                        attr_type_name = attr_value.__class__.__name__
+                        if attr_name.endswith(
+                            (
+                                "_rigid_props",
+                                "_collision_props",
+                                "_mass_props",
+                                "_articulation_props",
+                            )
+                        ) or attr_type_name in {
+                            "RigidBodyPropertiesCfg",
+                            "CollisionPropertiesCfg",
+                            "MassPropertiesCfg",
+                            "ArticulationRootPropertiesCfg",
+                        }:
+                            setattr(scene, attr_name, None)
+                            patched_scene_assets.append(
+                                f"{{attr_name}}: removed helper config ({{attr_type_name}}) from scene"
+                            )
+
+                    if hasattr(scene, "replicate_physics") and getattr(scene, "replicate_physics", True):
+                        scene.replicate_physics = False
+                        patched_scene_assets.append("scene.replicate_physics=False")
+
+                    robot_asset = next(
+                        (
+                            asset
+                            for asset in task_doc.get("assets", [])
+                            if asset.get("type") == "articulation" and asset.get("robot_type")
+                        ),
+                        None,
+                    )
+                    robot_type = str((robot_asset or {{}}).get("robot_type", "")).lower()
+
                     for asset in task_doc.get("assets", []):
                         if asset.get("source") != "primitive":
                             continue
@@ -504,6 +943,103 @@ class DataCollectionPipeline:
                             patched_scene_assets.append(
                                 f"{{asset_name}}: prim_path {{old_prim_path}} -> {{flat_prim_path}}"
                             )
+
+                    for asset in task_doc.get("assets", []):
+                        asset_name = asset.get("name")
+                        if not asset_name or not hasattr(scene, asset_name):
+                            continue
+                        scene_cfg = getattr(scene, asset_name)
+                        if scene_cfg is None:
+                            continue
+
+                        spawn_cfg = getattr(scene_cfg, "spawn", None)
+                        usd_path = str(getattr(spawn_cfg, "usd_path", "") or "")
+                        asset_path_lower = str(asset.get("asset_path", "")).lower()
+                        init_state = getattr(scene_cfg, "init_state", None)
+                        pos = list(getattr(init_state, "pos", asset.get("position", [0.0, 0.0, 0.0])))
+                        rot = list(getattr(init_state, "rot", asset.get("rotation", [1.0, 0.0, 0.0, 0.0])))
+
+                        if "standard_camera.usd" in usd_path:
+                            setattr(scene, asset_name, None)
+                            patched_scene_assets.append(
+                                f"{{asset_name}}: disabled missing remote camera asset"
+                            )
+                            continue
+
+                        if scene_cfg.__class__.__name__ != "RigidObjectCfg":
+                            continue
+
+                        rigid_props = RigidBodyPropertiesCfg(
+                            solver_position_iteration_count=16,
+                            solver_velocity_iteration_count=1,
+                            max_angular_velocity=1000.0,
+                            max_linear_velocity=1000.0,
+                            max_depenetration_velocity=5.0,
+                            disable_gravity=False,
+                        )
+                        collision_props = sim_utils.CollisionPropertiesCfg(
+                            collision_enabled=True,
+                            contact_offset=0.005,
+                            rest_offset=0.0,
+                        )
+                        texture_record = classify_texture_asset_path(asset.get("asset_path", ""))
+                        if should_preserve_textured_usd(asset.get("asset_path", "")) and hasattr(spawn_cfg, "usd_path"):
+                            spawn_cfg.func = spawn_textured_usd_with_child_physics
+                            spawn_cfg.rigid_props = rigid_props
+                            spawn_cfg.collision_props = collision_props
+                            mass_value = texture_record.get("default_mass") if isinstance(texture_record, dict) else None
+                            if mass_value is not None:
+                                spawn_cfg.mass_props = sim_utils.MassPropertiesCfg(mass=float(mass_value))
+                            physics_target = (
+                                texture_record.get("physics_target_prim_basename")
+                                if isinstance(texture_record, dict)
+                                else None
+                            )
+                            if physics_target:
+                                setattr(spawn_cfg, "physics_target_prim_basename", physics_target)
+                            patched_scene_assets.append(
+                                f"{{asset_name}}: preserved textured USD visual with child physics injection"
+                            )
+                        elif texture_record is not None:
+                            patched_scene_assets.append(
+                                f"{{asset_name}}: texture audit candidate -> {{texture_record.get('loader_policy')}}"
+                            )
+
+                        if (
+                            asset.get("type") == "articulation"
+                            and scene_cfg.__class__.__name__ == "ArticulationCfg"
+                        ):
+                            init_state = getattr(scene_cfg, "init_state", None)
+                            if init_state is not None and not hasattr(init_state, "lin_vel"):
+                                joint_pos = getattr(init_state, "joint_pos", {{}})
+                                if joint_pos is None:
+                                    joint_pos = {{}}
+                                scene_cfg.init_state = ArticulationCfg.InitialStateCfg(
+                                    pos=list(getattr(init_state, "pos", [0.0, 0.0, 0.0])),
+                                    rot=list(getattr(init_state, "rot", [1.0, 0.0, 0.0, 0.0])),
+                                    lin_vel=[0.0, 0.0, 0.0],
+                                    ang_vel=[0.0, 0.0, 0.0],
+                                    joint_pos=joint_pos,
+                                )
+                                patched_scene_assets.append(
+                                    f"{{asset_name}}: promoted init_state to ArticulationCfg.InitialStateCfg"
+                                )
+
+                    scene_ee_frame = getattr(scene, "ee_frame", None)
+                    if scene_ee_frame is None or scene_ee_frame is MISSING:
+                        if robot_type == "franka":
+                            scene.ee_frame = FrameTransformerCfg(
+                                prim_path="{{ENV_REGEX_NS}}/Robot/panda_link0",
+                                debug_vis=False,
+                                target_frames=[
+                                    FrameTransformerCfg.FrameCfg(
+                                        prim_path="{{ENV_REGEX_NS}}/Robot/panda_hand",
+                                        name="end_effector",
+                                        offset=OffsetCfg(pos=[0.0, 0.0, 0.1034]),
+                                    ),
+                                ],
+                            )
+                            patched_scene_assets.append("scene.ee_frame injected for franka")
 
                 patched_actuators = []
                 robot_scene_cfg = getattr(scene, "robot", None) if scene is not None else None
@@ -561,6 +1097,19 @@ class DataCollectionPipeline:
                             patched_event_params.append(
                                 f"{{event_name}} (dropped unsupported {{removed_orientation_keys}})"
                             )
+                        if "min_separation" in params:
+                            params.pop("min_separation", None)
+                            patched_event_params.append(
+                                f"{{event_name}} (dropped unsupported ['min_separation'])"
+                            )
+                        asset_cfg = params.get("asset_cfg")
+                        asset_name = getattr(asset_cfg, "name", None)
+                        if isinstance(asset_name, str) and _uses_xform_scene_entity(asset_name):
+                            setattr(events_cfg, event_name, None)
+                            disabled_event_terms.append(
+                                f"{{event_name}} (static/xform reset term for {{asset_name}})"
+                            )
+                            continue
                         if "asset_cfgs" in params:
                             setattr(events_cfg, event_name, None)
                             disabled_event_terms.append(
@@ -614,11 +1163,207 @@ class DataCollectionPipeline:
                         if name in all_imgs and all_imgs[name] is not None:
                             judge_imgs["front"] = all_imgs[name]
                             break
+                    for name in ("top_cam", "top"):
+                        if name in all_imgs and all_imgs[name] is not None:
+                            judge_imgs["top"] = all_imgs[name]
+                            break
                     return judge_imgs if judge_imgs else None
                 except Exception:
                     return None
 
-            def _verify_goal_conditions(detector, goal, xy_threshold=0.05, height_diff=0.05, z_threshold=0.01):
+            def _estimate_task_asset_top_z(asset):
+                asset_position = asset.get("position")
+                if not isinstance(asset_position, (list, tuple)) or len(asset_position) != 3:
+                    return None
+                if asset.get("type") == "static":
+                    return float(asset_position[2])
+                scale = asset.get("scale")
+                if isinstance(scale, (list, tuple)) and len(scale) == 3:
+                    return float(asset_position[2]) + max(float(scale[2]) / 2.0, 0.0)
+                return float(asset_position[2])
+
+            def _resolve_target_position(detector, target, translated_positions=None, task_doc=None):
+                if isinstance(target, (list, tuple)) and len(target) == 3:
+                    return np.array(target, dtype=float)
+
+                if isinstance(target, str):
+                    if isinstance(translated_positions, dict):
+                        translated = translated_positions.get(target)
+                        if isinstance(translated, dict):
+                            position = translated.get("position")
+                            if isinstance(position, (list, tuple)) and len(position) == 3:
+                                return np.array(position, dtype=float)
+
+                    if isinstance(task_doc, dict):
+                        for asset in task_doc.get("assets", []):
+                            if asset.get("name") != target:
+                                continue
+                            asset_position = asset.get("position")
+                            if not isinstance(asset_position, (list, tuple)) or len(asset_position) != 3:
+                                break
+                            top_z = _estimate_task_asset_top_z(asset)
+                            if top_z is None:
+                                break
+                            return np.array(
+                                [
+                                    float(asset_position[0]),
+                                    float(asset_position[1]),
+                                    float(top_z),
+                                ],
+                                dtype=float,
+                            )
+
+                    try:
+                        return np.array(detector.get_object_position(target), dtype=float)
+                    except Exception:
+                        return None
+
+                return None
+
+            def _resolve_target_metadata(translated_positions, target, field):
+                if not isinstance(target, str) or not isinstance(translated_positions, dict):
+                    return None
+                translated = translated_positions.get(target)
+                if not isinstance(translated, dict):
+                    return None
+                value = translated.get(field)
+                if isinstance(value, (list, tuple)):
+                    return np.array(value, dtype=float)
+                return value
+
+            def _read_named_joint_position(env, task_doc, joint_name):
+                if env is None or not isinstance(joint_name, str) or not isinstance(task_doc, dict):
+                    return None
+
+                articulation_name = None
+                for asset in task_doc.get("assets", []):
+                    if asset.get("type") != "articulation":
+                        continue
+                    joints = asset.get("joints", {{}})
+                    if isinstance(joints, dict) and joint_name in joints:
+                        articulation_name = asset.get("name")
+                        break
+                if not articulation_name:
+                    return None
+
+                try:
+                    articulation = env.scene[articulation_name]
+                except Exception:
+                    articulation = getattr(env.scene, articulation_name, None)
+                if articulation is None or not hasattr(articulation, "data"):
+                    return None
+
+                joint_names = list(getattr(articulation, "joint_names", []) or [])
+                joint_idx = None
+                if joint_name in joint_names:
+                    joint_idx = joint_names.index(joint_name)
+                elif hasattr(articulation, "find_joints"):
+                    try:
+                        result = articulation.find_joints(joint_name)
+                        if isinstance(result, tuple):
+                            joint_indices = result[0]
+                        else:
+                            joint_indices = result
+                        if len(joint_indices):
+                            joint_idx = int(joint_indices[0])
+                    except Exception:
+                        joint_idx = None
+                if joint_idx is None:
+                    return None
+
+                try:
+                    joint_pos = articulation.data.joint_pos[0, joint_idx].cpu().numpy()
+                    return float(joint_pos)
+                except Exception:
+                    return None
+
+            def _infer_ordered_objects_for_goal(task_description, translated_positions):
+                def _candidate_index(description, candidate):
+                    pattern = rf"(?<![a-z0-9_]){{re.escape(candidate)}}(?![a-z0-9_])"
+                    match = re.search(pattern, description)
+                    return match.start() if match else -1
+
+                description = str(task_description or "").lower()
+                ordered = []
+                seen = set()
+                for name, info in (translated_positions or {{}}).items():
+                    task_role = str(info.get("task_role", ""))
+                    if task_role in {{"placement_target", "target_marker", "support_surface", "goal_target"}}:
+                        continue
+                    candidates = [name.lower()]
+                    for key in ("color_name", "asset_label"):
+                        value = info.get(key)
+                        if isinstance(value, str):
+                            candidates.append(value.lower())
+                    aliases = info.get("aliases") or []
+                    for alias in aliases:
+                        if isinstance(alias, str):
+                            candidates.append(alias.lower())
+                    indices = [_candidate_index(description, candidate) for candidate in candidates if candidate]
+                    indices = [idx for idx in indices if idx >= 0]
+                    if indices and name not in seen:
+                        ordered.append((min(indices), name))
+                        seen.add(name)
+                ordered.sort()
+                return [name for _, name in ordered]
+
+            def _compile_goal_conditions(goal, task_description="", translated_positions=None):
+                sc = goal.get("success_criteria", {{}})
+                conditions = []
+                if "conditions" in sc:
+                    conditions.extend(sc["conditions"])
+                elif "stacking_order" in sc:
+                    order = sc["stacking_order"]
+                    for i in range(1, len(order)):
+                        conditions.append({{
+                            "type": "on_top_of",
+                            "object": order[i],
+                            "target": order[i - 1],
+                        }})
+                elif "conditions" in goal:
+                    conditions.extend(goal["conditions"])
+
+                if conditions:
+                    return conditions
+
+                desc = " ".join(
+                    part for part in (task_description, goal.get("description", "")) if isinstance(part, str)
+                ).lower()
+                if "stack" not in desc:
+                    return conditions
+
+                ordered_objects = _infer_ordered_objects_for_goal(desc, translated_positions or {{}})
+                if len(ordered_objects) >= 2:
+                    for i in range(1, len(ordered_objects)):
+                        conditions.append({{
+                            "type": "on_top_of",
+                            "object": ordered_objects[i],
+                            "target": ordered_objects[i - 1],
+                        }})
+
+                if conditions and isinstance(sc, dict) and sc.get("inside_tray"):
+                    tray_center = sc.get("tray_center")
+                    tray_half_extent = sc.get("tray_half_extent")
+                    if isinstance(tray_center, (list, tuple)) and len(tray_center) == 2 and tray_half_extent is not None:
+                        conditions.append({{
+                            "type": "inside_tray",
+                            "objects": ordered_objects,
+                            "tray_center": list(tray_center),
+                            "tray_half_extent": float(tray_half_extent),
+                        }})
+
+                return conditions
+
+            def _verify_goal_conditions(
+                detector,
+                goal,
+                translated_positions=None,
+                task_doc=None,
+                task_description="",
+                xy_threshold=0.05,
+                height_diff=0.05,
+                z_threshold=0.01,
+            ):
                 \"\"\"Verify task success by re-querying object positions against goal conditions.
 
                 Uses geometric checks on the actual scene graph positions.
@@ -634,23 +1379,17 @@ class DataCollectionPipeline:
                     if "height_threshold" in sc:
                         z_threshold = sc["height_threshold"]
 
-                    conditions = []
-                    if "conditions" in sc:
-                        conditions = sc["conditions"]
-                    elif "stacking_order" in sc:
-                        order = sc["stacking_order"]
-                        for i in range(1, len(order)):
-                            conditions.append({{
-                                "type": "on_top_of",
-                                "object": order[i],
-                                "target": order[i - 1],
-                            }})
-                    elif "conditions" in goal:
-                        conditions = goal["conditions"]
+                    conditions = _compile_goal_conditions(
+                        goal,
+                        task_description=task_description,
+                        translated_positions=translated_positions,
+                    )
 
                     # Infer stacking from goal description if no explicit conditions
                     if not conditions:
-                        desc = goal.get("description", "").lower()
+                        desc = " ".join(
+                            part for part in (task_description, goal.get("description", "")) if isinstance(part, str)
+                        ).lower()
                         if "stack" in desc:
                             # Direct stacking verification: check that all manipulable
                             # objects are vertically aligned with proper height differences.
@@ -707,11 +1446,22 @@ class DataCollectionPipeline:
                                 details.append(f"skip: missing object names")
                                 continue
                             try:
-                                top_pos = detector.get_object_position(top_obj)
-                                bot_pos = detector.get_object_position(bottom_obj)
+                                top_pos = np.array(detector.get_object_position(top_obj), dtype=float)
                             except Exception as e:
                                 details.append(f"{{top_obj}} on {{bottom_obj}}: detection failed ({{e}})")
                                 continue
+                            try:
+                                bot_pos = np.array(detector.get_object_position(bottom_obj), dtype=float)
+                            except Exception as e:
+                                bot_pos = _resolve_target_position(
+                                    detector,
+                                    bottom_obj,
+                                    translated_positions=translated_positions,
+                                    task_doc=task_doc,
+                                )
+                                if bot_pos is None:
+                                    details.append(f"{{top_obj}} on {{bottom_obj}}: target missing ({{e}})")
+                                    continue
                             xy_err = np.linalg.norm(top_pos[:2] - bot_pos[:2])
                             z_diff = top_pos[2] - bot_pos[2]
                             ok = (
@@ -737,15 +1487,12 @@ class DataCollectionPipeline:
                             except Exception as e:
                                 details.append(f"{{obj}} at_position: detection failed ({{e}})")
                                 continue
-                            target_pos = None
-                            if isinstance(target, (list, tuple)) and len(target) == 3:
-                                target_pos = np.array(target, dtype=float)
-                            elif isinstance(target, str):
-                                try:
-                                    target_pos = detector.get_object_position(target)
-                                except Exception as e:
-                                    details.append(f"{{obj}} at_position target '{{target}}' missing ({{e}})")
-                                    continue
+                            target_pos = _resolve_target_position(
+                                detector,
+                                target,
+                                translated_positions=translated_positions,
+                                task_doc=task_doc,
+                            )
                             if target_pos is None:
                                 details.append(f"{{obj}} at_position: unsupported target={{target}}")
                                 continue
@@ -756,18 +1503,252 @@ class DataCollectionPipeline:
                             details.append(
                                 f"{{obj}} at_position: xy_err={{xy_err:.3f}}m {{'OK' if ok else 'FAIL'}}"
                             )
+                        elif cond_type == "on_surface":
+                            total += 1
+                            obj = cond.get("object", cond.get("subject", ""))
+                            target = cond.get("target")
+                            if not obj or target is None:
+                                details.append("skip: missing on_surface fields")
+                                continue
+                            try:
+                                obj_pos = np.array(detector.get_object_position(obj), dtype=float)
+                            except Exception as e:
+                                details.append(f"{{obj}} on_surface: detection failed ({{e}})")
+                                continue
+                            target_pos = _resolve_target_position(
+                                detector,
+                                target,
+                                translated_positions=translated_positions,
+                                task_doc=task_doc,
+                            )
+                            if target_pos is None:
+                                details.append(f"{{obj}} on_surface target '{{target}}' missing")
+                                continue
+                            support_margin = max(z_threshold, 0.01)
+                            ok = obj_pos[2] >= (target_pos[2] - support_margin)
+                            if ok:
+                                passed += 1
+                            details.append(
+                                f"{{obj}} on_surface {{target}}: obj_z={{obj_pos[2]:.3f}}m support_z={{target_pos[2]:.3f}}m {{'OK' if ok else 'FAIL'}}"
+                            )
+                        elif cond_type == "inside_tray":
+                            total += 1
+                            objects = cond.get("objects", [])
+                            tray_center = cond.get("tray_center")
+                            tray_half_extent = float(cond.get("tray_half_extent", 0.0))
+                            if (
+                                not objects
+                                or not isinstance(tray_center, (list, tuple))
+                                or len(tray_center) != 2
+                                or tray_half_extent <= 0.0
+                            ):
+                                details.append("skip: invalid inside_tray fields")
+                                continue
+                            tray_center_xy = np.array(tray_center[:2], dtype=float)
+                            inside = True
+                            tray_details = []
+                            for obj in objects:
+                                try:
+                                    obj_pos = np.array(detector.get_object_position(obj), dtype=float)
+                                except Exception as e:
+                                    inside = False
+                                    tray_details.append(f"{{obj}} missing ({{e}})")
+                                    continue
+                                delta = np.abs(obj_pos[:2] - tray_center_xy)
+                                obj_ok = bool(np.all(delta <= (tray_half_extent + xy_threshold)))
+                                inside = inside and obj_ok
+                                tray_details.append(
+                                    f"{{obj}} delta=({{delta[0]:.3f}}, {{delta[1]:.3f}}) {{'OK' if obj_ok else 'FAIL'}}"
+                                )
+                            if inside:
+                                passed += 1
+                            details.append("inside_tray: " + "; ".join(tray_details))
                         elif cond_type in ("lifted", "above", "height_above"):
                             total += 1
                             obj = cond.get("object", cond.get("subject", ""))
-                            min_height = cond.get("height", cond.get("value", 0.1))
+                            min_height = cond.get("height", cond.get("value"))
+                            target = cond.get("target")
                             try:
                                 pos = detector.get_object_position(obj)
-                                ok = pos[2] > min_height
+                                if isinstance(target, str):
+                                    target_pos = _resolve_target_position(
+                                        detector,
+                                        target,
+                                        translated_positions=translated_positions,
+                                        task_doc=task_doc,
+                                    )
+                                    baseline_z = float(target_pos[2]) if target_pos is not None else 0.0
+                                    threshold = float(min_height if min_height is not None else z_threshold)
+                                    ok = (pos[2] - baseline_z) > threshold
+                                    details.append(
+                                        f"{{obj}} {{cond_type}} {{target}}: delta_z={{pos[2] - baseline_z:.3f}}m {{'OK' if ok else 'FAIL'}}"
+                                    )
+                                else:
+                                    threshold = float(min_height if min_height is not None else 0.1)
+                                    ok = pos[2] > threshold
+                                    details.append(f"{{obj}} lifted: z={{pos[2]:.3f}}m {{'OK' if ok else 'FAIL'}}")
                                 if ok:
                                     passed += 1
-                                details.append(f"{{obj}} lifted: z={{pos[2]:.3f}}m {{'OK' if ok else 'FAIL'}}")
                             except Exception as e:
                                 details.append(f"{{obj}} lifted: detection failed ({{e}})")
+                        elif cond_type == "position_above":
+                            total += 1
+                            joint_name = cond.get("subject", cond.get("object", ""))
+                            threshold = float(cond.get("value", cond.get("height", 0.0)) or 0.0)
+                            joint_pos = _read_named_joint_position(env, task_doc, joint_name)
+                            if joint_pos is None:
+                                details.append(f"{{joint_name}} position_above: joint state unavailable")
+                                continue
+                            ok = joint_pos > threshold
+                            if ok:
+                                passed += 1
+                            details.append(
+                                f"{{joint_name}} position_above {{threshold:.3f}}: joint={{joint_pos:.3f}} {{'OK' if ok else 'FAIL'}}"
+                            )
+                        elif cond_type == "inserted_into":
+                            total += 1
+                            obj = cond.get("object", cond.get("subject", ""))
+                            target = cond.get("target")
+                            tol = float(cond.get("tolerance", xy_threshold))
+                            try:
+                                obj_pos, _ = detector.get_object_pose(obj)
+                                obj_pos = np.asarray(obj_pos, dtype=float)
+                            except Exception as e:
+                                details.append(f"{{obj}} inserted_into {{target}}: detection failed ({{e}})")
+                                continue
+                            target_pos = _resolve_target_metadata(translated_positions, target, "target_position")
+                            if target_pos is None:
+                                target_pos = _resolve_target_position(
+                                    detector,
+                                    target,
+                                    translated_positions=translated_positions,
+                                    task_doc=task_doc,
+                                )
+                            entry_pos = _resolve_target_metadata(translated_positions, target, "entry_position")
+                            insertion_axis = _resolve_target_metadata(translated_positions, target, "insertion_axis_world")
+                            if insertion_axis is not None:
+                                insertion_axis = np.asarray(insertion_axis, dtype=float)
+                                axis_norm = np.linalg.norm(insertion_axis)
+                                if axis_norm > 1e-6:
+                                    insertion_axis = insertion_axis / axis_norm
+                            if target_pos is None:
+                                details.append(f"{{obj}} inserted_into {{target}}: target metadata unavailable")
+                                continue
+                            delta = obj_pos - np.asarray(target_pos, dtype=float)
+                            radial_err = float(np.linalg.norm(delta[:2]))
+                            depth = None
+                            if insertion_axis is not None and entry_pos is not None:
+                                entry_pos = np.asarray(entry_pos, dtype=float)
+                                depth = float(np.dot(obj_pos - entry_pos, insertion_axis))
+                                radial_vec = (obj_pos - np.asarray(target_pos, dtype=float)) - insertion_axis * float(np.dot(obj_pos - np.asarray(target_pos, dtype=float), insertion_axis))
+                                radial_err = float(np.linalg.norm(radial_vec))
+                            required_depth = _resolve_target_metadata(translated_positions, target, "required_depth")
+                            if required_depth is None:
+                                required_depth = 0.0
+                            ok = radial_err < tol and (depth is None or depth >= float(required_depth))
+                            if ok:
+                                passed += 1
+                            if depth is None:
+                                details.append(
+                                    f"{{obj}} inserted_into {{target}}: radial_err={{radial_err:.3f}}m {{'OK' if ok else 'FAIL'}}"
+                                )
+                            else:
+                                details.append(
+                                    f"{{obj}} inserted_into {{target}}: radial_err={{radial_err:.3f}}m depth={{depth:.3f}}m {{'OK' if ok else 'FAIL'}}"
+                                )
+                        elif cond_type == "height_below":
+                            total += 1
+                            obj = cond.get("object", cond.get("subject", ""))
+                            target = cond.get("target")
+                            required_depth = float(cond.get("value", cond.get("height", 0.0)) or 0.0)
+                            try:
+                                obj_pos = np.asarray(detector.get_object_position(obj), dtype=float)
+                            except Exception as e:
+                                details.append(f"{{obj}} height_below {{target}}: detection failed ({{e}})")
+                                continue
+                            entry_pos = _resolve_target_metadata(translated_positions, target, "entry_position")
+                            insertion_axis = _resolve_target_metadata(translated_positions, target, "insertion_axis_world")
+                            if entry_pos is None or insertion_axis is None:
+                                target_pos = _resolve_target_position(
+                                    detector,
+                                    target,
+                                    translated_positions=translated_positions,
+                                    task_doc=task_doc,
+                                )
+                                if target_pos is None:
+                                    details.append(f"{{obj}} height_below {{target}}: target metadata unavailable")
+                                    continue
+                                depth = float(np.asarray(target_pos, dtype=float)[2] - obj_pos[2])
+                            else:
+                                insertion_axis = np.asarray(insertion_axis, dtype=float)
+                                axis_norm = np.linalg.norm(insertion_axis)
+                                if axis_norm > 1e-6:
+                                    insertion_axis = insertion_axis / axis_norm
+                                depth = float(np.dot(obj_pos - np.asarray(entry_pos, dtype=float), insertion_axis))
+                            ok = depth >= required_depth
+                            if ok:
+                                passed += 1
+                            details.append(
+                                f"{{obj}} height_below {{target}}: depth={{depth:.3f}}m {{'OK' if ok else 'FAIL'}}"
+                            )
+                        elif cond_type == "upright":
+                            total += 1
+                            obj = cond.get("object", cond.get("subject", ""))
+                            tolerance = float(cond.get("tolerance", 0.1) or 0.1)
+                            try:
+                                _, obj_quat = detector.get_object_pose(obj)
+                                obj_quat = np.asarray(obj_quat, dtype=float)
+                            except Exception as e:
+                                details.append(f"{{obj}} upright: pose lookup failed ({{e}})")
+                                continue
+                            info = translated_positions.get(obj, {{}}) if isinstance(translated_positions, dict) else {{}}
+                            axis_local = np.asarray(info.get("upright_axis_local", [1.0, 0.0, 0.0]), dtype=float)
+                            w, x, y, z = obj_quat
+                            rot = np.array([
+                                [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                                [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                                [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+                            ], dtype=float)
+                            axis_world = rot @ axis_local
+                            axis_world = axis_world / max(np.linalg.norm(axis_world), 1e-9)
+                            vertical = np.array([0.0, 0.0, 1.0], dtype=float)
+                            angle = float(np.arccos(np.clip(abs(np.dot(axis_world, vertical)), -1.0, 1.0)))
+                            ok = angle <= tolerance
+                            if ok:
+                                passed += 1
+                            details.append(
+                                f"{{obj}} upright: angle={{angle:.3f}}rad {{'OK' if ok else 'FAIL'}}"
+                            )
+                        elif cond_type == "in_slot":
+                            total += 1
+                            obj = cond.get("object", cond.get("subject", ""))
+                            target = cond.get("target")
+                            tol = float(cond.get("tolerance", xy_threshold))
+                            try:
+                                obj_pos = np.asarray(detector.get_object_position(obj), dtype=float)
+                            except Exception as e:
+                                details.append(f"{{obj}} in_slot {{target}}: detection failed ({{e}})")
+                                continue
+                            slot_pos = _resolve_target_metadata(translated_positions, target, "slot_position")
+                            if slot_pos is None:
+                                slot_pos = _resolve_target_position(
+                                    detector,
+                                    target,
+                                    translated_positions=translated_positions,
+                                    task_doc=task_doc,
+                                )
+                            if slot_pos is None:
+                                details.append(f"{{obj}} in_slot {{target}}: slot metadata unavailable")
+                                continue
+                            slot_pos = np.asarray(slot_pos, dtype=float)
+                            xy_err = float(np.linalg.norm(obj_pos[:2] - slot_pos[:2]))
+                            z_err = float(abs(obj_pos[2] - slot_pos[2]))
+                            ok = xy_err < tol and z_err < max(z_threshold, tol)
+                            if ok:
+                                passed += 1
+                            details.append(
+                                f"{{obj}} in_slot {{target}}: xy_err={{xy_err:.3f}}m z_err={{z_err:.3f}}m {{'OK' if ok else 'FAIL'}}"
+                            )
 
                     if total == 0:
                         return False, "no checkable conditions"
@@ -780,23 +1761,94 @@ class DataCollectionPipeline:
                 # Load config
                 with open("{config_json_path}") as f:
                     cfg = json.load(f)
+                _record_phase("config_loaded", "ok", config_path="{config_json_path}", output_dir=cfg["output_dir"])
 
                 robot_cfg = load_robot_config(cfg["robot_name"])
+                _record_phase("robot_config_loaded", "ok", robot_name=robot_cfg.name)
 
                 # Load task YAML
                 import yaml
                 with open(cfg["yaml_path"]) as f:
                     task_doc = yaml.safe_load(f)
+                task_name = task_doc.get("task", {{}}).get("name", "unknown")
+                task_desc = task_doc.get("task", {{}}).get("description", "")
+                cap_profile = select_cap_profile(robot_cfg)
+                recorder = None
+                env = None
+                results = {{
+                    "episodes": [],
+                    "total_episodes": 0,
+                    "successful_episodes": 0,
+                    "geometry_successful_episodes": 0,
+                    "vlm_successful_episodes": 0,
+                    "overall_successful_episodes": 0,
+                    "pipeline_completed": False,
+                    "target_met": False,
+                    "geometry_target_met": False,
+                    "vlm_target_met": False,
+                    "overall_target_met": False,
+                    "raw_dataset": None,
+                    "robot_skill_class": cap_profile.class_name,
+                    "judge_enabled": USE_VLM_JUDGE,
+                    "judge_available": False,
+                    "judge_unavailable_reason": None,
+                    "front_video_generated": False,
+                    "front_video_path": None,
+                    "front_video_episode": None,
+                    "front_video_error": None,
+                    "failure_phase": None,
+                    "failure_category": None,
+                    "phase_trace_path": PHASE_TRACE_PATH,
+                    "startup_diagnostics_path": STARTUP_DIAGNOSTICS_PATH,
+                    "heartbeat_path": HEARTBEAT_PATH,
+                    "stderr_tail_path": STDERR_TAIL_PATH,
+                }}
+
+                def _write_results():
+                    results_path = os.path.join(cfg["output_dir"], "collection_results.json")
+                    with open(results_path, "w") as _f:
+                        json.dump(results, _f, indent=2)
+                    return results_path
+
+                _update_startup_diagnostics(
+                    task_name=task_name,
+                    task_description=task_desc,
+                    robot_name=robot_cfg.name,
+                    env_dir=cfg.get("env_dir"),
+                    output_dir=cfg["output_dir"],
+                    use_vlm_judge=USE_VLM_JUDGE,
+                )
+                _record_phase("task_loaded", "ok", task_name=task_name)
 
                 # Create environment with cameras injected into scene config
                 env_cfg_class = _find_env_cfg_class()
                 if env_cfg_class is None:
-                    print("ERROR: Could not find EnvCfg class in env_cfg.py")
-                    sys.exit(1)
+                    msg = "Could not find EnvCfg class in env_cfg.py"
+                    print(f"ERROR: {{msg}}")
+                    results["pipeline_error"] = msg
+                    results["failure_phase"] = "env_cfg_lookup"
+                    results["failure_category"] = "env_cfg_lookup_failed"
+                    _record_phase("env_cfg_lookup", "error", error=msg)
+                    _update_startup_diagnostics(pipeline_error=msg, failure_phase="env_cfg_lookup", failure_category="env_cfg_lookup_failed")
+                    _write_results()
+                    simulation_app.close()
+                    return
 
-                env_cfg = env_cfg_class()
-                env_cfg.scene.num_envs = cfg["num_envs"]
-                _sanitize_generated_env_cfg(env_cfg, task_doc)
+                _record_phase("env_cfg_lookup", "ok", class_name=env_cfg_class.__name__)
+                try:
+                    env_cfg = env_cfg_class()
+                    _record_phase("env_cfg_instantiated", "ok", class_name=env_cfg_class.__name__)
+                    env_cfg.scene.num_envs = cfg["num_envs"]
+                    _sanitize_generated_env_cfg(env_cfg, task_doc)
+                    _record_phase("env_cfg_sanitized", "ok")
+                except Exception as exc:
+                    payload = _write_exception_artifacts(exc, "env_cfg_prepare", _classify_pipeline_failure(exc))
+                    results["pipeline_error"] = payload["message"]
+                    results["failure_phase"] = payload["failure_phase"]
+                    results["failure_category"] = payload["failure_category"]
+                    _write_results()
+                    simulation_app.close()
+                    return
 
                 # --- Patch episode length to prevent auto-reset mid-collection ---
                 # LLM-generated env_cfg uses episode_length_s=30s (typical for RL).
@@ -969,7 +2021,18 @@ class DataCollectionPipeline:
                     else:
                         print("Using default Isaac Sim UR10e asset (local override disabled)")
 
-                env = ManagerBasedRLEnv(cfg=env_cfg)
+                _record_phase("env_constructor", "start")
+                try:
+                    env = ManagerBasedRLEnv(cfg=env_cfg)
+                    _record_phase("env_constructor", "ok")
+                except Exception as exc:
+                    payload = _write_exception_artifacts(exc, "env_constructor", _classify_pipeline_failure(exc))
+                    results["pipeline_error"] = payload["message"]
+                    results["failure_phase"] = payload["failure_phase"]
+                    results["failure_category"] = payload["failure_category"]
+                    _write_results()
+                    simulation_app.close()
+                    return
 
                 # Add the minimal UR10e/Robotiq pad-collision patch only in the
                 # UR10e path.  Keep this logic centralized so debug harnesses and
@@ -989,48 +2052,62 @@ class DataCollectionPipeline:
                     print(f"WARNING: Failed to add runtime collision shapes: {{coll_err}}")
                     traceback.print_exc()
 
-                # Initialize components
-                robot_interface = SimRobotInterface(env, robot_cfg, env_idx=0)
-                detector = SimDetector(env, task_doc, env_idx=0)
+                _record_phase("components_init", "start")
+                try:
+                    # Initialize components
+                    robot_interface = SimRobotInterface(env, robot_cfg, env_idx=0)
+                    detector = SimDetector(env, task_doc, env_idx=0)
 
-                # Read robot base position for IK frame conversion
-                robot_base_pos = env.scene["robot"].data.root_pos_w[0].cpu().numpy()
-                print(f"Robot base position (world frame): {{robot_base_pos}}")
+                    # Read robot base position for IK frame conversion
+                    robot_base_pos = env.scene["robot"].data.root_pos_w[0].cpu().numpy()
+                    print(f"Robot base position (world frame): {{robot_base_pos}}")
 
-                # Initialize multi-camera system from scene-integrated cameras
-                cameras = None
-                camera = None  # legacy fallback
-                if camera_attr_names:
+                    # Initialize multi-camera system from scene-integrated cameras
+                    cameras = None
+                    camera = None  # legacy fallback
+                    if camera_attr_names:
+                        try:
+                            cameras = SceneCameraManager(env, camera_attr_names)
+                            print(f"SceneCameraManager initialized: {{cameras.camera_names}}")
+                        except Exception as cam_err:
+                            print(f"WARNING: SceneCameraManager init failed ({{cam_err}}).")
+                            cameras = None
+
+                        recorder = SimRecorder(
+                            robot_cfg=robot_cfg,
+                            output_dir=cfg["output_dir"],
+                            dataset_name="raw_dataset",
+                            fps=cfg["recording_fps"],
+                    )
+
+                    # Create IK solver (Pinocchio when URDF exists, otherwise DifferentialIK fallback)
+                    ik_solver = create_ik_solver(robot_cfg, robot_interface=robot_interface)
+
+                    # Create skills (with multi-camera for image recording)
+                    skills = SimSkills(
+                        robot_interface=robot_interface,
+                        robot_cfg=robot_cfg,
+                        detector=detector,
+                        recorder=recorder,
+                        camera=camera,
+                        cameras=cameras,
+                        ik_solver=ik_solver,
+                        base_offset=robot_base_pos,
+                    )
+                    _record_phase("components_init", "ok")
+                except Exception as exc:
+                    payload = _write_exception_artifacts(exc, "components_init", _classify_pipeline_failure(exc))
+                    results["pipeline_error"] = payload["message"]
+                    results["failure_phase"] = payload["failure_phase"]
+                    results["failure_category"] = payload["failure_category"]
+                    _write_results()
                     try:
-                        cameras = SceneCameraManager(env, camera_attr_names)
-                        print(f"SceneCameraManager initialized: {{cameras.camera_names}}")
-                    except Exception as cam_err:
-                        print(f"WARNING: SceneCameraManager init failed ({{cam_err}}).")
-                        cameras = None
+                        env.close()
+                    except Exception:
+                        pass
+                    simulation_app.close()
+                    return
 
-                recorder = SimRecorder(
-                    robot_cfg=robot_cfg,
-                    output_dir=cfg["output_dir"],
-                    dataset_name="raw_dataset",
-                    fps=cfg["recording_fps"],
-                )
-
-                # Create IK solver (Pinocchio when URDF exists, otherwise DifferentialIK fallback)
-                ik_solver = create_ik_solver(robot_cfg, robot_interface=robot_interface)
-
-                # Create skills (with multi-camera for image recording)
-                skills = SimSkills(
-                    robot_interface=robot_interface,
-                    robot_cfg=robot_cfg,
-                    detector=detector,
-                    recorder=recorder,
-                    camera=camera,
-                    cameras=cameras,
-                    ik_solver=ik_solver,
-                    base_offset=robot_base_pos,
-                )
-
-                cap_profile = select_cap_profile(robot_cfg)
                 cap_generator = None
                 try:
                     from src.common.llm_client import AzureOpenAIClient
@@ -1045,8 +2122,10 @@ class DataCollectionPipeline:
                         f"SimCaPGenerator initialized: model={{cfg['llm_model']}}, "
                         f"skill_class={{cap_profile.class_name}}"
                     )
+                    _record_phase("cap_generator_init", "ok", model=cfg["llm_model"])
                 except Exception as e:
                     print(f"SimCaPGenerator init failed: {{e}}")
+                    _record_phase("cap_generator_init", "error", error=str(e))
 
                 # Initialize VLM judge if enabled
                 sim_judge = None
@@ -1057,27 +2136,13 @@ class DataCollectionPipeline:
                         judge_init_error = sim_judge.availability_reason
                         print(f"SimJudge unavailable: {{judge_init_error}}")
                         sim_judge = None
+                        _record_phase("vlm_judge_init", "error", error=judge_init_error)
                     else:
                         print("SimJudge initialized (VLM-based episode judging enabled)")
+                        _record_phase("vlm_judge_init", "ok", model="gpt-5")
 
-                results = {{
-                    "episodes": [],
-                    "total_episodes": 0,
-                    "successful_episodes": 0,
-                    "geometry_successful_episodes": 0,
-                    "vlm_successful_episodes": 0,
-                    "overall_successful_episodes": 0,
-                    "pipeline_completed": False,
-                    "target_met": False,
-                    "geometry_target_met": False,
-                    "vlm_target_met": False,
-                    "overall_target_met": False,
-                    "raw_dataset": None,
-                    "robot_skill_class": cap_profile.class_name,
-                    "judge_enabled": USE_VLM_JUDGE,
-                    "judge_available": sim_judge is not None,
-                    "judge_unavailable_reason": judge_init_error or None,
-                }}
+                results["judge_available"] = sim_judge is not None
+                results["judge_unavailable_reason"] = judge_init_error or None
 
                 # Success-based episode loop
                 target_success = cfg.get("target_successful_episodes", cfg["max_episodes"])
@@ -1086,6 +2151,7 @@ class DataCollectionPipeline:
                 successful_count = 0
 
                 try:
+                    _record_phase("policy_support_check", "start")
                     supported_task, unsupported_reason = is_supported_tabletop_task(task_doc)
                     if not supported_task:
                         raise RuntimeError(
@@ -1095,13 +2161,18 @@ class DataCollectionPipeline:
                         raise RuntimeError("CaP generator unavailable; check Azure OpenAI configuration")
                     if USE_VLM_JUDGE and sim_judge is None:
                         raise RuntimeError(f"VLM judge unavailable: {{judge_init_error}}")
+                    _update_startup_diagnostics(supported_task=True, supported_reason=unsupported_reason)
+                    _record_phase("policy_support_check", "ok", reason=unsupported_reason)
 
                     while successful_count < target_success and episode_idx < max_attempts:
                         print(f"\\n=== Episode {{episode_idx + 1}} (success: {{successful_count}}/{{target_success}}, max: {{max_attempts}}) ===")
+                        _record_phase("episode_start", "start", episode=episode_idx)
 
                         # Reset environment
+                        _record_phase("episode_reset", "start", episode=episode_idx)
                         obs, info = env.reset()
                         robot_interface.reset_termination_flags()
+                        _record_phase("episode_reset", "ok", episode=episode_idx)
 
                         # Render warmup: hold initial position for a few steps so camera
                         # buffers are populated (first frames after reset can be black).
@@ -1119,19 +2190,30 @@ class DataCollectionPipeline:
                             _warmup_action[0, _num_arm_joints] = 1.0  # gripper open
                         for _ in range(10):
                             env.step(_warmup_action)
+                        _record_phase("episode_warmup", "ok", episode=episode_idx)
 
                         # Start recording
-                        task_desc = task_doc.get("task", {{}}).get("description", "")
                         recorder.start_episode(task_desc, episode_idx)
+                        _record_phase("recorder_start_episode", "ok", episode=episode_idx)
 
                         # Get scene state
+                        _record_phase("scene_detect", "start", episode=episode_idx)
                         scene_state = detector.get_all_objects()
                         print(f"Scene objects: {{list(scene_state.keys())}}")
+                        _update_startup_diagnostics(last_scene_objects=sorted(scene_state.keys()))
+                        _record_phase("scene_detect", "ok", episode=episode_idx, object_count=len(scene_state))
 
                         # Capture initial images for VLM judge (wrist + front)
                         initial_images = None
                         if sim_judge is not None:
+                            _record_phase("initial_judge_capture", "start", episode=episode_idx)
                             initial_images = _capture_judge_images(cameras)
+                            _record_phase(
+                                "initial_judge_capture",
+                                "ok",
+                                episode=episode_idx,
+                                image_views=sorted(initial_images.keys()) if initial_images else [],
+                            )
 
                         # Debug: save initial images from ALL cameras (first episode)
                         if episode_idx == 0 and cameras is not None:
@@ -1164,6 +2246,7 @@ class DataCollectionPipeline:
 
                         # Execute ADC-style generated code
                         try:
+                            _record_phase("codegen_request", "start", episode=episode_idx)
                             generation = cap_generator.generate_code(
                                 task_doc=task_doc,
                                 scene_state=scene_state,
@@ -1178,6 +2261,12 @@ class DataCollectionPipeline:
                                 translated_positions=translated_positions,
                             )
                             codegen_success = True
+                            _record_phase(
+                                "codegen_request",
+                                "ok",
+                                episode=episode_idx,
+                                generated_code_chars=len(generated_code),
+                            )
                             print(
                                 f"Generated CaP code: {{artifact_paths.get('generated_code', '')}} "
                                 f"({{len(generated_code)}} chars)"
@@ -1193,7 +2282,9 @@ class DataCollectionPipeline:
                                 "__name__": "__main__",
                                 "positions": translated_positions,
                             }}
+                            _record_phase("cap_execute", "start", episode=episode_idx)
                             exec(generated_code, exec_globals)
+                            _record_phase("cap_execute", "ok", episode=episode_idx)
 
                             # Capture env termination + goal state BEFORE move_to_ready
                             # (move_to_ready can knock objects; env auto-resets on success)
@@ -1205,13 +2296,33 @@ class DataCollectionPipeline:
                             pre_retreat_goal_ok = False
                             pre_retreat_goal_details = ""
                             if not env_terminated_during_skills:
-                                pre_retreat_goal_ok, pre_retreat_goal_details = _verify_goal_conditions(detector, goal)
+                                pre_retreat_goal_ok, pre_retreat_goal_details = _verify_goal_conditions(
+                                    detector,
+                                    goal,
+                                    translated_positions=translated_positions,
+                                    task_doc=task_doc,
+                                    task_description=task_desc,
+                                )
+                            _record_phase(
+                                "geometry_verify",
+                                "ok",
+                                episode=episode_idx,
+                                goal_ok=bool(pre_retreat_goal_ok),
+                                details=pre_retreat_goal_details,
+                            )
 
                             # Capture final images BEFORE retreat (for VLM judge)
                             final_images = None
                             if sim_judge is not None:
+                                _record_phase("final_judge_capture", "start", episode=episode_idx)
                                 final_images = _capture_judge_images(cameras)
                                 final_image_paths = save_judge_images(run_dir, "final", final_images)
+                                _record_phase(
+                                    "final_judge_capture",
+                                    "ok",
+                                    episode=episode_idx,
+                                    image_views=sorted(final_images.keys()) if final_images else [],
+                                )
 
                             skills.move_to_ready(
                                 duration=1.5,
@@ -1230,6 +2341,13 @@ class DataCollectionPipeline:
                                 print(f"Recorder storage error: {{e}}")
                             else:
                                 print(f"CaP execution error: {{e}}")
+                            _record_phase(
+                                "episode_runtime_error",
+                                "error",
+                                episode=episode_idx,
+                                error=str(e),
+                                stage="execution" if codegen_success else "codegen",
+                            )
                             traceback.print_exc()
                             execution_ok = False
                             env_terminated_during_skills = robot_interface.env_terminated
@@ -1277,6 +2395,7 @@ class DataCollectionPipeline:
                                 and initial_images is not None
                             )
                         if judge_available:
+                            _record_phase("vlm_judge_episode", "start", episode=episode_idx)
                             verdict = sim_judge.judge_episode(
                                 task_description=task_desc,
                                 initial_images=initial_images,
@@ -1285,9 +2404,16 @@ class DataCollectionPipeline:
                                 executed_code=generated_code,
                             )
                             vlm_success = bool(verdict["success"])
+                            _record_phase(
+                                "vlm_judge_episode",
+                                "ok",
+                                episode=episode_idx,
+                                prediction=verdict.get("prediction", "N/A"),
+                            )
                             print(f"VLM Judge: {{verdict['prediction']}} — {{verdict['reasoning'][:80]}}")
                         elif sim_judge is not None:
                             print("VLM Judge unavailable for episode: missing images or execution failed")
+                            _record_phase("vlm_judge_episode", "error", episode=episode_idx, error="missing_images_or_execution_failed")
 
                         overall_success = geometry_success and (vlm_success if sim_judge is not None else True)
                         success = geometry_success
@@ -1296,7 +2422,13 @@ class DataCollectionPipeline:
                         discard_failed = (cfg.get("target_successful_episodes", 0) > 0
                                          and cfg.get("target_successful_episodes", 0) < cfg.get("max_total_attempts", 999)
                                          and not success)
+                        front_video_before = recorder.front_video_generated
                         recorder.end_episode(success=success, discard=discard_failed)
+                        front_video_selected = (
+                            not front_video_before
+                            and recorder.front_video_generated
+                            and recorder.front_video_episode == episode_idx
+                        )
 
                         episode_result = {{
                             "episode": episode_idx,
@@ -1318,12 +2450,16 @@ class DataCollectionPipeline:
                             "initial_judge_images": initial_image_paths,
                             "final_judge_images": final_image_paths,
                         }}
+                        if front_video_selected:
+                            episode_result["front_video_selected"] = True
                         if blocked_fallback_reason:
                             episode_result["blocked_fallback_reason"] = blocked_fallback_reason
                         if codegen_error:
                             episode_result["codegen_error"] = codegen_error
                         if execution_error:
                             episode_result["execution_error"] = execution_error
+                        if recorder.front_video_error:
+                            episode_result["front_video_error"] = recorder.front_video_error
                         if verdict is not None:
                             episode_result["judge_prediction"] = verdict.get("prediction", "N/A")
                             episode_result["judge_reasoning"] = verdict.get("reasoning", "")
@@ -1345,6 +2481,14 @@ class DataCollectionPipeline:
                             f"overall={{'SUCCESS' if overall_success else 'FAILED'}}"
                             f"{{'(discarded)' if discard_failed else ''}}"
                         )
+                        _record_phase(
+                            "episode_complete",
+                            "ok",
+                            episode=episode_idx,
+                            geometry_success=bool(geometry_success),
+                            vlm_success=bool(vlm_success),
+                            overall_success=bool(overall_success),
+                        )
                         episode_idx += 1
 
                     print(
@@ -1356,12 +2500,24 @@ class DataCollectionPipeline:
                 except KeyboardInterrupt:
                     print("\\nCollection interrupted by user")
                     results["pipeline_error"] = "interrupted"
+                    results["failure_phase"] = _LAST_PHASE
+                    results["failure_category"] = "interrupted"
+                    _record_phase(_LAST_PHASE, "error", error="interrupted", category="interrupted")
+                    _update_startup_diagnostics(
+                        pipeline_error="interrupted",
+                        failure_phase=_LAST_PHASE,
+                        failure_category="interrupted",
+                    )
                 except Exception as e:
                     print(f"Pipeline error: {{e}}")
                     results["pipeline_error"] = str(e)
+                    failure_category = _classify_pipeline_failure(e)
+                    results["failure_phase"] = _LAST_PHASE
+                    results["failure_category"] = failure_category
+                    _write_exception_artifacts(e, _LAST_PHASE, failure_category)
                     traceback.print_exc()
                 finally:
-                    if recorder.is_recording:
+                    if recorder is not None and recorder.is_recording:
                         try:
                             recorder.end_episode(success=False, discard=False)
                         except Exception as end_err:
@@ -1370,23 +2526,37 @@ class DataCollectionPipeline:
                             results.setdefault("cleanup_errors", []).append(
                                 f"end_episode failed: {{end_err}}"
                             )
-
                     dataset_path = None
-                    try:
-                        dataset_path = recorder.finalize()
-                    except Exception as finalize_err:
-                        print(f"WARNING: Dataset finalize failed: {{finalize_err}}")
-                        traceback.print_exc()
-                        results.setdefault("cleanup_errors", []).append(
-                            f"finalize failed: {{finalize_err}}"
-                        )
-                        results.setdefault(
-                            "pipeline_error",
-                            f"finalize failed: {{finalize_err}}",
-                        )
+                    if recorder is not None:
+                        try:
+                            dataset_path = recorder.finalize()
+                        except Exception as finalize_err:
+                            print(f"WARNING: Dataset finalize failed: {{finalize_err}}")
+                            traceback.print_exc()
+                            results.setdefault("cleanup_errors", []).append(
+                                f"finalize failed: {{finalize_err}}"
+                            )
+                            results.setdefault(
+                                "pipeline_error",
+                                f"finalize failed: {{finalize_err}}",
+                            )
 
                     results["dataset_path"] = dataset_path
                     results["raw_dataset"] = dataset_path
+                    results["front_video_generated"] = bool(recorder and recorder.front_video_generated)
+                    results["front_video_path"] = (
+                        str(recorder.front_video_path) if recorder and recorder.front_video_path is not None else None
+                    )
+                    results["front_video_episode"] = (
+                        int(recorder.front_video_episode) if recorder and recorder.front_video_episode is not None else None
+                    )
+                    results["front_video_error"] = (
+                        recorder.front_video_error if recorder else None
+                    )
+                    results["phase_trace_path"] = PHASE_TRACE_PATH
+                    results["startup_diagnostics_path"] = STARTUP_DIAGNOSTICS_PATH
+                    results["heartbeat_path"] = HEARTBEAT_PATH
+                    results["stderr_tail_path"] = STDERR_TAIL_PATH
                     results["target_met"] = (
                         results["successful_episodes"] >= target_success
                     )
@@ -1402,6 +2572,18 @@ class DataCollectionPipeline:
                     )
                     results["pipeline_completed"] = dataset_path is not None
                     results["success"] = results["pipeline_completed"]
+                    _update_startup_diagnostics(
+                        pipeline_completed=bool(results["pipeline_completed"]),
+                        failure_phase=results.get("failure_phase"),
+                        failure_category=results.get("failure_category"),
+                        dataset_path=dataset_path,
+                    )
+                    _record_phase(
+                        "pipeline_finalize",
+                        "ok" if results["pipeline_completed"] else "error",
+                        dataset_path=dataset_path,
+                        pipeline_completed=bool(results["pipeline_completed"]),
+                    )
 
                     # Save results
                     results_path = os.path.join(cfg["output_dir"], "collection_results.json")
@@ -1416,7 +2598,8 @@ class DataCollectionPipeline:
                     print(f"Dataset at {{dataset_path}}")
 
                     # Close simulation
-                    env.close()
+                    if env is not None:
+                        env.close()
                     simulation_app.close()
 
 

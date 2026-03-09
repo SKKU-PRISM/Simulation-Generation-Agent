@@ -17,6 +17,11 @@ kinematics:
     x: [0.10, 0.60]
     y: [-0.60, 0.60]
     z: [-0.25, 0.85]
+  # The rendered OpenArm URDF is useful for provenance and offline analysis,
+  # but its kinematic chain does not numerically match the USD articulation
+  # closely enough for accurate live pose IK. Use IsaacLab's differential IK
+  # for control so the Jacobian is taken from the actual simulation model.
+  ik_backend: differential_ik
   # Canonical local URDF lives at assets/robots/openarm/openarm_v10_hand.urdf
   # and is rendered from enactic/openarm_description@79cd8b7.
   # link_chain remains omitted because we consume the URDF directly for IK.
@@ -77,7 +82,7 @@ gripper:
   max_force: 333.33                    # N (effort_limit from actuator)
   stiffness: 2000.0
   damping: 100.0
-  ee_finger_offset: 0.0               # m — tcp_frame already points at the grasp TCP
+  ee_finger_offset: 0.0               # m — virtual TCP offset is handled via ee_frame.offset_position
 
 physics:
   self_collision: false
@@ -126,8 +131,15 @@ asset:
   initial_rotation: [1, 0, 0, 0]      # wxyz
   ee_frame:
     body: openarm_hand
-    tcp_frame: openarm_ee_tcp
-    ik_frame: openarm_hand_tcp
+    # Use the hand body as the live/control frame and apply the grasp TCP as
+    # an explicit local offset. The USD openarm_ee_tcp frame does not share the
+    # same orientation convention as the URDF hand frame, which breaks top-down
+    # grasp alignment checks and pose IK. Keeping sim reads and Pinocchio IK on
+    # openarm_hand gives a single orientation convention, while the 8cm TCP
+    # stays available through the virtual offset below.
+    tcp_frame: ""
+    offset_position: [0.0, 0.0, 0.08]
+    ik_frame: openarm_hand
   ready_pose:
     openarm_joint1: 1.57
     openarm_joint2: 0.0

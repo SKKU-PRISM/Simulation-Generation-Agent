@@ -19,6 +19,11 @@ from .dataset_export import (
     export_dataset,
 )
 from .dataset_preprocess import preprocess_exported_dataset
+from .lerobot_tools import (
+    check_lerobot_dataset,
+    convert_raw_dataset_to_lerobot,
+    publish_lerobot_dataset,
+)
 from .sim_camera import SimCamera
 from .sim_detector import SimDetector
 from .sim_recorder import SimRecorder, convert_to_lerobot

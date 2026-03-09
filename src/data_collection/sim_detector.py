@@ -10,6 +10,7 @@ Runs INSIDE the IsaacLab conda subprocess where torch and isaaclab are available
 from __future__ import annotations
 
 import logging
+from pathlib import PurePosixPath
 from typing import Optional
 
 import numpy as np
@@ -72,27 +73,29 @@ class SimDetector:
                 self._ee_offset = meta.get("ee_frame", {}).get("offset_position")
 
                 # Try to find the robot in scene articulations
-                key = self._resolve_entity_key(asset_name, available_artic)
+                key = self._resolve_entity_key(asset_name, meta, available_artic)
                 if key:
                     self._entity_map[asset_name] = key
                 continue
 
             # Rigid or static objects
-            key = self._resolve_entity_key(asset_name, all_keys)
+            key = self._resolve_entity_key(asset_name, meta, all_keys)
             if key:
                 self._entity_map[asset_name] = key
             else:
                 logger.warning(f"Could not map asset '{asset_name}' to any scene entity. "
                                f"Available: {all_keys}")
 
-    def _resolve_entity_key(self, asset_name: str, candidates: set[str]) -> Optional[str]:
+    def _resolve_entity_key(self, asset_name: str, meta: dict, candidates: set[str]) -> Optional[str]:
         """Resolve a YAML asset name to an IsaacLab scene entity key.
 
         Matching strategy (in priority order):
         1. Exact match
         2. Case-insensitive match
         3. Substring match (asset_name contained in key or vice versa)
-        4. Normalized match (underscores/hyphens removed)
+        4. Prim path basename match
+        5. Normalized match (underscores/hyphens removed)
+        6. Sole non-robot object fallback for singleton scenes
         """
         if not candidates:
             return None
@@ -112,7 +115,20 @@ class SimDetector:
             if name_lower in key.lower() or key.lower() in name_lower:
                 return key
 
-        # 4. Normalized (strip underscores/hyphens)
+        prim_path = str((meta or {}).get("prim_path", "") or "").strip()
+        prim_basename = ""
+        if prim_path:
+            prim_basename = PurePosixPath(prim_path).name
+            if prim_basename:
+                prim_lower = prim_basename.lower()
+                for key in candidates:
+                    if key.lower() == prim_lower:
+                        return key
+                for key in candidates:
+                    if prim_lower in key.lower() or key.lower() in prim_lower:
+                        return key
+
+        # 5. Normalized (strip underscores/hyphens)
         def normalize(s: str) -> str:
             return s.lower().replace("_", "").replace("-", "")
 
@@ -120,6 +136,18 @@ class SimDetector:
         for key in candidates:
             if normalize(key) == norm_name:
                 return key
+        if prim_basename:
+            norm_prim = normalize(prim_basename)
+            for key in candidates:
+                if normalize(key) == norm_prim:
+                    return key
+
+        # 6. Final fallback: if there is only one non-robot candidate, assume it.
+        non_robot_candidates = {
+            key for key in candidates if key.lower() not in {"robot", "franka", "openarm", "so101", "ur10e"}
+        }
+        if len(non_robot_candidates) == 1:
+            return next(iter(non_robot_candidates))
 
         return None
 

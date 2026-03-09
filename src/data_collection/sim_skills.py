@@ -488,8 +488,22 @@ def create_ik_solver(
     Raises:
         RuntimeError: If neither Pinocchio nor DifferentialIK can be used.
     """
+    backend_preference = str(getattr(robot_cfg, "ik_backend", "auto") or "auto").lower()
+    if backend_preference == "differential_ik":
+        if robot_interface is not None:
+            logger.info(
+                "Using DifferentialIKSolver for %s (configured ik_backend=differential_ik)",
+                robot_cfg.name,
+            )
+            return DifferentialIKSolver(robot_interface)
+        logger.warning(
+            "Robot %s requests DifferentialIK but no live robot interface was provided; "
+            "falling back to Pinocchio if a URDF is available.",
+            robot_cfg.name,
+        )
+
     _urdf = urdf_path or robot_cfg.urdf_path
-    if _urdf:
+    if _urdf and (backend_preference != "differential_ik" or robot_interface is None):
         return PinocchioIKSolver(
             urdf_path=_urdf,
             ee_frame=robot_cfg.ik_ee_frame or robot_cfg.ee_frame_tcp or robot_cfg.ee_frame_body,
@@ -1027,6 +1041,22 @@ class SimSkills:
         except Exception as e:
             logger.warning(f"Cannot verify placement for '{object_name}': {e}")
             return True, 0.0
+
+    def _measure_live_object_xy_offset(self, object_name: str) -> Optional[np.ndarray]:
+        """Measure a held object's live XY offset from the current TCP pose."""
+
+        if self.detector is None:
+            return None
+        try:
+            object_pos = np.asarray(self.detector.get_object_position(object_name), dtype=np.float64)
+            ee_pos, _ = self.robot.read_ee_pose()
+        except Exception:
+            return None
+        ee_pos = np.asarray(ee_pos, dtype=np.float64)
+        xy_offset = object_pos[:2] - ee_pos[:2]
+        if not np.all(np.isfinite(xy_offset)):
+            return None
+        return xy_offset
 
     # ---- Primitive Skills ----
 
@@ -1638,13 +1668,52 @@ class SimSkills:
                 duration=duration,
                 approach_angle_deg=approach_angle_deg,
                 allow_position_only_fallback=allow_position_only_fallback,
-            )
+        )
         return self.move_to_pose(
             target_xyz,
             np.asarray(target_rotation_world, dtype=np.float64),
             duration=duration,
             allow_position_only_fallback=allow_position_only_fallback,
         )
+
+    def _move_with_target_rotation_until_reached(
+        self,
+        target_xyz: np.ndarray,
+        *,
+        duration: Optional[float] = None,
+        target_rotation_world: Optional[np.ndarray] = None,
+        approach_angle_deg: float | None = None,
+        allow_position_only_fallback: bool = True,
+        retry_durations: Optional[list[Optional[float]]] = None,
+        label: str = "target",
+    ) -> bool:
+        """Retry a target pose with progressively longer durations until it converges."""
+
+        durations: list[Optional[float]] = [duration]
+        if retry_durations:
+            durations.extend(retry_durations)
+
+        last_error = float("inf")
+        for attempt_idx, attempt_duration in enumerate(durations, start=1):
+            reached = self._move_with_target_rotation(
+                target_xyz,
+                duration=attempt_duration,
+                target_rotation_world=target_rotation_world,
+                approach_angle_deg=approach_angle_deg,
+                allow_position_only_fallback=allow_position_only_fallback,
+            )
+            reached_now, last_error = self._verify_ee_position(target_xyz)
+            if reached or reached_now:
+                return True
+            logger.warning(
+                "Failed to reach %s on attempt %d/%d (error=%.4fm, duration=%s)",
+                label,
+                attempt_idx,
+                len(durations),
+                last_error,
+                "auto" if attempt_duration is None else f"{attempt_duration:.2f}s",
+            )
+        return False
 
     def _move_cartesian_steps(
         self,
@@ -1826,6 +1895,10 @@ class SimSkills:
         current_xyz = self.robot.read_ee_position()
         if duration is None:
             duration = max(0.75, np.linalg.norm(target_xyz - current_xyz) * 6.0)
+        # OpenArm needs slower transport while holding an object; otherwise it
+        # tends to under-converge and release early during stacked placements.
+        if self.cfg.name == "openarm" and self._gripper_is_closed:
+            duration = max(float(duration), 1.5)
         num_steps = max(15, int(duration * 20))
         if target_rotation is None:
             _, current_quat = self.robot.read_tcp_pose_world()
@@ -1854,7 +1927,8 @@ class SimSkills:
         )
         self._skill_total_steps = num_steps
 
-        target_base = target_xyz - self._base_offset
+        ik_target_world = self._world_target_to_ik_target(target_xyz, target_rotation)
+        target_base = ik_target_world - self._base_offset
         target_base_rot = None
         if target_rotation is not None:
             target_base_rot = self._world_rotation_to_base(target_rotation)
@@ -2066,6 +2140,19 @@ class SimSkills:
             skill_description=step_desc(f"close the gripper to grasp {object_name}"),
         )
 
+        # OpenArm benefits from a short breakout lift immediately after grasp
+        # so the cube clears table contact before the longer transport move.
+        if self.cfg.name == "openarm":
+            ee_pos_after_close, _ = self.robot.read_ee_pose()
+            breakout_pos = np.asarray(ee_pos_after_close, dtype=np.float64).copy()
+            breakout_pos[2] = min(approach_pos[2], breakout_pos[2] + 0.05)
+            self._move_with_target_rotation(
+                breakout_pos,
+                target_rotation_world=target_rotation_world,
+                approach_angle_deg=approach_angle_deg,
+                allow_position_only_fallback=allow_position_only_fallback,
+            )
+
         # Lift back to approach via Cartesian steps (6-DOF) or single move (7+)
         if self.cfg.arm_dofs == 6:
             ee_pos, _ = self.robot.read_ee_pose()
@@ -2142,23 +2229,82 @@ class SimSkills:
         )
 
         # Move to approach
-        self._move_with_target_rotation(
+        payload_retry_durations = [1.5, 2.25] if self.cfg.name == "openarm" else None
+        approach_reached = self._move_with_target_rotation_until_reached(
             approach_pos,
             target_rotation_world=target_rotation_world,
             approach_angle_deg=approach_angle_deg,
             allow_position_only_fallback=allow_position_only_fallback,
+            retry_durations=payload_retry_durations,
+            label=f"place-approach:{_placed_object or 'held_object'}",
         )
+        if not approach_reached:
+            logger.warning(
+                "Aborting place '%s' because the approach pose never converged",
+                _placed_object or "held_object",
+            )
+            return False
 
         # Descend via Cartesian steps (6-DOF) or single move (7+)
         if self.cfg.arm_dofs == 6:
-            self._move_cartesian_steps(approach_pos, place_pos, max_step=0.015)
+            reached = self._move_cartesian_steps(approach_pos, place_pos, max_step=0.015)
         else:
-            self._move_with_target_rotation(
+            reached = self._move_with_target_rotation_until_reached(
                 place_pos,
                 target_rotation_world=target_rotation_world,
                 approach_angle_deg=approach_angle_deg,
                 allow_position_only_fallback=allow_position_only_fallback,
+                retry_durations=payload_retry_durations,
+                label=f"place-release:{_placed_object or 'held_object'}",
             )
+        if not reached:
+            logger.warning(
+                "Aborting place '%s' because the release pose never converged",
+                _placed_object or "held_object",
+            )
+            return False
+
+        precise_release = drop_offset <= 0.0025
+        if _placed_object and (self.cfg.name == "openarm" or precise_release):
+            live_xy_offset = self._measure_live_object_xy_offset(_placed_object)
+            if live_xy_offset is not None:
+                corrected_place_reference = target_position.copy()
+                corrected_place_reference[:2] -= live_xy_offset[:2]
+                correction_xy = corrected_place_reference[:2] - place_reference[:2]
+                correction_norm = float(np.linalg.norm(correction_xy))
+                print(
+                    f"  LIVE-HOLD '{_placed_object}': xy_offset={np.round(live_xy_offset, 4)}, "
+                    f"correction={np.round(correction_xy, 4)}"
+                )
+                min_correction = 0.003 if precise_release else 0.01
+                max_correction = 0.06 if precise_release else 0.08
+                if min_correction < correction_norm < max_correction:
+                    corrected_place_pos, _ = self._compute_place_targets(
+                        corrected_place_reference,
+                        approach_offset=approach_offset,
+                        drop_offset=drop_offset,
+                        approach_direction_world=approach_direction_world,
+                    )
+                    corrected_reached = self._move_with_target_rotation_until_reached(
+                        corrected_place_pos,
+                        target_rotation_world=target_rotation_world,
+                        approach_angle_deg=approach_angle_deg,
+                        allow_position_only_fallback=allow_position_only_fallback,
+                        retry_durations=[1.5] if self.cfg.name == "openarm" else None,
+                        label=f"place-correct:{_placed_object}",
+                    )
+                    if corrected_reached:
+                        place_reference = corrected_place_reference
+                        place_pos = corrected_place_pos
+
+        release_reached, release_error = self._verify_ee_position(place_pos)
+        if not release_reached:
+            logger.warning(
+                "Aborting place '%s' because the release pose error stayed at %.4fm",
+                _placed_object or "held_object",
+                release_error,
+            )
+            return False
 
         aligned, axis_error_deg, aligned_axis = self._verify_tool_axis_alignment(
             required_tool_axis_world,
@@ -2194,7 +2340,8 @@ class SimSkills:
 
         # Let the arm settle at the release pose before opening the gripper.
         hold_arm = self.robot.read_arm_joint_positions().copy()
-        for _ in range(5):
+        settle_steps = 10 if self.cfg.name == "openarm" else 5
+        for _ in range(settle_steps):
             self.robot.write_arm_joint_positions(hold_arm)
             if self.cfg.has_gripper_joints:
                 self.robot.set_gripper(open=False)
@@ -2202,10 +2349,19 @@ class SimSkills:
 
         # Open gripper
         release_name = _placed_object or "the held object"
+        release_duration = 0.6 if self.cfg.name == "openarm" else 0.3
         self.gripper_open(
-            duration=0.3,
+            duration=release_duration,
             skill_description=step_desc(f"open the gripper to release {release_name}"),
         )
+
+        if self.cfg.name == "openarm":
+            open_arm = self.robot.read_arm_joint_positions().copy()
+            for _ in range(8):
+                self.robot.write_arm_joint_positions(open_arm)
+                if self.cfg.has_gripper_joints:
+                    self.robot.set_gripper(open=True)
+                self.robot.step_sim()
 
         # Retreat up via Cartesian steps (6-DOF)
         if self.cfg.arm_dofs == 6:
@@ -2485,10 +2641,12 @@ class SimSkills:
             goal_gripper = self._current_goal_gripper
         tcp_world_xyzrpy = self._current_tcp_world_xyzrpy()
         tcp_robot_xyzrpy = self._current_tcp_robot_xyzrpy()
+        gripper_state = self.robot.read_gripper_state()
 
         # Capture camera images with decimation (each capture triggers GPU render)
         images = None
         image = None
+        front_video_image = None
         should_capture = (self._global_step_count % self._image_capture_decimation == 0)
         if should_capture:
             if self.cameras is not None:
@@ -2501,6 +2659,17 @@ class SimSkills:
                     image = self.camera.capture()
                 except Exception as e:
                     logger.debug(f"Camera capture failed: {e}")
+        elif self.recorder.should_capture_front_video_frame(self._global_step_count):
+            if self.cameras is not None:
+                try:
+                    front_video_image = self.cameras.capture_named(("front_cam", "front"))
+                except Exception as e:
+                    logger.debug(f"Front video capture failed: {e}")
+            elif self.camera is not None:
+                try:
+                    front_video_image = self.camera.capture()
+                except Exception as e:
+                    logger.debug(f"Legacy front video capture failed: {e}")
 
         self._global_step_count += 1
 
@@ -2509,6 +2678,7 @@ class SimSkills:
             action=action,
             image=image,
             images=images,
+            front_video_image=front_video_image,
             skill_label=self._current_skill_label,
             skill_type=self._current_skill_type,
             skill_progress=progress,
@@ -2518,4 +2688,5 @@ class SimSkills:
             goal_gripper=goal_gripper,
             tcp_world_xyzrpy=tcp_world_xyzrpy,
             tcp_robot_xyzrpy=tcp_robot_xyzrpy,
+            gripper_state=gripper_state,
         )

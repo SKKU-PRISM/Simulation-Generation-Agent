@@ -160,6 +160,23 @@ class SimRobotInterface:
         pos_world, quat_world = self.read_tcp_pose_world()
         return self.world_pose_to_robot_pose(pos_world, quat_world)
 
+    def read_gripper_state(self) -> np.ndarray:
+        """Read the current gripper state as a 1D scalar.
+
+        The scalar uses the robot's primary gripper command coordinate:
+        - parallel jaw / mimic chains: the first controllable finger joint
+        - claw: the single gripper joint
+
+        Returns:
+            Array of shape ``(1,)`` float32.
+        """
+        if not self.cfg.has_gripper_joints or not self._finger_indices:
+            return np.zeros(1, dtype=np.float32)
+
+        all_pos = self._articulation.data.joint_pos[self.env_idx]
+        primary = float(all_pos[self._finger_indices[0]].item())
+        return np.array([primary], dtype=np.float32)
+
     def read_root_pose_world(self) -> tuple[np.ndarray, np.ndarray]:
         """Read articulation root pose in simulator world frame."""
         root_pose = self._articulation.data.root_pose_w[self.env_idx]

@@ -106,6 +106,14 @@ def preprocess_exported_dataset(
                 "skill_type": skill_types[frame_idx],
                 "paths": {
                     "state": _rel(ep_dir / "observation.state.npy", export_root),
+                    "gripper_state": _rel(
+                        ep_dir / "observation.gripper_state.npy",
+                        export_root,
+                    ),
+                    "tcp_robot_xyzrpy": _rel(
+                        ep_dir / "observation.tcp.robot_xyzrpy.npy",
+                        export_root,
+                    ),
                     "action": _rel(ep_dir / "action.npy", export_root),
                     "goal_joint": _rel(ep_dir / "skill.goal_position.joint.npy", export_root),
                     "goal_world_xyzrpy": _rel(
@@ -148,6 +156,7 @@ def preprocess_exported_dataset(
         "arm_joint_names": export_manifest.get("arm_joint_names") or robot_cfg.arm_joint_names,
         "finger_joint_names": export_manifest.get("finger_joint_names") or robot_cfg.finger_joint_names,
         "gripper_type": export_manifest.get("gripper_type") or robot_cfg.gripper_type,
+        "gripper_state_dim": int(export_manifest.get("gripper_state_dim", 1)),
         "joint_shape_policy": export_manifest.get("joint_shape_policy", "full_controllable_dofs"),
         "selected_camera_names": resolved_camera_names,
         "success_only": success_only,

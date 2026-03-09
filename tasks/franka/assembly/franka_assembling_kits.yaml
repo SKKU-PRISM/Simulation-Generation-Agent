@@ -237,14 +237,6 @@ shape_to_place_config:
     solver_position_iterations: 32
     solver_velocity_iterations: 1
     max_depenetration_velocity: 5.0
-  randomize:
-    position:
-      type: relative
-      x: [-0.10, 0.10]                       # ±10cm X range on table
-      y: [-0.10, 0.10]                       # ±10cm Y range on table
-      z: 0.0
-    orientation:
-      yaw: [-3.14159, 3.14159]               # full random Z rotation
 
 goal:
   description: "Pick up the randomly misplaced shape and insert it into the matching cutout slot on the kit tray"

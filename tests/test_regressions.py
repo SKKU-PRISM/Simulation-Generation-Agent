@@ -5,9 +5,10 @@ import os
 import re
 import subprocess
 import tempfile
+import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 
@@ -25,7 +26,13 @@ from src.data_collection.dataset_export import (
     normalize_joint_matrix,
 )
 from src.data_collection.dataset_preprocess import preprocess_exported_dataset
+from src.data_collection.lerobot_tools import (
+    check_lerobot_dataset,
+    convert_raw_dataset_to_lerobot,
+    publish_lerobot_dataset,
+)
 from src.data_collection.sim_recorder import SimRecorder, _coerce_goal_joint
+from src.data_collection.sim_detector import SimDetector
 from src.data_collection.sim_robot_interface import SimRobotInterface
 from src.data_collection.sim_skills import SimSkills, create_ik_solver
 from src.isaac_lab.assembling_kits_template import build_assembling_kits_template
@@ -76,6 +83,11 @@ class _FakeRobotInterface:
     def expand_gripper_target_positions(self, target) -> np.ndarray:
         return self._finger_targets.copy()
 
+    def read_gripper_state(self) -> np.ndarray:
+        if self._finger_targets.size == 0:
+            return np.zeros(1, dtype=np.float32)
+        return np.array([float(self._finger_targets[0])], dtype=np.float32)
+
 
 class _FakeADCForwardKinematics:
     def __init__(self, position, rotation):
@@ -86,7 +98,66 @@ class _FakeADCForwardKinematics:
         return self._position.copy(), self._rotation.copy()
 
 
+def _install_fake_lerobot_dataset(sample: dict, features: dict | None = None):
+    features = features or {key: {} for key in sample.keys()}
+
+    class _FakeLeRobotDataset:
+        def __init__(self, repo_id, root):
+            self.repo_id = repo_id
+            self.root = Path(root)
+            self.features = features
+
+        @classmethod
+        def create(cls, repo_id, fps, features, root):
+            dataset = cls(repo_id=repo_id, root=root)
+            dataset._created = {
+                "repo_id": repo_id,
+                "fps": fps,
+                "features": features,
+                "root": root,
+            }
+            dataset._frames = []
+            return dataset
+
+        def add_frame(self, frame):
+            self._frames.append(frame)
+
+        def save_episode(self, task=""):
+            self._task = task
+
+        def consolidate(self):
+            self._consolidated = True
+
+        def __len__(self):
+            return 1
+
+        def __getitem__(self, idx):
+            return sample
+
+    lerobot_pkg = types.ModuleType("lerobot")
+    common_pkg = types.ModuleType("lerobot.common")
+    datasets_pkg = types.ModuleType("lerobot.common.datasets")
+    dataset_mod = types.ModuleType("lerobot.common.datasets.lerobot_dataset")
+    dataset_mod.LeRobotDataset = _FakeLeRobotDataset
+
+    return _FakeLeRobotDataset, {
+        "lerobot": lerobot_pkg,
+        "lerobot.common": common_pkg,
+        "lerobot.common.datasets": datasets_pkg,
+        "lerobot.common.datasets.lerobot_dataset": dataset_mod,
+    }
+
+
 class RegressionTests(unittest.TestCase):
+    def test_sim_detector_uses_prim_path_basename_alias_for_scene_mapping(self):
+        detector = SimDetector.__new__(SimDetector)
+        entity = detector._resolve_entity_key(
+            "cube",
+            {"prim_path": "/World/Object"},
+            {"robot", "object"},
+        )
+        self.assertEqual(entity, "object")
+
     def test_parser_extracts_scene_entities_from_post_init(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             env_cfg_path = Path(tmpdir) / "env_cfg.py"
@@ -180,9 +251,9 @@ class EnvCfg(ManagerBasedRLEnvCfg):
         self.assertIn("target_position", goal)
         self.assertIn("target_rotation", goal)
         self.assertAlmostEqual(assets["shape_12"]["position"][2], 0.02, places=4)
-        self.assertIn("orientation", assets["shape_12"]["randomize"])
+        self.assertNotIn("randomize", assets["shape_12"])
 
-    def test_assembling_kits_template_uses_static_scene_assets(self):
+    def test_franka_assembling_kits_template_uses_static_scene_assets_without_reset_dr(self):
         doc = load_task_document("tasks/franka/assembly/franka_assembling_kits.yaml")
         code = build_assembling_kits_template(doc, "franka")
         env_cfg = code["env_cfg.py"]
@@ -191,6 +262,39 @@ class EnvCfg(ManagerBasedRLEnvCfg):
         self.assertIn("shape_12 = AssetBaseCfg(", env_cfg)
         self.assertNotIn("shape_09 = RigidObjectCfg(", env_cfg)
         self.assertIn("/assets/assembling_kits/kit_303.usd", env_cfg)
+        self.assertNotIn('randomize_shape_12 = EventTerm(', env_cfg)
+
+    def test_non_franka_assembling_kits_template_still_generates_reset_dr(self):
+        doc = load_task_document("tasks/openarm/assembly/openarm_assembling_kits.yaml")
+        code = build_assembling_kits_template(doc, "openarm")
+        env_cfg = code["env_cfg.py"]
+
+        self.assertIn('randomize_shape_12 = EventTerm(', env_cfg)
+        self.assertIn("func=randomize_static_asset_pose", env_cfg)
+        self.assertIn('"prim_path": \'/World/Shape12\'', env_cfg)
+        self.assertIn('"yaw_range": (-3.14159, 3.14159)', env_cfg)
+
+    def test_franka_assembly_tasks_define_movable_object_randomization(self):
+        lift_doc = load_task_document("tasks/franka/assembly/franka_lift_peg_upright.yaml")
+        lift_assets = {asset["name"]: asset for asset in lift_doc["assets"]}
+        self.assertEqual(lift_assets["peg_red"]["randomize"]["position"]["x"], [-0.05, 0.05])
+        self.assertEqual(lift_assets["peg_red"]["randomize"]["position"]["y"], [-0.10, 0.10])
+
+        peg_doc = load_task_document("tasks/franka/assembly/franka_peg_insertion_side.yaml")
+        peg_assets = {asset["name"]: asset for asset in peg_doc["assets"]}
+        self.assertNotIn("randomize", peg_assets["peg_head"])
+
+        charger_doc = load_task_document("tasks/franka/assembly/franka_plug_charger.yaml")
+        charger_assets = {asset["name"]: asset for asset in charger_doc["assets"]}
+        self.assertNotIn("randomize", charger_assets["charger_base"])
+
+    def test_franka_factory_peg_insert_randomizes_hole_not_staging_peg(self):
+        doc = load_task_document("tasks/franka/peg_insert/franka_peg_insert.yaml")
+        assets = {asset["name"]: asset for asset in doc["assets"]}
+
+        self.assertEqual(assets["hole"]["randomize"]["position"]["x"], [-0.05, 0.05])
+        self.assertEqual(assets["hole"]["randomize"]["position"]["y"], [-0.05, 0.05])
+        self.assertNotIn("randomize", assets["peg"])
 
     def test_agent_detects_assembling_kits_template_route(self):
         doc = load_task_document("tasks/franka/assembly/franka_assembling_kits.yaml")
@@ -334,11 +438,13 @@ class SceneCfg(InteractiveSceneCfg):
         self.assertTrue(cfg.has_gripper_joints)
         self.assertEqual(len(cfg.finger_joint_names), 6)
 
-    def test_load_robot_config_exposes_openarm_tcp_frame(self):
+    def test_load_robot_config_exposes_openarm_virtual_tcp_offset(self):
         cfg = load_robot_config("openarm")
         self.assertEqual(cfg.ee_frame_body, "openarm_hand")
-        self.assertEqual(cfg.ee_frame_tcp, "openarm_ee_tcp")
-        self.assertEqual(cfg.ik_ee_frame, "openarm_hand_tcp")
+        self.assertEqual(cfg.ee_frame_tcp, "")
+        self.assertEqual(cfg.ee_frame_offset_position, [0.0, 0.0, 0.08])
+        self.assertEqual(cfg.ik_ee_frame, "openarm_hand")
+        self.assertEqual(cfg.ik_backend, "differential_ik")
         self.assertTrue(Path(cfg.urdf_path).is_absolute())
         self.assertTrue(Path(cfg.urdf_path).exists())
 
@@ -348,7 +454,15 @@ class SceneCfg(InteractiveSceneCfg):
         self.assertEqual(cfg.ee_frame_offset_position, [0.04, 0.0, 0.0])
         self.assertEqual(cfg.grasp_lateral_bias, 0.0)
 
-    def test_create_ik_solver_prefers_pinocchio_when_openarm_urdf_exists(self):
+    def test_create_ik_solver_prefers_openarm_differential_ik_with_live_robot(self):
+        cfg = load_robot_config("openarm")
+        robot_interface = object()
+        with patch("src.data_collection.sim_skills.DifferentialIKSolver", return_value="diff-ik") as mock_solver:
+            solver = create_ik_solver(cfg, robot_interface=robot_interface)
+        self.assertEqual(solver, "diff-ik")
+        mock_solver.assert_called_once_with(robot_interface)
+
+    def test_create_ik_solver_falls_back_to_pinocchio_for_openarm_without_live_robot(self):
         cfg = load_robot_config("openarm")
         with patch("src.data_collection.sim_skills.PinocchioIKSolver", return_value="pin-ik") as mock_solver:
             solver = create_ik_solver(cfg)
@@ -357,7 +471,7 @@ class SceneCfg(InteractiveSceneCfg):
             urdf_path=cfg.urdf_path,
             ee_frame=cfg.ik_ee_frame or cfg.ee_frame_tcp or cfg.ee_frame_body,
             joint_names=cfg.arm_joint_names,
-            tcp_offset=cfg.ee_frame_offset_position or None,
+            tcp_offset=[0.0, 0.0, 0.08],
         )
 
     def test_create_ik_solver_passes_so101_tcp_offset_to_pinocchio(self):
@@ -371,6 +485,36 @@ class SceneCfg(InteractiveSceneCfg):
             joint_names=cfg.arm_joint_names,
             tcp_offset=[0.04, 0.0, 0.0],
         )
+
+    def test_openarm_world_target_to_ik_target_applies_virtual_tcp_offset(self):
+        cfg = load_robot_config("openarm")
+        skills = SimSkills.__new__(SimSkills)
+        skills.cfg = cfg
+        skills.PALM_DOWN_ROTATION = np.array(
+            [
+                [-1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, 0.0, -1.0],
+            ],
+            dtype=np.float64,
+        )
+
+        class _DummyRobot:
+            @staticmethod
+            def read_ee_pose():
+                return np.zeros(3, dtype=np.float64), np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float64)
+
+        skills.robot = _DummyRobot()
+        target_tcp_world = np.array([0.35, 0.05, 0.12], dtype=np.float64)
+        target_rotation = np.asarray(skills.PALM_DOWN_ROTATION, dtype=np.float64)
+
+        ik_target_world = skills._world_target_to_ik_target(
+            target_tcp_world,
+            target_rotation_world=target_rotation,
+        )
+
+        expected = target_tcp_world - target_rotation @ np.array([0.0, 0.0, 0.08], dtype=np.float64)
+        np.testing.assert_allclose(ik_target_world, expected, atol=1e-8)
 
     def test_sim_skills_normalizes_wrapped_ik_targets_to_joint_limits(self):
         cfg = load_robot_config("so101")
@@ -479,18 +623,28 @@ class EnvCfg(ManagerBasedRLEnvCfg):
                 goal_gripper=0.04,
                 tcp_world_xyzrpy=np.array([0.5, 0.0, 0.25, 0.0, 0.0, 0.0], dtype=np.float32),
                 tcp_robot_xyzrpy=np.array([0.2, 0.1, 0.15, 0.0, 0.0, 0.0], dtype=np.float32),
+                gripper_state=np.array([0.02], dtype=np.float32),
             )
             recorder.end_episode(success=True)
 
             ep_dir = Path(tmpdir) / "test_dataset" / "episodes" / "episode_000000"
             tcp_world = np.load(ep_dir / "tcp_world_xyzrpy.npy")
             tcp_robot = np.load(ep_dir / "tcp_robot_xyzrpy.npy")
+            gripper_state = np.load(ep_dir / "gripper_state.npy")
+            goal_robot_dense = np.load(ep_dir / "goal_robot_xyzrpy.npy")
             with open(ep_dir / "skills.json") as f:
                 skills = json.load(f)
 
         self.assertEqual(tcp_world.shape, (1, 6))
         self.assertEqual(tcp_robot.shape, (1, 6))
+        self.assertEqual(gripper_state.shape, (1, 1))
+        self.assertEqual(goal_robot_dense.shape, (1, 6))
         self.assertEqual(len(skills[0]["goal_joint"]), cfg.total_dofs)
+        np.testing.assert_allclose(gripper_state, np.array([[0.02]], dtype=np.float32))
+        np.testing.assert_allclose(
+            goal_robot_dense,
+            np.array([[0.1, -0.2, 0.3, -0.1, 0.2, -0.3]], dtype=np.float32),
+        )
         np.testing.assert_allclose(
             skills[0]["goal_world_xyzrpy"],
             [0.4, 0.1, 0.2, 0.0, 0.1, 0.2],
@@ -498,6 +652,133 @@ class EnvCfg(ManagerBasedRLEnvCfg):
         np.testing.assert_allclose(
             skills[0]["goal_robot_xyzrpy"],
             [0.1, -0.2, 0.3, -0.1, 0.2, -0.3],
+        )
+
+    def test_sim_recorder_generates_single_front_success_video(self):
+        cfg = load_robot_config("franka")
+        front = np.full((8, 8, 3), 127, dtype=np.uint8)
+        wrist = np.full((8, 8, 3), 255, dtype=np.uint8)
+
+        def _fake_encode(self, frames_dir, out_path):
+            del frames_dir
+            out_path.write_bytes(b"fake-mp4")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(SimRecorder, "_encode_mp4_from_frames", autospec=True, side_effect=_fake_encode):
+                recorder = SimRecorder(cfg, tmpdir, dataset_name="test_dataset", fps=20)
+                recorder.start_episode("test task", episode_idx=0)
+                recorder.record_step(
+                    state=np.zeros(cfg.total_dofs, dtype=np.float32),
+                    action=np.zeros(cfg.total_dofs, dtype=np.float32),
+                    images={
+                        "front_cam": front,
+                        "wrist_cam": wrist,
+                    },
+                    skill_label="move",
+                    skill_type="move",
+                    skill_progress=0.5,
+                    goal_joint=np.zeros(cfg.total_dofs, dtype=np.float32),
+                    goal_world_xyzrpy=np.zeros(6, dtype=np.float32),
+                    goal_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+                    goal_gripper=0.0,
+                    tcp_world_xyzrpy=np.zeros(6, dtype=np.float32),
+                    tcp_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+                    gripper_state=np.zeros(1, dtype=np.float32),
+                )
+                recorder.end_episode(success=True)
+                raw_dir = Path(recorder.finalize())
+
+            wrist_dir = raw_dir / "episodes" / "episode_000000" / "images" / "wrist_cam"
+            front_dir = raw_dir / "episodes" / "episode_000000" / "images" / "front_cam"
+            videos_dir = Path(tmpdir) / "videos"
+
+            self.assertTrue(wrist_dir.exists())
+            self.assertFalse(front_dir.exists())
+            self.assertTrue((videos_dir / "front_success.mp4").exists())
+            self.assertEqual(recorder.front_video_episode, 0)
+            self.assertTrue(recorder.front_video_generated)
+            self.assertIsNone(recorder.front_video_error)
+
+            metadata = json.loads((raw_dir / "metadata.json").read_text())
+            self.assertEqual(metadata["front_video_path"], "videos/front_success.mp4")
+            self.assertEqual(metadata["front_video_episode"], 0)
+
+    def test_sim_recorder_skips_front_video_for_failed_episode(self):
+        cfg = load_robot_config("franka")
+        front = np.full((8, 8, 3), 127, dtype=np.uint8)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            recorder = SimRecorder(cfg, tmpdir, dataset_name="test_dataset", fps=20)
+            recorder.start_episode("test task", episode_idx=0)
+            recorder.record_step(
+                state=np.zeros(cfg.total_dofs, dtype=np.float32),
+                action=np.zeros(cfg.total_dofs, dtype=np.float32),
+                images={"front_cam": front},
+                skill_label="move",
+                skill_type="move",
+                skill_progress=0.0,
+                goal_joint=np.zeros(cfg.total_dofs, dtype=np.float32),
+                goal_world_xyzrpy=np.zeros(6, dtype=np.float32),
+                goal_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+                goal_gripper=0.0,
+                tcp_world_xyzrpy=np.zeros(6, dtype=np.float32),
+                tcp_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+                gripper_state=np.zeros(1, dtype=np.float32),
+            )
+            recorder.end_episode(success=False)
+            recorder.finalize()
+
+            self.assertFalse((Path(tmpdir) / "videos").exists())
+            self.assertFalse(recorder.front_video_generated)
+            self.assertIsNone(recorder.front_video_path)
+
+    def test_sim_robot_interface_read_gripper_state_uses_primary_finger_joint(self):
+        iface = SimRobotInterface.__new__(SimRobotInterface)
+        iface.cfg = load_robot_config("openarm")
+        iface.env_idx = 0
+        iface._finger_indices = [7, 8]
+
+        class _DummyData:
+            joint_pos = np.array([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.031, 0.029]], dtype=np.float32)
+
+        class _DummyArticulation:
+            data = _DummyData()
+
+        iface._articulation = _DummyArticulation()
+
+        gripper_state = iface.read_gripper_state()
+
+        np.testing.assert_allclose(gripper_state, np.array([0.031], dtype=np.float32))
+
+    def test_patch_skill_metadata_range_updates_dense_goal_robot_pose(self):
+        cfg = load_robot_config("franka")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            recorder = SimRecorder(cfg, tmpdir, dataset_name="test_dataset", fps=20)
+            recorder.start_episode("test task", episode_idx=0)
+            recorder.record_step(
+                state=np.zeros(cfg.total_dofs, dtype=np.float32),
+                action=np.zeros(cfg.total_dofs, dtype=np.float32),
+                skill_label="move",
+                skill_type="move",
+                skill_progress=0.0,
+                goal_joint=np.zeros(cfg.total_dofs, dtype=np.float32),
+                goal_world_xyzrpy=None,
+                goal_robot_xyzrpy=None,
+                goal_gripper=0.0,
+                tcp_world_xyzrpy=np.zeros(6, dtype=np.float32),
+                tcp_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+            )
+            recorder.patch_skill_metadata_range(
+                0,
+                goal_robot_xyzrpy=np.array([0.1, 0.2, 0.3, 0.4, 0.5, 0.6], dtype=np.float32),
+            )
+            recorder.end_episode(success=True)
+            ep_dir = Path(tmpdir) / "test_dataset" / "episodes" / "episode_000000"
+            goal_robot = np.load(ep_dir / "goal_robot_xyzrpy.npy")
+
+        np.testing.assert_allclose(
+            goal_robot,
+            np.array([[0.1, 0.2, 0.3, 0.4, 0.5, 0.6]], dtype=np.float32),
         )
 
     def test_sim_skills_compose_full_goal_joint_expands_gripper_targets(self):
@@ -569,6 +850,7 @@ class EnvCfg(ManagerBasedRLEnvCfg):
             goal_robot = np.array([0.1, -0.2, 0.3, -0.1, 0.2, -0.3], dtype=np.float32)
             tcp_world = np.array([0.5, 0.0, 0.25, 0.0, 0.0, 0.0], dtype=np.float32)
             tcp_robot = np.array([0.2, 0.1, 0.15, 0.0, 0.0, 0.0], dtype=np.float32)
+            gripper_state = np.array([0.02], dtype=np.float32)
             recorder.record_step(
                 state=state,
                 action=action,
@@ -581,6 +863,7 @@ class EnvCfg(ManagerBasedRLEnvCfg):
                 goal_gripper=0.04,
                 tcp_world_xyzrpy=tcp_world,
                 tcp_robot_xyzrpy=tcp_robot,
+                gripper_state=gripper_state,
             )
             recorder.end_episode(success=True)
             raw_dir = Path(recorder.finalize())
@@ -597,6 +880,7 @@ class EnvCfg(ManagerBasedRLEnvCfg):
             exported_action = np.load(ep_dir / "action.npy")
             exported_goal_joint = np.load(ep_dir / "skill.goal_position.joint.npy")
             exported_goal_gripper = np.load(ep_dir / "skill.goal_position.gripper.npy")
+            exported_gripper_state = np.load(ep_dir / "observation.gripper_state.npy")
             exported_tcp_world = np.load(ep_dir / "observation.tcp.world_xyzrpy.npy")
             exported_goal_tcp_robot = np.load(ep_dir / "skill.goal_position.tcp.robot_xyzrpy.npy")
             with open(export_dir / "manifest.json") as f:
@@ -607,6 +891,7 @@ class EnvCfg(ManagerBasedRLEnvCfg):
         np.testing.assert_allclose(exported_action, normalize_joint_matrix(action, spec)[None, :])
         np.testing.assert_allclose(exported_goal_joint, normalize_joint_matrix(goal_joint, spec)[None, :])
         np.testing.assert_allclose(exported_goal_gripper, normalize_gripper_array(np.array([[0.04]], dtype=np.float32), spec))
+        np.testing.assert_allclose(exported_gripper_state, normalize_gripper_array(np.array([[0.02]], dtype=np.float32), spec))
         np.testing.assert_allclose(exported_tcp_world, tcp_world[None, :])
         np.testing.assert_allclose(exported_goal_tcp_robot, goal_robot[None, :])
         self.assertEqual(manifest["schema"], CANONICAL_TRAINING_SCHEMA)
@@ -628,7 +913,8 @@ class EnvCfg(ManagerBasedRLEnvCfg):
                 goal_robot_xyzrpy=np.array([4.0, 5.0, 6.0, 0.4, 0.5, 0.6], dtype=np.float32),
                 goal_gripper=0.04,
                 tcp_world_xyzrpy=np.zeros(6, dtype=np.float32),
-                tcp_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+                tcp_robot_xyzrpy=np.array([0.1, 0.2, 0.3, 0.0, 0.1, 0.2], dtype=np.float32),
+                gripper_state=np.array([0.02], dtype=np.float32),
             )
             recorder.end_episode(success=True)
             raw_dir = Path(recorder.finalize())
@@ -646,13 +932,27 @@ class EnvCfg(ManagerBasedRLEnvCfg):
                 / "episode_000000"
                 / "skill.goal_position.world_xyzrpy.npy"
             )
+            tcp_robot = np.load(
+                export_dir
+                / "episodes"
+                / "episode_000000"
+                / "observation.tcp.robot_xyzrpy.npy"
+            )
+            gripper_state = np.load(
+                export_dir
+                / "episodes"
+                / "episode_000000"
+                / "observation.gripper_state.npy"
+            )
             manifest = json.loads((export_dir / "manifest.json").read_text())
             ep_dir = export_dir / "episodes" / "episode_000000"
+            spec = build_joint_normalization_spec(cfg)
 
         np.testing.assert_allclose(legacy_world, np.array([[1.0, 2.0, 3.0, 0.4, 0.5, 0.6]], dtype=np.float32))
+        np.testing.assert_allclose(tcp_robot, np.array([[0.1, 0.2, 0.3, 0.0, 0.1, 0.2]], dtype=np.float32))
+        np.testing.assert_allclose(gripper_state, normalize_gripper_array(np.array([[0.02]], dtype=np.float32), spec))
         self.assertEqual(manifest["schema"], ADC_COMPATIBLE_SCHEMA)
         self.assertFalse((ep_dir / "observation.tcp.world_xyzrpy.npy").exists())
-        self.assertFalse((ep_dir / "observation.tcp.robot_xyzrpy.npy").exists())
         self.assertFalse((ep_dir / "skill.goal_position.tcp.world_xyzrpy.npy").exists())
         self.assertFalse((ep_dir / "skill.goal_position.tcp.robot_xyzrpy.npy").exists())
 
@@ -690,7 +990,10 @@ class EnvCfg(ManagerBasedRLEnvCfg):
         self.assertEqual(manifest["arm_joint_names"], cfg.arm_joint_names)
         self.assertEqual(manifest["finger_joint_names"], cfg.finger_joint_names)
         self.assertEqual(manifest["gripper_type"], cfg.gripper_type)
+        self.assertEqual(manifest["gripper_state_dim"], 1)
         self.assertIn("skill.goal_position.world_xyzrpy", manifest["field_semantics"])
+        self.assertIn("observation.tcp.robot_xyzrpy", manifest["field_semantics"])
+        self.assertIn("observation.gripper_state", manifest["field_semantics"])
         self.assertEqual(manifest["episodes"][0]["task_description"], "openarm stack")
 
     def test_export_dataset_cli_defaults_to_adc_compatible(self):
@@ -754,6 +1057,8 @@ class EnvCfg(ManagerBasedRLEnvCfg):
         self.assertEqual(len(train_samples), 1)
         self.assertEqual(len(val_samples), 1)
         self.assertIn("paths", samples[0])
+        self.assertIn("gripper_state", samples[0]["paths"])
+        self.assertIn("tcp_robot_xyzrpy", samples[0]["paths"])
         self.assertIn("goal_joint", samples[0]["paths"])
         self.assertEqual(samples[0]["robot_name"], "franka")
 
@@ -856,6 +1161,93 @@ class EnvCfg(ManagerBasedRLEnvCfg):
             adc_root,
         )
         self.assertEqual(resolved, adc_root / "robot_configs" / "robot" / "so101_robot3.yaml")
+
+    def test_convert_raw_dataset_to_lerobot_delegates_to_converter(self):
+        with patch(
+            "src.data_collection.lerobot_tools.convert_to_lerobot",
+            return_value="/tmp/lerobot/local/sim_dataset",
+        ) as convert_mock:
+            dataset_root = convert_raw_dataset_to_lerobot(
+                "/tmp/raw_dataset",
+                repo_id="local/sim_dataset",
+                output_root="/tmp/lerobot",
+            )
+
+        convert_mock.assert_called_once_with(
+            raw_dataset_dir="/tmp/raw_dataset",
+            repo_id="local/sim_dataset",
+            output_root="/tmp/lerobot",
+        )
+        self.assertEqual(dataset_root, Path("/tmp/lerobot/local/sim_dataset"))
+
+    def test_check_lerobot_dataset_loads_local_dataset_and_validates_required_fields(self):
+        sample = {
+            "observation.state": np.zeros(9, dtype=np.float32),
+            "observation.gripper_state": np.zeros(1, dtype=np.float32),
+            "observation.tcp.robot_xyzrpy": np.zeros(6, dtype=np.float32),
+            "action": np.zeros(9, dtype=np.float32),
+            "skill.goal_position.robot_xyzrpy": np.zeros(6, dtype=np.float32),
+        }
+        features = {key: {"dtype": "float32"} for key in sample.keys()}
+        _fake_cls, fake_modules = _install_fake_lerobot_dataset(sample, features)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dataset_root = Path(tmpdir) / "local" / "sim_dataset"
+            (dataset_root / "meta").mkdir(parents=True)
+            (dataset_root / "data").mkdir()
+
+            with patch.dict("sys.modules", fake_modules, clear=False):
+                report = check_lerobot_dataset(
+                    dataset_root,
+                    repo_id="local/sim_dataset",
+                )
+
+        self.assertTrue(report["pass"])
+        self.assertEqual(report["repo_id"], "local/sim_dataset")
+        self.assertIn("observation.gripper_state", report["feature_keys"])
+        self.assertIn("skill.goal_position.robot_xyzrpy", report["sample_keys"])
+        self.assertEqual(report["num_frames"], 1)
+
+    def test_publish_lerobot_dataset_uses_hf_api_large_folder_upload(self):
+        api_mock = MagicMock()
+        api_mock.create_repo.return_value = "https://huggingface.co/datasets/org/test-dataset"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dataset_root = Path(tmpdir) / "local" / "sim_dataset"
+            dataset_root.mkdir(parents=True)
+
+            with (
+                patch(
+                    "src.data_collection.lerobot_tools.check_lerobot_dataset",
+                    return_value={"pass": True, "repo_id": "local/sim_dataset"},
+                ),
+                patch("huggingface_hub.HfApi", return_value=api_mock) as api_cls,
+            ):
+                report = publish_lerobot_dataset(
+                    dataset_root,
+                    repo_id="org/test-dataset",
+                    private=True,
+                    token="hf_test_token",
+                    local_repo_id="local/sim_dataset",
+                )
+
+        api_cls.assert_called_once_with(token="hf_test_token")
+        api_mock.create_repo.assert_called_once_with(
+            repo_id="org/test-dataset",
+            repo_type="dataset",
+            private=True,
+            exist_ok=True,
+        )
+        api_mock.upload_large_folder.assert_called_once_with(
+            repo_id="org/test-dataset",
+            repo_type="dataset",
+            folder_path=dataset_root.resolve(),
+            private=True,
+            print_report=False,
+        )
+        self.assertTrue(report["pass"])
+        self.assertEqual(report["repo_id"], "org/test-dataset")
+        self.assertEqual(report["validation_report"]["repo_id"], "local/sim_dataset")
 
     def test_tracked_robot_asset_configs_do_not_embed_user_specific_paths(self):
         for asset_cfg in (

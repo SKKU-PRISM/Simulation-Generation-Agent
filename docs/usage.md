@@ -194,7 +194,34 @@ python3 scripts/preprocess_dataset.py \
 - `train.jsonl`
 - `val.jsonl`
 
+기본 `adc_compatible` 경로에서는 `observation.gripper_state`, `observation.tcp.robot_xyzrpy`, `skill.goal_position.robot_xyzrpy`가 학습 입력 manifest에 포함된다.
+
 dataset field 의미와 schema 차이는 `docs/dataset_alignment_and_export.md`를 본다.
+
+### Optional: Local LeRobot conversion
+
+```bash
+python3 scripts/convert_lerobot_dataset.py \
+  outputs/data_collection/<run_dir>/raw_dataset \
+  --repo-id local/franka_stack_sim
+python3 scripts/check_lerobot_dataset.py \
+  outputs/data_collection/<run_dir>/local/franka_stack_sim \
+  --repo-id local/franka_stack_sim
+```
+
+`lerobot` 패키지가 host Python에 설치되어 있어야 한다.
+
+### Optional: Publish to Hub
+
+```bash
+python3 scripts/publish_lerobot_dataset.py \
+  outputs/data_collection/<run_dir>/local/franka_stack_sim \
+  --repo-id <org>/<dataset_name> \
+  --local-repo-id local/franka_stack_sim \
+  --private
+```
+
+기본 인증은 `HF_TOKEN` env var 또는 기존 `huggingface-cli login` 세션을 사용한다.
 
 ## 5. 추천 운영 순서
 
