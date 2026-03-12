@@ -18,6 +18,24 @@ REQUIRED_LEROBOT_FEATURES = (
 )
 
 
+def ensure_lerobot_available() -> None:
+    """Raise ImportError if the ``lerobot`` package is not importable."""
+
+    _load_lerobot_dataset_class()
+
+
+def ensure_huggingface_hub_available() -> None:
+    """Raise ImportError if ``huggingface_hub`` is not importable."""
+
+    try:
+        from huggingface_hub import HfApi  # noqa: F401
+    except ImportError as exc:
+        raise ImportError(
+            "huggingface_hub is required for Hugging Face uploads. "
+            "Install it with: pip install huggingface_hub"
+        ) from exc
+
+
 def convert_raw_dataset_to_lerobot(
     raw_dataset_dir: str | os.PathLike[str],
     *,
@@ -153,14 +171,21 @@ def publish_lerobot_dataset(
 
 
 def _load_lerobot_dataset_class():
-    try:
-        from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
-    except ImportError as exc:
-        raise ImportError(
-            "lerobot package is required for local LeRobot validation. "
-            "Install it with: pip install lerobot"
-        ) from exc
-    return LeRobotDataset
+    import_errors: list[Exception] = []
+    for import_path in (
+        "lerobot.datasets.lerobot_dataset",
+        "lerobot.common.datasets.lerobot_dataset",
+    ):
+        try:
+            module = __import__(import_path, fromlist=["LeRobotDataset"])
+            return module.LeRobotDataset
+        except ImportError as exc:
+            import_errors.append(exc)
+
+    raise ImportError(
+        "lerobot package is required for local LeRobot validation. "
+        "Install it with: pip install lerobot"
+    ) from import_errors[-1]
 
 
 def _load_local_lerobot_dataset(
@@ -194,12 +219,15 @@ def _iter_repo_candidates(dataset_root: Path, repo_id: str | None):
         yield candidate_repo_id, candidate_root
 
     if repo_id:
+        # LeRobot >=0.5 expects ``root`` to point at the dataset root itself.
+        yield from add(repo_id, dataset_root)
+
+        # Backward-compat fallback for older path layouts where ``root`` pointed
+        # at the parent directory and the repo_id path was appended internally.
         segments = [part for part in repo_id.split("/") if part]
         if segments and len(dataset_root.parents) >= len(segments):
             candidate_root = dataset_root.parents[len(segments) - 1]
-        else:
-            candidate_root = dataset_root.parent
-        yield from add(repo_id, candidate_root)
+            yield from add(repo_id, candidate_root)
         return
 
     # Best-effort inference for the local path shapes produced by convert_to_lerobot.

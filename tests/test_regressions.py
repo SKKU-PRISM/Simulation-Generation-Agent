@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 
 from src.common.task_docs import load_task_document, resolve_task_document
-from src.data_collection.config import load_robot_config
+from src.data_collection.config import load_pipeline_config, load_robot_config
 from src.data_collection.dataset_export import (
     ADC_COMPATIBLE_SCHEMA,
     CANONICAL_TRAINING_SCHEMA,
@@ -31,8 +31,11 @@ from src.data_collection.lerobot_tools import (
     convert_raw_dataset_to_lerobot,
     publish_lerobot_dataset,
 )
+from src.data_collection.multiview_grounding import MultiViewTargetGrounder
+from src.data_collection.cap_generator import translate_scene_state
 from src.data_collection.sim_recorder import SimRecorder, _coerce_goal_joint
 from src.data_collection.sim_detector import SimDetector
+from src.data_collection.sim_judge import build_task_aware_judge_prompt
 from src.data_collection.sim_robot_interface import SimRobotInterface
 from src.data_collection.sim_skills import SimSkills, create_ik_solver
 from src.isaac_lab.assembling_kits_template import build_assembling_kits_template
@@ -98,6 +101,44 @@ class _FakeADCForwardKinematics:
         return self._position.copy(), self._rotation.copy()
 
 
+class _FakeGroundingCameras:
+    def __init__(self, depth_maps: dict[str, np.ndarray], transform_world: np.ndarray | None = None):
+        self._depth_maps = depth_maps
+        self._transform_world = np.asarray(transform_world if transform_world is not None else np.eye(4), dtype=np.float64)
+
+    def capture_rgb_depth(self, camera_name: str):
+        depth = self._depth_maps.get(camera_name)
+        if depth is None:
+            return None, None
+        rgb = np.zeros((depth.shape[0], depth.shape[1], 3), dtype=np.uint8)
+        return rgb, depth
+
+    def get_intrinsics(self, camera_name: str):
+        if camera_name not in self._depth_maps:
+            raise KeyError(camera_name)
+        depth = self._depth_maps[camera_name]
+        width = depth.shape[1]
+        height = depth.shape[0]
+        return {
+            "fx": 100.0,
+            "fy": 100.0,
+            "cx": (width - 1.0) * 0.5,
+            "cy": (height - 1.0) * 0.5,
+            "width": float(width),
+            "height": float(height),
+        }
+
+    def get_camera_transform_world(self, camera_name: str) -> np.ndarray:
+        if camera_name not in self._depth_maps:
+            raise KeyError(camera_name)
+        return self._transform_world.copy()
+
+
+class _FakeGroundingRobot:
+    def world_pose_to_robot_pose(self, position_world: np.ndarray, quat_world_wxyz: np.ndarray):
+        return np.asarray(position_world, dtype=np.float64), np.asarray(quat_world_wxyz, dtype=np.float64)
+
+
 def _install_fake_lerobot_dataset(sample: dict, features: dict | None = None):
     features = features or {key: {} for key in sample.keys()}
 
@@ -148,6 +189,134 @@ def _install_fake_lerobot_dataset(sample: dict, features: dict | None = None):
     }
 
 
+def _compile_goal_conditions_for_prompt(task_doc: dict, translated_positions: dict[str, dict]) -> list[dict]:
+    goal = task_doc.get("goal", {})
+    success_criteria = goal.get("success_criteria", {})
+    conditions: list[dict] = []
+    if isinstance(success_criteria, dict):
+        for cond in success_criteria.get("conditions", []):
+            if isinstance(cond, dict):
+                conditions.append(dict(cond))
+        stacking_order = success_criteria.get("stacking_order")
+        if isinstance(stacking_order, list):
+            for idx in range(1, len(stacking_order)):
+                conditions.append(
+                    {
+                        "type": "on_top_of",
+                        "object": stacking_order[idx],
+                        "target": stacking_order[idx - 1],
+                    }
+                )
+    for cond in goal.get("conditions", []):
+        if isinstance(cond, dict):
+            conditions.append(dict(cond))
+    if conditions:
+        if isinstance(success_criteria, dict) and success_criteria.get("inside_tray"):
+            tray_center = success_criteria.get("tray_center")
+            tray_half_extent = success_criteria.get("tray_half_extent")
+            ordered_objects = [name for name in translated_positions if name.startswith("cube_")]
+            if (
+                isinstance(tray_center, (list, tuple))
+                and len(tray_center) == 2
+                and isinstance(tray_half_extent, (int, float))
+            ):
+                conditions.append(
+                    {
+                        "type": "inside_tray",
+                        "objects": ordered_objects,
+                        "tray_center": list(tray_center),
+                        "tray_half_extent": float(tray_half_extent),
+                    }
+                )
+        return conditions
+
+    task_description = " ".join(
+        part
+        for part in (
+            task_doc.get("task", {}).get("description", ""),
+            goal.get("description", ""),
+        )
+        if isinstance(part, str)
+    ).lower()
+    if "stack" in task_description:
+        ordered_objects = [name for name in translated_positions if name.startswith("cube_")]
+        ordered_objects.sort()
+        for idx in range(1, len(ordered_objects)):
+            conditions.append(
+                {
+                    "type": "on_top_of",
+                    "object": ordered_objects[idx],
+                    "target": ordered_objects[idx - 1],
+                }
+            )
+        if isinstance(success_criteria, dict) and success_criteria.get("inside_tray"):
+            tray_center = success_criteria.get("tray_center")
+            tray_half_extent = success_criteria.get("tray_half_extent")
+            if (
+                isinstance(tray_center, (list, tuple))
+                and len(tray_center) == 2
+                and isinstance(tray_half_extent, (int, float))
+            ):
+                conditions.append(
+                    {
+                        "type": "inside_tray",
+                        "objects": ordered_objects,
+                        "tray_center": list(tray_center),
+                        "tray_half_extent": float(tray_half_extent),
+                    }
+                )
+    return conditions
+
+
+def _select_relevant_objects_for_prompt(
+    translated_positions: dict[str, dict],
+    conditions: list[dict],
+) -> dict[str, dict]:
+    referenced: set[str] = set()
+    for condition in conditions:
+        subject = condition.get("subject", condition.get("object"))
+        target = condition.get("target")
+        objects = condition.get("objects") or []
+        if isinstance(subject, str):
+            referenced.add(subject)
+        if isinstance(target, str):
+            referenced.add(target)
+        if isinstance(objects, list):
+            referenced.update(str(obj) for obj in objects if isinstance(obj, str))
+
+    selected: dict[str, dict] = {}
+    for name, entry in translated_positions.items():
+        role = str(entry.get("task_role", ""))
+        name_lower = name.lower()
+        if name_lower.endswith("_anchor") or "anchor" in name_lower or name_lower == "command_pose":
+            continue
+        if name in referenced or role in {"target_marker", "support_surface", "goal_target"}:
+            selected[name] = entry
+    return selected
+
+
+def _build_prompt_inputs_for_task(task_doc: dict) -> tuple[dict[str, dict], list[dict], dict[str, dict]]:
+    scene_state: dict[str, dict] = {}
+    for asset in task_doc.get("assets", []):
+        name = asset.get("name")
+        initial_state = asset.get("initial_state", {})
+        position = initial_state.get("position", asset.get("position"))
+        if not isinstance(name, str) or not isinstance(position, (list, tuple)) or len(position) < 3:
+            continue
+        quaternion = initial_state.get(
+            "quaternion",
+            asset.get("quaternion", asset.get("rotation", [1.0, 0.0, 0.0, 0.0])),
+        )
+        scene_state[name] = {
+            "position": list(position[:3]),
+            "quaternion": list(quaternion[:4]) if isinstance(quaternion, (list, tuple)) and len(quaternion) >= 4 else [1.0, 0.0, 0.0, 0.0],
+        }
+    translated = translate_scene_state(task_doc, scene_state)
+    conditions = _compile_goal_conditions_for_prompt(task_doc, translated)
+    relevant = _select_relevant_objects_for_prompt(translated, conditions)
+    return translated, conditions, relevant
+
+
 class RegressionTests(unittest.TestCase):
     def test_sim_detector_uses_prim_path_basename_alias_for_scene_mapping(self):
         detector = SimDetector.__new__(SimDetector)
@@ -157,6 +326,59 @@ class RegressionTests(unittest.TestCase):
             {"robot", "object"},
         )
         self.assertEqual(entity, "object")
+
+    def test_sim_detector_does_not_singleton_fallback_visual_target_marker(self):
+        detector = SimDetector.__new__(SimDetector)
+        entity = detector._resolve_entity_key(
+            "target_marker",
+            {
+                "prim_path": "/World/TargetMarker",
+                "type": "rigid",
+                "physics": {"rigid_body": False, "collision": False},
+            },
+            {"cube"},
+            allow_singleton_fallback=not detector._should_use_stage_pose_mapping(
+                "target_marker",
+                {
+                    "prim_path": "/World/TargetMarker",
+                    "type": "rigid",
+                    "physics": {"rigid_body": False, "collision": False},
+                },
+            ),
+        )
+        self.assertIsNone(entity)
+
+    def test_sim_detector_get_all_objects_includes_stage_pose_targets(self):
+        detector = SimDetector.__new__(SimDetector)
+        detector._asset_meta = {
+            "robot": {"type": "articulation"},
+            "cube": {"type": "rigid"},
+            "target_marker": {
+                "type": "rigid",
+                "physics": {"rigid_body": False, "collision": False},
+            },
+        }
+        detector._robot_name = "robot"
+        detector._entity_map = {"cube": "cube"}
+
+        def _fake_get_object_pose(name: str):
+            poses = {
+                "cube": (np.array([0.4, -0.2, 0.055]), np.array([1.0, 0.0, 0.0, 0.0])),
+                "target_marker": (np.array([0.5, 0.15, 0.02]), np.array([1.0, 0.0, 0.0, 0.0])),
+            }
+            return poses[name]
+
+        detector.get_object_pose = _fake_get_object_pose
+
+        objects = SimDetector.get_all_objects(detector)
+        self.assertIn("cube", objects)
+        self.assertIn("target_marker", objects)
+        self.assertEqual(objects["target_marker"]["position"], [0.5, 0.15, 0.02])
+
+    def test_sim_detector_prefers_stage_pose_for_assembling_kits_shape_assets(self):
+        detector = SimDetector.__new__(SimDetector)
+        detector._asset_meta = {"shape_12": {"asset_path": "assets/assembling_kits/shape_12.usd"}}
+        self.assertTrue(detector._should_prefer_stage_pose("shape_12"))
 
     def test_parser_extracts_scene_entities_from_post_init(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -259,9 +481,14 @@ class EnvCfg(ManagerBasedRLEnvCfg):
         env_cfg = code["env_cfg.py"]
 
         self.assertIn("shape_09 = AssetBaseCfg(", env_cfg)
-        self.assertIn("shape_12 = AssetBaseCfg(", env_cfg)
+        self.assertIn("shape_12 = RigidObjectCfg(", env_cfg)
         self.assertNotIn("shape_09 = RigidObjectCfg(", env_cfg)
+        self.assertIn("func=spawn_usd_with_child_physics,", env_cfg)
+        self.assertIn("mass_props=sim_utils.MassPropertiesCfg(mass=0.02)", env_cfg)
+        self.assertIn("rigid_props=sim_utils.RigidBodyPropertiesCfg(", env_cfg)
         self.assertIn("/assets/assembling_kits/kit_303.usd", env_cfg)
+        self.assertIn("def post_env_setup(env):", env_cfg)
+        self.assertIn("TriangleMeshPropertiesCfg()", env_cfg)
         self.assertNotIn('randomize_shape_12 = EventTerm(', env_cfg)
 
     def test_non_franka_assembling_kits_template_still_generates_reset_dr(self):
@@ -570,6 +797,52 @@ class EnvCfg(ManagerBasedRLEnvCfg):
             patched.rindex("class EnvCfg"),
         )
 
+    def test_franka_generator_fix_normalizes_scene_entity_body_name(self):
+        task_doc = load_task_document("tasks/franka/assembly/franka_peg_insertion_side.yaml")
+        agent = IsaacLabAgent.__new__(IsaacLabAgent)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_cfg_path = Path(tmpdir) / "env_cfg.py"
+            env_cfg_path.write_text(
+                """
+from isaaclab.managers import SceneEntityCfg
+
+class EnvCfg:
+    class Observations:
+        ee_pose = 'params={"asset_cfg": SceneEntityCfg("robot", body_name="panda_hand")}'
+""".strip()
+            )
+            fixes = agent._apply_robot_specific_fixes(Path(tmpdir), "franka", task_doc)
+            patched = env_cfg_path.read_text()
+
+        self.assertTrue(fixes)
+        self.assertIn('SceneEntityCfg("robot", body_names=["panda_hand"])', patched)
+
+    def test_franka_generator_fix_restores_articulation_scale_from_yaml(self):
+        task_doc = load_task_document("tasks/franka/cabinet/franka_cabinet_store_cube.yaml")
+        agent = IsaacLabAgent.__new__(IsaacLabAgent)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env_cfg_path = Path(tmpdir) / "env_cfg.py"
+            env_cfg_path.write_text(
+                """
+from isaaclab.sim import UsdFileCfg
+from isaaclab.assets import ArticulationCfg
+
+drawer = ArticulationCfg(
+    prim_path="{ENV_REGEX_NS}/Drawer",
+    spawn=UsdFileCfg(usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Sektion_Cabinet/sektion_cabinet_instanceable.usd"),
+    init_state=ArticulationCfg.InitialStateCfg(pos=(0.5, 0.15, 0.12), rot=(0.0, 0.0, 0.0, 1.0), joint_pos={"drawer_top_joint": 0.0}),
+)
+""".strip()
+            )
+            fixes = agent._apply_robot_specific_fixes(Path(tmpdir), "franka", task_doc)
+            patched = env_cfg_path.read_text()
+
+        self.assertTrue(fixes)
+        self.assertIn("restored articulation spawn scale", " ".join(fixes))
+        self.assertIn("scale=(0.3, 0.3, 0.3)", patched)
+
     def test_so101_generator_fix_injects_explicit_primitive_mass_and_collision(self):
         task_doc = load_task_document("tasks/so101/stack/so101_stack.yaml")
         agent = IsaacLabAgent.__new__(IsaacLabAgent)
@@ -693,15 +966,169 @@ class EnvCfg(ManagerBasedRLEnvCfg):
             videos_dir = Path(tmpdir) / "videos"
 
             self.assertTrue(wrist_dir.exists())
-            self.assertFalse(front_dir.exists())
+            self.assertTrue(front_dir.exists())
             self.assertTrue((videos_dir / "front_success.mp4").exists())
             self.assertEqual(recorder.front_video_episode, 0)
             self.assertTrue(recorder.front_video_generated)
             self.assertIsNone(recorder.front_video_error)
+            self.assertEqual(recorder.front_video_camera_name, "front")
 
             metadata = json.loads((raw_dir / "metadata.json").read_text())
             self.assertEqual(metadata["front_video_path"], "videos/front_success.mp4")
+            self.assertEqual(metadata["front_video_camera_name"], "front")
             self.assertEqual(metadata["front_video_episode"], 0)
+            self.assertIn("front_cam", metadata["camera_names"])
+            self.assertIn("wrist_cam", metadata["camera_names"])
+
+    def test_sim_recorder_replaces_geometry_video_with_overall_video(self):
+        cfg = load_robot_config("franka")
+        front_a = np.full((8, 8, 3), 90, dtype=np.uint8)
+        front_b = np.full((8, 8, 3), 180, dtype=np.uint8)
+
+        def _fake_encode(self, frames_dir, out_path):
+            frame_count = len(list(Path(frames_dir).glob("*.png")))
+            out_path.write_bytes(f"frames={frame_count}".encode("utf-8"))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(SimRecorder, "_encode_mp4_from_frames", autospec=True, side_effect=_fake_encode):
+                recorder = SimRecorder(
+                    cfg,
+                    tmpdir,
+                    dataset_name="test_dataset",
+                    fps=20,
+                    front_video_max_priority=2,
+                )
+
+                recorder.start_episode("geometry-only task", episode_idx=0)
+                recorder.record_step(
+                    state=np.zeros(cfg.total_dofs, dtype=np.float32),
+                    action=np.zeros(cfg.total_dofs, dtype=np.float32),
+                    images={"front_cam": front_a},
+                    skill_label="move",
+                    skill_type="move",
+                    skill_progress=0.0,
+                    goal_joint=np.zeros(cfg.total_dofs, dtype=np.float32),
+                    goal_world_xyzrpy=np.zeros(6, dtype=np.float32),
+                    goal_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+                    goal_gripper=0.0,
+                    tcp_world_xyzrpy=np.zeros(6, dtype=np.float32),
+                    tcp_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+                    gripper_state=np.zeros(1, dtype=np.float32),
+                )
+                recorder.end_episode(
+                    success=True,
+                    front_video_priority=1,
+                    front_video_success_type="geometry_only",
+                )
+
+                recorder.start_episode("overall task", episode_idx=1)
+                recorder.record_step(
+                    state=np.zeros(cfg.total_dofs, dtype=np.float32),
+                    action=np.zeros(cfg.total_dofs, dtype=np.float32),
+                    images={"front_cam": front_b},
+                    skill_label="move",
+                    skill_type="move",
+                    skill_progress=0.0,
+                    goal_joint=np.zeros(cfg.total_dofs, dtype=np.float32),
+                    goal_world_xyzrpy=np.zeros(6, dtype=np.float32),
+                    goal_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+                    goal_gripper=0.0,
+                    tcp_world_xyzrpy=np.zeros(6, dtype=np.float32),
+                    tcp_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+                    gripper_state=np.zeros(1, dtype=np.float32),
+                )
+                recorder.end_episode(
+                    success=True,
+                    front_video_priority=2,
+                    front_video_success_type="overall",
+                )
+                raw_dir = Path(recorder.finalize())
+
+            self.assertTrue(recorder.front_video_generated)
+            self.assertEqual(recorder.front_video_episode, 1)
+            self.assertEqual(recorder.front_video_success_type, "overall")
+            metadata = json.loads((raw_dir / "metadata.json").read_text())
+            self.assertEqual(metadata["front_video_success_type"], "overall")
+
+    def test_sim_recorder_can_select_top_camera_for_success_video(self):
+        cfg = load_robot_config("franka")
+        front = np.full((8, 8, 3), 64, dtype=np.uint8)
+        top = np.full((8, 8, 3), 192, dtype=np.uint8)
+
+        def _fake_encode(self, frames_dir, out_path):
+            frame_count = len(list(Path(frames_dir).glob("*.png")))
+            out_path.write_bytes(f"frames={frame_count}".encode("utf-8"))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.object(SimRecorder, "_encode_mp4_from_frames", autospec=True, side_effect=_fake_encode):
+                recorder = SimRecorder(
+                    cfg,
+                    tmpdir,
+                    dataset_name="test_dataset",
+                    fps=20,
+                    front_video_camera_name="top",
+                )
+                recorder.start_episode("cabinet task", episode_idx=0)
+                recorder.record_step(
+                    state=np.zeros(cfg.total_dofs, dtype=np.float32),
+                    action=np.zeros(cfg.total_dofs, dtype=np.float32),
+                    images={"front_cam": front, "top_cam": top},
+                    skill_label="move",
+                    skill_type="move",
+                    skill_progress=0.0,
+                    goal_joint=np.zeros(cfg.total_dofs, dtype=np.float32),
+                    goal_world_xyzrpy=np.zeros(6, dtype=np.float32),
+                    goal_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+                    goal_gripper=0.0,
+                    tcp_world_xyzrpy=np.zeros(6, dtype=np.float32),
+                    tcp_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+                    gripper_state=np.zeros(1, dtype=np.float32),
+                )
+                recorder.end_episode(success=True)
+                raw_dir = Path(recorder.finalize())
+
+            self.assertTrue(recorder.front_video_generated)
+            self.assertEqual(recorder.front_video_camera_name, "top")
+            metadata = json.loads((raw_dir / "metadata.json").read_text())
+            self.assertEqual(metadata["front_video_camera_name"], "top")
+            meta_path = Path(tmpdir) / "videos" / "front_success_meta.json"
+            self.assertTrue(meta_path.exists())
+            self.assertEqual(json.loads(meta_path.read_text())["camera_name"], "top")
+
+    def test_sim_recorder_can_exclude_front_from_dataset_images(self):
+        cfg = load_robot_config("franka")
+        front = np.full((8, 8, 3), 127, dtype=np.uint8)
+        wrist = np.full((8, 8, 3), 255, dtype=np.uint8)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            recorder = SimRecorder(
+                cfg,
+                tmpdir,
+                dataset_name="test_dataset",
+                fps=20,
+                dataset_cameras=["top", "wrist"],
+            )
+            recorder.start_episode("test task", episode_idx=0)
+            recorder.record_step(
+                state=np.zeros(cfg.total_dofs, dtype=np.float32),
+                action=np.zeros(cfg.total_dofs, dtype=np.float32),
+                images={"front_cam": front, "wrist_cam": wrist},
+                skill_label="move",
+                skill_type="move",
+                skill_progress=0.0,
+                goal_joint=np.zeros(cfg.total_dofs, dtype=np.float32),
+                goal_world_xyzrpy=np.zeros(6, dtype=np.float32),
+                goal_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+                goal_gripper=0.0,
+                tcp_world_xyzrpy=np.zeros(6, dtype=np.float32),
+                tcp_robot_xyzrpy=np.zeros(6, dtype=np.float32),
+                gripper_state=np.zeros(1, dtype=np.float32),
+            )
+            recorder.end_episode(success=False)
+            raw_dir = Path(recorder.finalize())
+
+            self.assertFalse((raw_dir / "episodes" / "episode_000000" / "images" / "front_cam").exists())
+            self.assertTrue((raw_dir / "episodes" / "episode_000000" / "images" / "wrist_cam").exists())
 
     def test_sim_recorder_skips_front_video_for_failed_episode(self):
         cfg = load_robot_config("franka")
@@ -731,6 +1158,21 @@ class EnvCfg(ManagerBasedRLEnvCfg):
             self.assertFalse((Path(tmpdir) / "videos").exists())
             self.assertFalse(recorder.front_video_generated)
             self.assertIsNone(recorder.front_video_path)
+
+    def test_load_pipeline_config_includes_camera_selection_lists(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "data_collection.yaml"
+            config_path.write_text(
+                """
+cameras:
+  dataset_cameras: ["top", "wrist", "front"]
+  judge_cameras: ["front"]
+""".strip()
+            )
+            cfg = load_pipeline_config(str(config_path))
+
+        self.assertEqual(cfg.dataset_cameras, ["top", "wrist", "front"])
+        self.assertEqual(cfg.judge_cameras, ["front"])
 
     def test_sim_robot_interface_read_gripper_state_uses_primary_finger_joint(self):
         iface = SimRobotInterface.__new__(SimRobotInterface)
@@ -1257,6 +1699,215 @@ class EnvCfg(ManagerBasedRLEnvCfg):
             text = asset_cfg.read_text()
             self.assertIsNone(re.search(r"/home/[^/]+", text))
             self.assertNotIn(str(Path.cwd().resolve()), text)
+
+    def test_multiview_grounder_fuses_depth_candidates_into_robot_pose(self):
+        depth_front = np.full((64, 64), np.nan, dtype=np.float32)
+        depth_top = np.full((64, 64), np.nan, dtype=np.float32)
+        depth_wrist = np.full((64, 64), np.nan, dtype=np.float32)
+        center = 32
+        depth_front[center, center] = 1.00
+        depth_top[center, center] = 0.98
+        depth_wrist[center, center] = 1.02
+
+        cameras = _FakeGroundingCameras(
+            {
+                "front": depth_front,
+                "top": depth_top,
+                "wrist": depth_wrist,
+            }
+        )
+        robot = _FakeGroundingRobot()
+        grounder = MultiViewTargetGrounder(cameras=cameras, robot_interface=robot)
+        grounder.begin_episode(0)
+
+        result = grounder.ground_target(
+            "drawer_handle_top",
+            {
+                "position": [0.005, -0.005, -1.0],
+                "target_rotation_world": [[1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, -1.0]],
+            },
+            stage="handle_open",
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(set(result["contributing_views"]), {"front", "top", "wrist"})
+        position_robot = np.asarray(result["position_robot"], dtype=np.float64)
+        self.assertEqual(position_robot.shape, (3,))
+        self.assertAlmostEqual(position_robot[2], -1.0, places=2)
+        self.assertEqual(len(grounder.events), 1)
+        self.assertEqual(grounder.events[0]["status"], "ok")
+
+    def test_task_aware_prompt_renders_pick_place_success_checklist(self):
+        task_doc = load_task_document("tasks/franka/pick_place/franka_pick_place_box.yaml")
+        translated = {
+            "box": {"position": [0.40, -0.15, 0.18], "task_role": "goal_subject", "asset_label": "sugar box"},
+            "target_marker": {"position": [0.50, 0.15, 0.02], "task_role": "target_marker", "asset_label": "green target marker"},
+            "table_surface": {"position": [0.50, 0.00, 0.00], "task_role": "support_surface", "asset_label": "table surface"},
+            "command_pose": {"position": [0.50, 0.00, 0.37], "task_role": "placement_target", "asset_label": "command pose"},
+        }
+        conditions = _compile_goal_conditions_for_prompt(task_doc, translated)
+        relevant = _select_relevant_objects_for_prompt(translated, conditions)
+
+        prompt, context = build_task_aware_judge_prompt(
+            task_description=task_doc["task"]["description"],
+            goal_description=task_doc["goal"]["description"],
+            goal_conditions=conditions,
+            relevant_objects=relevant,
+            object_positions=translated,
+            executed_code="skills.execute_pick_and_place_on_target('box', 'target_marker')",
+            image_resolution=(640, 480),
+        )
+
+        self.assertIn("Structured Success Criteria:", prompt)
+        self.assertIn("box (sugar box) is near target_marker (green target marker)", prompt)
+        self.assertIn("box (sugar box) is resting on table and not dropped or floating.", prompt)
+        self.assertIn("Relevant Visible Objects and Targets:", prompt)
+        self.assertNotIn("command_pose", prompt)
+        self.assertEqual(context["goal_description"], task_doc["goal"]["description"])
+
+    def test_task_aware_prompt_renders_stack_tray_and_filters_helper_targets(self):
+        task_doc = load_task_document("tasks/franka/stack/franka_stack_tray.yaml")
+        translated = {
+            "cube_1": {"position": [0.46, -0.06, 0.02], "task_role": "goal_subject", "asset_label": "blue cube"},
+            "cube_2": {"position": [0.52, -0.01, 0.02], "task_role": "goal_subject", "asset_label": "red cube"},
+            "cube_3": {"position": [0.58, 0.04, 0.02], "task_role": "goal_subject", "asset_label": "green cube"},
+            "tray_base": {"position": [0.50, 0.00, 0.00], "task_role": "goal_target", "asset_label": "tray"},
+            "tray_anchor": {"position": [0.50, 0.00, 0.00], "task_role": "placement_target", "asset_label": "tray anchor"},
+        }
+        conditions = _compile_goal_conditions_for_prompt(task_doc, translated)
+        relevant = _select_relevant_objects_for_prompt(translated, conditions)
+
+        prompt, _ = build_task_aware_judge_prompt(
+            task_description=task_doc["task"]["description"],
+            goal_description=task_doc["goal"]["description"],
+            goal_conditions=conditions,
+            relevant_objects=relevant,
+            object_positions=translated,
+            executed_code="skills.execute_pick_and_stack_on_object('cube_2', 'cube_1')",
+            image_resolution=(640, 480),
+        )
+
+        self.assertIn("cube_2 (red cube) is visibly stacked on top of cube_1 (blue cube).", prompt)
+        self.assertIn("cube_3 (green cube) is visibly stacked on top of cube_2 (red cube).", prompt)
+        self.assertIn("all remain inside the tray boundary", prompt)
+        self.assertIn("tray_base (tray)", prompt)
+        self.assertNotIn("tray_anchor", prompt)
+
+    def test_task_aware_prompt_renders_lift_command_pose_without_object_listing(self):
+        task_doc = load_task_document("tasks/franka/lift/franka_lift.yaml")
+        translated = {
+            "cube": {"position": [0.50, 0.00, 0.11], "task_role": "goal_subject", "asset_label": "DexCube"},
+            "command_pose": {"position": [0.50, 0.00, 0.37], "task_role": "placement_target", "asset_label": "command pose"},
+        }
+        conditions = _compile_goal_conditions_for_prompt(task_doc, translated)
+        relevant = _select_relevant_objects_for_prompt(translated, conditions)
+
+        prompt, _ = build_task_aware_judge_prompt(
+            task_description=task_doc["task"]["description"],
+            goal_description=task_doc["goal"]["description"],
+            goal_conditions=conditions,
+            relevant_objects=relevant,
+            object_positions=translated,
+            executed_code="skills.execute_pick_and_lift_to_pose('cube', 'command_pose')",
+            image_resolution=(640, 480),
+        )
+
+        self.assertIn("cube (DexCube) is lifted at least 0.04 m", prompt)
+        self.assertIn("the commanded target pose approximately at (0.50, 0.00, 0.37)", prompt)
+        self.assertNotIn("Relevant Visible Objects and Targets:\n- command_pose", prompt)
+
+    def test_task_aware_prompt_renders_multi_object_checklist_for_cabinet_blocks(self):
+        task_doc = load_task_document("tasks/franka/cabinet/franka_cabinet_blocks.yaml")
+        translated = {
+            "blue_block": {"position": [0.53, 0.20, 0.04], "task_role": "goal_subject", "asset_label": "blue block"},
+            "red_block": {"position": [0.55, 0.18, 0.04], "task_role": "goal_subject", "asset_label": "red block"},
+            "green_block": {"position": [0.57, 0.16, 0.04], "task_role": "goal_subject", "asset_label": "green block"},
+            "target_zone": {"position": [0.65, 0.00, 0.01], "task_role": "goal_target", "asset_label": "target zone"},
+        }
+        conditions = _compile_goal_conditions_for_prompt(task_doc, translated)
+        relevant = _select_relevant_objects_for_prompt(translated, conditions)
+
+        prompt, _ = build_task_aware_judge_prompt(
+            task_description=task_doc["task"]["description"],
+            goal_description=task_doc["goal"]["description"],
+            goal_conditions=conditions,
+            relevant_objects=relevant,
+            object_positions=translated,
+            executed_code="skills.execute_pick_and_place_on_target('blue_block', 'target_zone')",
+            image_resolution=(640, 480),
+        )
+
+        self.assertIn("blue_block (blue block) is near target_zone (target zone)", prompt)
+        self.assertIn("red_block (red block) is near target_zone (target zone)", prompt)
+        self.assertIn("green_block (green block) is near target_zone (target zone)", prompt)
+
+    def test_task_aware_prompt_renders_color_sort_and_line_arrange_markers(self):
+        for task_path, subject_prefix in (
+            ("tasks/franka/sort/franka_color_sort.yaml", "blue_block"),
+            ("tasks/franka/sort/franka_line_arrange.yaml", "blue_block"),
+        ):
+            task_doc = load_task_document(task_path)
+            translated = {
+                "blue_block": {"position": [0.45, -0.05, 0.02], "task_role": "goal_subject", "asset_label": "blue block"},
+                "red_block": {"position": [0.50, 0.00, 0.02], "task_role": "goal_subject", "asset_label": "red block"},
+                "green_block": {"position": [0.55, 0.05, 0.02], "task_role": "goal_subject", "asset_label": "green block"},
+                "blue_zone": {"position": [0.60, -0.06, 0.01], "task_role": "target_marker", "asset_label": "blue zone"},
+                "red_zone": {"position": [0.60, 0.00, 0.01], "task_role": "target_marker", "asset_label": "red zone"},
+                "green_zone": {"position": [0.60, 0.06, 0.01], "task_role": "target_marker", "asset_label": "green zone"},
+                "pos_marker_1": {"position": [0.55, -0.06, 0.01], "task_role": "target_marker", "asset_label": "position marker 1"},
+                "pos_marker_2": {"position": [0.55, 0.00, 0.01], "task_role": "target_marker", "asset_label": "position marker 2"},
+                "pos_marker_3": {"position": [0.55, 0.06, 0.01], "task_role": "target_marker", "asset_label": "position marker 3"},
+            }
+            conditions = _compile_goal_conditions_for_prompt(task_doc, translated)
+            relevant = _select_relevant_objects_for_prompt(translated, conditions)
+            prompt, _ = build_task_aware_judge_prompt(
+                task_description=task_doc["task"]["description"],
+                goal_description=task_doc["goal"]["description"],
+                goal_conditions=conditions,
+                relevant_objects=relevant,
+                object_positions=translated,
+                executed_code="pass",
+                image_resolution=(640, 480),
+            )
+            self.assertIn(subject_prefix, prompt)
+            self.assertIn("Structured Success Criteria:", prompt)
+
+    def test_task_aware_prompt_smoke_covers_requested_franka_task_set(self):
+        task_paths = [
+            "tasks/franka/lift/franka_lift.yaml",
+            "tasks/franka/lift/franka_lift_sugar_box.yaml",
+            "tasks/franka/pick_place/franka_pick_place.yaml",
+            "tasks/franka/pick_place/franka_pick_place_bottle.yaml",
+            "tasks/franka/pick_place/franka_pick_place_box.yaml",
+            "tasks/franka/pick_place/franka_pick_place_can.yaml",
+            "tasks/franka/pick_place/franka_pick_place_drawer.yaml",
+            "tasks/franka/pick_place/franka_pick_place_mug.yaml",
+            "tasks/franka/pick_place/franka_pick_place_tuna.yaml",
+            "tasks/franka/stack/franka_stack.yaml",
+            "tasks/franka/cabinet/franka_cabinet_blocks.yaml",
+            "tasks/franka/pick_place/franka_multi_pick_place.yaml",
+            "tasks/franka/sort/franka_color_sort.yaml",
+            "tasks/franka/sort/franka_line_arrange.yaml",
+            "tasks/franka/stack/franka_stack_tray.yaml",
+        ]
+
+        for task_path in task_paths:
+            with self.subTest(task_path=task_path):
+                task_doc = load_task_document(task_path)
+                translated, conditions, relevant = _build_prompt_inputs_for_task(task_doc)
+                prompt, context = build_task_aware_judge_prompt(
+                    task_description=task_doc.get("task", {}).get("description", ""),
+                    goal_description=task_doc.get("goal", {}).get("description", ""),
+                    goal_conditions=conditions,
+                    relevant_objects=relevant,
+                    object_positions=translated,
+                    executed_code="pass",
+                    image_resolution=(640, 480),
+                )
+                self.assertIn("Structured Success Criteria:", prompt)
+                self.assertTrue(context["goal_conditions"])
+                self.assertNotIn("No objects detected", prompt)
+                self.assertNotIn("_anchor", prompt)
 
 
 if __name__ == "__main__":

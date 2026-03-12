@@ -62,6 +62,7 @@ class CameraConfig:
     # --- fixed camera ---
     position: list[float] = field(default_factory=list)
     target: list[float] = field(default_factory=list)
+    up_vector: list[float] = field(default_factory=list)
     # --- body_mounted camera ---
     parent_body: str = ""
     offset_pos: list[float] = field(default_factory=lambda: [0, 0, 0])
@@ -273,6 +274,7 @@ def load_robot_config(robot_name: str) -> RobotSimConfig:
             cam_type=cam_type,
             position=cam_data.get("position", []),
             target=cam_data.get("target", []),
+            up_vector=cam_data.get("up_vector", []),
             parent_body=cam_data.get("parent_body", ""),
             offset_pos=cam_data.get("offset_pos", [0, 0, 0]),
             offset_rot=cam_data.get("offset_rot", [1, 0, 0, 0]),
@@ -337,7 +339,10 @@ class DataCollectionConfig:
 
     # Recording
     recording_fps: int = 20         # match control_hz by default
+    front_video_fps: int = 20       # representative front-success video FPS
     camera_resolution: tuple[int, int] = (640, 480)
+    dataset_cameras: list[str] = field(default_factory=lambda: ["top", "wrist", "front"])
+    judge_cameras: list[str] = field(default_factory=lambda: ["wrist", "front"])
 
     # Episodes
     max_episodes: int = 50
@@ -355,6 +360,7 @@ class DataCollectionConfig:
     # VLM (success judging)
     use_vlm_judge: bool = True
     vlm_backend: str = "auto"
+    vlm_model: str = "gpt-5"
     success_threshold: float = 0.8
 
     # Legacy compatibility
@@ -369,6 +375,11 @@ class DataCollectionConfig:
     def effective_fps(self) -> int:
         """Effective recording FPS (capped by control rate)."""
         return min(self.recording_fps, int(self.control_hz))
+
+    @property
+    def effective_front_video_fps(self) -> int:
+        """Effective front-success video FPS (cannot exceed recording FPS)."""
+        return min(self.front_video_fps, self.effective_fps)
 
 
 def load_pipeline_config(config_path: Optional[str] = None) -> DataCollectionConfig:
@@ -395,6 +406,7 @@ def load_pipeline_config(config_path: Optional[str] = None) -> DataCollectionCon
     llm = data.get("llm", {})
     vlm = data.get("vlm", {})
     skill = data.get("skill", {})
+    cameras = data.get("cameras", {})
     env = data.get("environment", {})
 
     config = DataCollectionConfig(
@@ -402,7 +414,10 @@ def load_pipeline_config(config_path: Optional[str] = None) -> DataCollectionCon
         decimation=sim.get("decimation", 5),
         control_hz=sim.get("control_hz", 20.0),
         recording_fps=recording.get("fps", 20),
+        front_video_fps=recording.get("front_video_fps", recording.get("fps", 20)),
         camera_resolution=tuple(recording.get("resolution", [640, 480])),
+        dataset_cameras=list(cameras.get("dataset_cameras", ["top", "wrist", "front"])),
+        judge_cameras=list(cameras.get("judge_cameras", ["wrist", "front"])),
         max_episodes=episodes.get("max", 50),
         max_steps_per_episode=episodes.get("max_steps", 600),
         target_successful_episodes=episodes.get("target_successful", 0),
@@ -412,6 +427,7 @@ def load_pipeline_config(config_path: Optional[str] = None) -> DataCollectionCon
         llm_model=llm.get("model", "gpt-5-mini"),
         use_vlm_judge=vlm.get("enabled", True),
         vlm_backend=vlm.get("backend", "auto"),
+        vlm_model=vlm.get("model", "gpt-5"),
         success_threshold=vlm.get("success_threshold", 0.8),
         skill_retry_max=skill.get("retry_max", 3),
         env_headless=env.get("headless", True),

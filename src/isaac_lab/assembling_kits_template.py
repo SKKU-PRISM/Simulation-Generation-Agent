@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -20,12 +21,13 @@ def build_assembling_kits_template(task_doc: dict, robot: str) -> dict[str, str]
     camera_cfg = task_doc.get("camera", {})
     active_shape_name = _find_active_shape_name(task_doc)
 
-    scene_blocks = [_build_static_asset_block(asset) for asset in assets.values() if asset.get("name") != robot_asset.get("name")]
+    scene_blocks = [_build_asset_block(asset) for asset in assets.values() if asset.get("name") != robot_asset.get("name")]
     scene_assets = "\n\n".join(scene_blocks)
     robot_imports, robot_setup = _build_robot_setup(robot, robot_asset)
     randomization_event = ""
     if active_shape_name and active_shape_name in assets:
         randomization_event = _build_reset_event_block(assets[active_shape_name])
+    post_env_setup = _build_post_env_setup_block(assets.values())
 
     env_cfg = f'''# Copyright (c) 2026, The Isaac Lab Project Developers.
 # All rights reserved.
@@ -33,11 +35,12 @@ def build_assembling_kits_template(task_doc: dict, robot: str) -> dict[str, str]
 # SPDX-License-Identifier: BSD-3-Clause
 
 from dataclasses import MISSING
+from copy import deepcopy
 import math
 import random
 
 import isaaclab.sim as sim_utils
-from isaaclab.assets import ArticulationCfg, AssetBaseCfg
+from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
@@ -45,11 +48,14 @@ from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
+from isaaclab.sim import schemas as sim_schemas
+from isaaclab.sim.spawners.from_files import from_files as from_files_impl
 from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
+from isaaclab.sim.utils import clone
 from isaaclab.sim.utils.stage import get_current_stage
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
-from pxr import Gf, UsdGeom
+from pxr import Gf, Usd, UsdGeom, UsdShade
 {robot_imports}
 import mdp as mdp
 
@@ -91,6 +97,99 @@ def randomize_static_asset_pose(env, env_ids, prim_path, base_pos, base_quat, po
 
     translate_op.Set(Gf.Vec3f(*[float(value) for value in pos]))
     orient_op.Set(Gf.Quatf(float(quat[0]), Gf.Vec3f(float(quat[1]), float(quat[2]), float(quat[3]))))
+
+
+def _apply_triangle_mesh_collision(root_prim_path):
+    stage = get_current_stage()
+    root_prim = stage.GetPrimAtPath(root_prim_path)
+    if not root_prim or not root_prim.IsValid():
+        raise RuntimeError(f"Could not find triangle-collision root prim: {{root_prim_path}}")
+
+    mesh_cfg = sim_schemas.TriangleMeshPropertiesCfg()
+    applied = 0
+    for prim in root_prim.GetChildren():
+        if prim and prim.IsValid() and prim.IsA(UsdGeom.Mesh):
+            sim_schemas.define_mesh_collision_properties(prim.GetPath().pathString, mesh_cfg, stage=stage)
+            applied += 1
+
+    if applied == 0:
+        for prim in Usd.PrimRange(root_prim):
+            if prim and prim.IsValid() and prim.IsA(UsdGeom.Mesh):
+                sim_schemas.define_mesh_collision_properties(prim.GetPath().pathString, mesh_cfg, stage=stage)
+                applied += 1
+
+    if applied == 0:
+        raise RuntimeError(f"Could not find mesh children under {{root_prim_path}} for triangle collision setup")
+    return applied
+
+
+def _resolve_single_mesh_child(root_prim_path):
+    stage = get_current_stage()
+    root_prim = stage.GetPrimAtPath(root_prim_path)
+    if not root_prim or not root_prim.IsValid():
+        raise RuntimeError(f"Could not find rigid-shape root prim: {{root_prim_path}}")
+
+    mesh_prims = []
+    mesh_with_material = []
+    for prim in Usd.PrimRange(root_prim):
+        if not prim or not prim.IsValid() or not prim.IsA(UsdGeom.Mesh):
+            continue
+        mesh_prims.append(prim)
+        binding = UsdShade.MaterialBindingAPI(prim).GetDirectBinding()
+        if str(binding.GetMaterialPath()):
+            mesh_with_material.append(prim)
+
+    if len(mesh_with_material) == 1:
+        return mesh_with_material[0]
+    if len(mesh_prims) == 1:
+        return mesh_prims[0]
+
+    candidate_paths = [prim.GetPath().pathString for prim in mesh_prims]
+    raise RuntimeError(
+        f"Could not uniquely resolve rigid-shape mesh under {{root_prim_path}}. Candidates: {{candidate_paths}}"
+    )
+
+
+@clone
+def spawn_usd_with_child_physics(prim_path, cfg, translation=None, orientation=None, **kwargs):
+    cfg_copy = deepcopy(cfg)
+    rigid_props = getattr(cfg, "rigid_props", None)
+    collision_props = getattr(cfg, "collision_props", None)
+    mass_props = getattr(cfg, "mass_props", None)
+
+    cfg_copy.rigid_props = None
+    cfg_copy.collision_props = None
+    cfg_copy.mass_props = None
+
+    prim = from_files_impl._spawn_from_usd_file(
+        prim_path,
+        cfg_copy.usd_path,
+        cfg_copy,
+        translation,
+        orientation,
+        **kwargs,
+    )
+
+    stage = get_current_stage()
+    target_prim = _resolve_single_mesh_child(prim_path)
+    target_path = target_prim.GetPath().pathString
+    if rigid_props is not None:
+        sim_schemas.define_rigid_body_properties(target_path, rigid_props, stage=stage)
+    if collision_props is not None:
+        sim_schemas.define_collision_properties(target_path, collision_props, stage=stage)
+    if mass_props is not None:
+        sim_schemas.define_mass_properties(target_path, mass_props, stage=stage)
+    sim_schemas.define_mesh_collision_properties(
+        target_path,
+        sim_schemas.ConvexHullPropertiesCfg(),
+        stage=stage,
+    )
+    print(f"Applied child rigid-body physics: root={{prim_path}}, target={{target_path}}")
+    return prim
+
+
+def post_env_setup(env):
+{_indent(post_env_setup, 4) if post_env_setup else "    return None"}
 
 
 @configclass
@@ -206,6 +305,9 @@ def main():
     env_cfg = {env_class}()
     env_cfg.scene.num_envs = args.num_envs
     env = ManagerBasedRLEnv(cfg=env_cfg)
+    post_setup = globals().get("post_env_setup")
+    if callable(post_setup):
+        post_setup(env)
 
     env.reset()
     for _ in range(10):
@@ -269,6 +371,9 @@ def main():
     )
 
     env = ManagerBasedRLEnv(cfg=env_cfg)
+    post_setup = globals().get("post_env_setup")
+    if callable(post_setup):
+        post_setup(env)
     env.reset()
     cameras = SceneCameraManager(env, camera_attr_names)
 
@@ -301,6 +406,12 @@ if __name__ == "__main__":
         "run_env.py": run_env.strip() + "\n",
         "capture_scene.py": capture_scene.strip() + "\n",
     }
+
+
+def _build_asset_block(asset: dict[str, Any]) -> str:
+    if asset.get("physics", {}).get("rigid_body"):
+        return _build_rigid_asset_block(asset)
+    return _build_static_asset_block(asset)
 
 
 def _build_static_asset_block(asset: dict[str, Any]) -> str:
@@ -371,6 +482,70 @@ def _build_reset_event_block(asset: dict[str, Any]) -> str:
             ")",
         ]
     )
+
+
+def _build_rigid_asset_block(asset: dict[str, Any]) -> str:
+    physics = asset.get("physics", {})
+    spawn_lines = [
+        f"usd_path={_python_path_literal(asset['asset_path'])},",
+        f"scale={_tuple(asset.get('scale', [1.0, 1.0, 1.0]))},",
+        f'semantic_tags=[("class", "{asset["name"]}")],',
+    ]
+    color = asset.get("color")
+    if color:
+        spawn_lines.append(f"visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color={_tuple(color)}),")
+    if physics.get("collision", True):
+        spawn_lines.append("collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),")
+
+    rigid_props_args = [
+        "disable_gravity=False",
+        f"solver_position_iteration_count={int(physics.get('solver_position_iterations', 32))}",
+        f"solver_velocity_iteration_count={int(physics.get('solver_velocity_iterations', 1))}",
+        f"max_depenetration_velocity={float(physics.get('max_depenetration_velocity', 5.0))}",
+    ]
+    if physics.get("max_linear_velocity") is not None:
+        rigid_props_args.append(f"max_linear_velocity={float(physics['max_linear_velocity'])}")
+    if physics.get("max_angular_velocity") is not None:
+        rigid_props_args.append(f"max_angular_velocity={float(physics['max_angular_velocity'])}")
+    spawn_lines.append(
+        "rigid_props=sim_utils.RigidBodyPropertiesCfg("
+        + ", ".join(rigid_props_args)
+        + "),"
+    )
+
+    mass = physics.get("mass")
+    if mass is not None:
+        spawn_lines.append(f"mass_props=sim_utils.MassPropertiesCfg(mass={float(mass)}),")
+
+    return f'''{asset["name"]} = RigidObjectCfg(
+    prim_path={asset.get("prim_path", f"/World/{asset['name']}")!r},
+    init_state=RigidObjectCfg.InitialStateCfg(
+        pos={_tuple(asset.get("position", [0.0, 0.0, 0.0]))},
+        rot={_tuple(asset.get("rotation", [1.0, 0.0, 0.0, 0.0]))},
+    ),
+    spawn=UsdFileCfg(
+        func=spawn_usd_with_child_physics,
+{_indent(chr(10).join(spawn_lines), 8)}
+    ),
+)'''
+
+
+def _build_post_env_setup_block(assets: Any) -> str:
+    triangle_roots: list[str] = []
+    for asset in assets:
+        if asset.get("physics", {}).get("collision_mesh") == "triangle":
+            triangle_roots.append(asset.get("prim_path", f"/World/{asset['name']}"))
+    if not triangle_roots:
+        return ""
+
+    lines = [
+        "applied = 0",
+        f"for _root in {triangle_roots!r}:",
+        "    applied += _apply_triangle_mesh_collision(_root)",
+        'print(f\"Applied triangle-mesh collision to {applied} mesh prims\")',
+        "return applied",
+    ]
+    return "\n".join(lines)
 
 
 def _find_active_shape_name(task_doc: dict[str, Any]) -> str | None:

@@ -1,0 +1,189 @@
+# Task Document: FrankaCabinetStoreCube
+# Version: 1.0.0
+# Template: v2.0.0
+# Description: Franka robot opens a small drawer, stores a cube inside, and closes the drawer
+# Reference: Based on franka_pick_place_drawer with articulated open/store/close goal
+
+task:
+  name: FrankaCabinetStoreCube
+  description: "Franka Panda robot opens the top drawer of a small table drawer, places the DexCube inside, and closes the drawer"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]
+  timestep: 0.01
+  decimation: 2
+  episode_length: 12.0
+  render_interval: 2
+  physx:
+    bounce_threshold: 0.01
+    friction_correlation_distance: 0.00625
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]
+
+assets:
+  - name: robot
+    type: articulation
+    source: usd
+    robot_type: franka
+    asset_path: "{ISAACLAB_NUCLEUS_DIR}/Robots/FrankaEmika/panda_instanceable.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]
+    initial_joints:
+      panda_joint1: 0.0
+      panda_joint2: -0.7854
+      panda_joint3: 0.0
+      panda_joint4: -2.3562
+      panda_joint5: 0.0
+      panda_joint6: 1.5708
+      panda_joint7: 0.7854
+      panda_finger_joint: 0.04
+    actuators:
+      shoulder:
+        joint_names: ["panda_joint1", "panda_joint2", "panda_joint3", "panda_joint4"]
+        effort_limit: 87.0
+        stiffness: 80.0
+        damping: 4.0
+      forearm:
+        joint_names: ["panda_joint5", "panda_joint6", "panda_joint7"]
+        effort_limit: 12.0
+        stiffness: 80.0
+        damping: 4.0
+      hand:
+        joint_names: ["panda_finger_joint.*"]
+        effort_limit: 200.0
+        stiffness: 2000.0
+        damping: 100.0
+    ee_frame:
+      body: panda_hand
+      offset_position: [0, 0, 0.1034]
+    physics:
+      self_collision: true
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  - name: drawer
+    type: articulation
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Sektion_Cabinet/sektion_cabinet_instanceable.usd"
+    prim_path: "/World/Drawer"
+    position: [0.5, 0.15, 0.12]
+    rotation: [0, 0, 0, 1]
+    scale: [0.3, 0.3, 0.3]
+    joints:
+      door_left_joint: 0.0
+      door_right_joint: 0.0
+      drawer_bottom_joint: 0.0
+      drawer_top_joint: 0.0
+    actuators:
+      drawers:
+        joint_names: ["drawer_top_joint", "drawer_bottom_joint"]
+        effort_limit: 87.0
+        stiffness: 10.0
+        damping: 1.0
+      doors:
+        joint_names: ["door_left_joint", "door_right_joint"]
+        effort_limit: 87.0
+        stiffness: 10.0
+        damping: 2.5
+    handle:
+      name: drawer_handle_top
+      joint_name: drawer_top_joint
+      prim_path: "/World/Drawer/drawer_handle_top"
+      offset_position: [0.0915, 0.0, 0.0030]
+      interaction_offset_world_position: [-0.05, 0.0, 0.10]
+      offset_rotation: [0.5, 0.5, -0.5, -0.5]
+      target_joint_position: 0.12
+      pull_distance: 0.12
+    container:
+      name: drawer_container
+      joint_name: drawer_top_joint
+      slide_axis_local: [1.0, 0.0, 0.0]
+      open_target_joint_position: 0.12
+      close_target_joint_position: 0.0
+      closed_floor_offset_position: [0.0, 0.0, 0.028]
+      closed_center_offset_position: [0.0, 0.0, 0.055]
+      half_extents: [0.05, 0.045, 0.045]
+
+  - name: cube
+    type: rigid
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd"
+    prim_path: "/World/Object"
+    position: [0.4, -0.15, 0.055]
+    rotation: [1, 0, 0, 0]
+    scale: [0.8, 0.8, 0.8]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+    randomize:
+      position:
+        type: absolute
+        x: [0.35, 0.50]
+        y: [-0.25, -0.05]
+        z: 0.055
+
+  - name: drawer_container
+    type: static
+    source: primitive
+    primitive: cube
+    prim_path: "/World/DrawerContainerTarget"
+    position: [0.38, 0.15, 0.148]
+    scale: [0.08, 0.06, 0.004]
+    color: [0.0, 0.8, 0.2]
+    physics:
+      collision: false
+
+goal:
+  description: "Open the top drawer, place the DexCube inside the drawer cavity, and close the drawer again"
+  conditions:
+    - subject: cube
+      relation: inside_drawer
+      target: drawer_container
+      tolerance: 0.02
+    - subject: drawer_top_joint
+      relation: position_below
+      value: 0.0
+      tolerance: 0.02
+
+camera:
+  prim_path: "/World/Camera"
+  position: [0.5, 0.05, 1.15]
+  target: [0.5, 0.05, 0.18]
+  fov: 60
+  resolution: [1280, 720]
+
+notes:
+  - "Small 0.3x Sektion drawer on the table, front facing the robot"
+  - "Goal sequence is open -> store cube in drawer -> close"
+  - "drawer_container stores a fixed open-placement anchor plus closed-state cavity metadata for verification"
+  - "Handle/container offsets are already scaled for the 0.3x drawer asset"

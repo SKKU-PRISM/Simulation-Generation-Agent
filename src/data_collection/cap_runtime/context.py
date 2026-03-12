@@ -14,6 +14,8 @@ class RuntimeResources:
     detector: Any
     robot_cfg: Any
     translated_positions: dict[str, dict[str, Any]]
+    cameras: Any | None = None
+    target_grounder: Any | None = None
 
 
 class CaPRuntimeContext:
@@ -29,12 +31,16 @@ class CaPRuntimeContext:
         detector: Any,
         robot_cfg: Any,
         translated_positions: dict[str, dict[str, Any]],
+        cameras: Any | None = None,
+        target_grounder: Any | None = None,
     ) -> None:
         cls._resources = RuntimeResources(
             sim_skills=sim_skills,
             detector=detector,
             robot_cfg=robot_cfg,
             translated_positions=translated_positions,
+            cameras=cameras,
+            target_grounder=target_grounder,
         )
 
     @classmethod

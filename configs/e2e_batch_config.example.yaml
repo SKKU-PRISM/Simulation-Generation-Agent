@@ -1,0 +1,89 @@
+run:
+  output_root: outputs/e2e_batches/franka15_validation
+  continue_on_failure: true
+  export_schema: adc_compatible
+  preprocess_success_only: true
+  generate_report: true
+
+collection:
+  config_path: configs/data_collection_config.yaml
+  llm_model: gpt-5
+  vlm_model: gpt-5
+  use_vlm_judge: true
+  gui: false
+  execution_timeout: 5400
+  default_max_attempts_multiplier: 5
+  task_retry_limit: 2
+
+hf:
+  upload: true
+  namespace: vpraise00
+  dataset_name: franka15-validation
+  private: true
+  token_env: HF_TOKEN
+
+tasks:
+  - yaml: tasks/franka/lift/franka_lift.yaml
+    demos: 5
+    max_attempts: 25
+    baseline_tag: target_validation
+  - yaml: tasks/franka/lift/franka_lift_sugar_box.yaml
+    demos: 5
+    max_attempts: 25
+    baseline_tag: target_validation
+  - yaml: tasks/franka/pick_place/franka_pick_place.yaml
+    demos: 5
+    max_attempts: 25
+    baseline_tag: target_validation
+  - yaml: tasks/franka/pick_place/franka_pick_place_bottle.yaml
+    demos: 5
+    max_attempts: 25
+    baseline_tag: target_validation
+  - yaml: tasks/franka/pick_place/franka_pick_place_box.yaml
+    demos: 5
+    max_attempts: 25
+    baseline_tag: target_validation
+  - yaml: tasks/franka/pick_place/franka_pick_place_can.yaml
+    demos: 5
+    max_attempts: 25
+    baseline_tag: target_validation
+  - yaml: tasks/franka/pick_place/franka_pick_place_drawer.yaml
+    demos: 5
+    max_attempts: 25
+    baseline_tag: target_validation
+  - yaml: tasks/franka/pick_place/franka_pick_place_mug.yaml
+    demos: 5
+    max_attempts: 25
+    baseline_tag: target_validation
+  - yaml: tasks/franka/pick_place/franka_pick_place_tuna.yaml
+    demos: 5
+    max_attempts: 25
+    baseline_tag: target_validation
+  - yaml: tasks/franka/stack/franka_stack.yaml
+    demos: 5
+    max_attempts: 25
+    baseline_tag: known_working
+  - yaml: tasks/franka/cabinet/franka_cabinet_blocks.yaml
+    demos: 5
+    max_attempts: 25
+    baseline_tag: pipeline_error
+    task_retry_limit: 3
+  - yaml: tasks/franka/pick_place/franka_multi_pick_place.yaml
+    demos: 5
+    max_attempts: 25
+    baseline_tag: geometry_vlm_mismatch
+  - yaml: tasks/franka/sort/franka_color_sort.yaml
+    demos: 5
+    max_attempts: 25
+    baseline_tag: startup_hang
+    task_retry_limit: 3
+  - yaml: tasks/franka/sort/franka_line_arrange.yaml
+    demos: 5
+    max_attempts: 25
+    baseline_tag: startup_hang
+    task_retry_limit: 3
+  - yaml: tasks/franka/stack/franka_stack_tray.yaml
+    demos: 5
+    max_attempts: 25
+    baseline_tag: startup_hang
+    task_retry_limit: 3

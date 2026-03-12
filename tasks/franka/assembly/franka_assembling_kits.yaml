@@ -186,6 +186,12 @@ assets:
     position: [0.45, -0.20, 0.0]        # misplaced: on table surface
     rotation: [-0.9799, 0, 0, -0.1995]  # tray_rot * slot_rot(5.114 rad Z)
     scale: [0.003, 0.003, 0.001]
+    grasp_points_local:
+      - [-0.022, 0.000]
+      - [-0.020, 0.021]
+      - [-0.021, -0.021]
+      - [0.020, 0.015]
+      - [-0.006, 0.016]
     color: [0.690, 0.478, 0.631]               # purple/lavender
     physics:
       rigid_body: true
@@ -249,8 +255,8 @@ goal:
 
 camera:
   prim_path: "/World/Camera"
-  position: [0.30, 0.30, 0.50]
-  target: [0.45, -0.01, 0.01]
+  position: [0.45, -0.01, 0.90]         # normalized top-down precision view
+  target: [0.45, -0.01, 0.04]
   fov: 50
   resolution: [1280, 720]
 

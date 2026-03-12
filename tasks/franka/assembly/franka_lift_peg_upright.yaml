@@ -89,25 +89,25 @@ assets:
     physics:
       collision: true
 
-  # ===== Two-tone Peg: red + blue, lying flat on table =====
-  # ManiSkill peg: diameter 5cm, total length 24cm (2 halves of 12cm)
-  # Using cube primitives: cross-section 5cm x 5cm, each half 12cm long
-  # Peg lies flat along X-axis on table surface
-
-  # Red half (-X side)
+  # ===== Upright peg =====
+  # Use a single rigid cuboid for the peg body. The original ManiSkill task
+  # uses a two-tone peg, but IsaacLab generation proved unstable when the peg
+  # was modeled as two primitive rigid bodies connected by a fixed joint.
+  # A single 24cm rigid peg preserves the task affordance (grasp a horizontal
+  # peg and stand it upright) while keeping the simulator stable.
   - name: peg_red
     type: rigid
     source: primitive
     primitive: cube
     prim_path: "/World/PegRed"
-    position: [0.39, 0.0, 0.025]       # on table, left half of peg
+    position: [0.45, 0.0, 0.025]       # centered on table, lying along X
     rotation: [1, 0, 0, 0]
-    scale: [0.12, 0.05, 0.05]          # 12cm x 5cm x 5cm
+    scale: [0.24, 0.05, 0.05]          # 24cm x 5cm x 5cm
     color: [0.69, 0.055, 0.055]        # dark red matching ManiSkill [176, 14, 14]
     physics:
       rigid_body: true
       collision: true
-      mass: 0.1
+      mass: 0.2
       solver_position_iterations: 32
       solver_velocity_iterations: 1
       max_depenetration_velocity: 5.0
@@ -117,33 +117,6 @@ assets:
         x: [-0.05, 0.05]
         y: [-0.10, 0.10]
         z: 0.0
-
-  # Blue half (+X side)
-  - name: peg_blue
-    type: rigid
-    source: primitive
-    primitive: cube
-    prim_path: "/World/PegBlue"
-    position: [0.51, 0.0, 0.025]       # on table, right half of peg (adjacent to red)
-    rotation: [1, 0, 0, 0]
-    scale: [0.12, 0.05, 0.05]          # 12cm x 5cm x 5cm
-    color: [0.047, 0.165, 0.627]       # blue matching ManiSkill [12, 42, 160]
-    physics:
-      rigid_body: true
-      collision: true
-      mass: 0.1
-      solver_position_iterations: 32
-      solver_velocity_iterations: 1
-      max_depenetration_velocity: 5.0
-
-constraints:
-  - name: PegFixedJoint
-    type: fixed_joint
-    parent: /World/PegRed
-    child: /World/PegBlue
-    local_pos0: [0.06, 0, 0]            # red right edge (half of scale_x 0.12)
-    local_pos1: [-0.06, 0, 0]           # blue left edge
-    description: "Lock two peg halves together as a single rigid body"
 
 goal:
   description: "Lift the two-tone peg from lying flat to an upright vertical position on the table"
@@ -156,7 +129,7 @@ goal:
 
 camera:
   prim_path: "/World/Camera"
-  position: [0.15, 0.55, 0.45]          # front-left oblique, balanced view of both peg halves
+  position: [0.45, 0.0, 0.90]           # normalized top-down precision view
   target: [0.45, 0.0, 0.05]
   fov: 57
   resolution: [1280, 720]
@@ -164,7 +137,7 @@ camera:
 notes:
   - "Source: ManiSkill LiftPegUpright-v1 (haosulab/ManiSkill)"
   - "USD Cube size=1.0, scale is full edge length (not half-size)"
-  - "Peg: two-tone (red 12cm + blue 12cm), cross-section 5cm x 5cm"
-  - "Peg lies flat on table initially, robot must lift to vertical"
+  - "Peg is represented as a single 24cm rigid cuboid for simulator stability"
+  - "Peg lies flat on table initially, robot must lift it to vertical"
   - "Success: peg upright (euler_z within 0.08 rad of pi/2) and z at half-length"
   - "Franka gripper max opening 0.08m > peg cross-section 0.05m (grippable)"

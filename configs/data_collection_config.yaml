@@ -8,6 +8,7 @@ simulation:
 
 recording:
   fps: 20                     # recording FPS (matched to control_hz)
+  front_video_fps: 20         # representative front-success video FPS
   resolution: [640, 480]      # camera resolution [width, height]
 
 episodes:
@@ -23,6 +24,7 @@ llm:
 
 vlm:
   enabled: true               # use VLM for success judging
+  model: "gpt-5"              # VLM judge model
   backend: "auto"             # auto-detect: Azure -> Gemini -> Claude -> Ollama
   success_threshold: 0.8
 
@@ -42,7 +44,7 @@ ik:
 
 # Camera configuration
 cameras:
-  dataset_cameras: ["top", "wrist"]    # cameras included in dataset recording
+  dataset_cameras: ["top", "wrist", "front"]    # cameras included in dataset recording
   judge_cameras: ["wrist", "front"]    # cameras used for VLM judge (before/after images)
   # Camera specs defined per-robot in configs/robot_profiles/*.yaml
 

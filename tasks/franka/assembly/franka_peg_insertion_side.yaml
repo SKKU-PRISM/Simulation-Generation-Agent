@@ -231,7 +231,7 @@ goal:
 
 camera:
   prim_path: "/World/Camera"
-  position: [0.2, -0.6, 0.65]        # front-left view: can see box opening (-X face) and peg
+  position: [0.50, 0.05, 0.90]       # normalized top-down precision view
   target: [0.50, 0.05, 0.04]
   fov: 60
   resolution: [1280, 720]

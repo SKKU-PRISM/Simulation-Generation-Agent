@@ -102,6 +102,11 @@ def main():
         help="Maximum total episode attempts (default: target * 5)",
     )
     parser.add_argument(
+        "--skip-auto-convert",
+        action="store_true",
+        help="Skip per-task raw -> LeRobot conversion after collection",
+    )
+    parser.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="Enable verbose logging",
@@ -142,6 +147,7 @@ def main():
             task_dir=args.batch,
             config=config,
             episodes_per_task=config.max_episodes,
+            auto_convert_to_lerobot=not args.skip_auto_convert,
         )
         # Summary
         total = len(results)
@@ -161,7 +167,7 @@ def main():
                 status = "FAIL"
             task = r.get("task", r.get("yaml", "unknown"))
             print(f"  [{status}] {task}")
-        return
+        return 0
 
     # Single task mode
     if args.yaml_path is None:
@@ -171,6 +177,7 @@ def main():
         yaml_path=args.yaml_path,
         config=config,
         env_dir=args.env_dir,
+        auto_convert_to_lerobot=not args.skip_auto_convert,
     )
 
     result = pipeline.run()
@@ -196,7 +203,11 @@ def main():
 
     if result.get("raw_dataset"):
         print(f"  Dataset: {result['raw_dataset']}")
+    if result.get("lerobot_dataset"):
+        print(f"  LeRobot: {result['lerobot_dataset']}")
+
+    return 0 if result.get("pipeline_completed", False) else 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

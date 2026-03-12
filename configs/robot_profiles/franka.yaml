@@ -151,7 +151,7 @@ spawn_ranges:
 cameras:
   front:
     type: fixed
-    position: [1.5, 0.0, 0.8]            # centered in front of robot, table height + slightly above
+    position: [1.7, 0.0, 0.8]            # slightly farther back for wider workspace coverage
     target: [0.25, 0.0, 0.3]             # workspace center
     resolution: [640, 480]
   wrist:
@@ -163,8 +163,9 @@ cameras:
     resolution: [640, 480]
   top:
     type: fixed
-    position: [-0.1, 0.0, 1.8]         # behind robot, high up — gives near-top-down view
-    target: [0.35, 0.0, 0.3]            # workspace center (table height) — robot at bottom of frame
+    position: [0.45, 0.0, 1.05]          # normalized fallback top-down tabletop view
+    target: [0.45, 0.0, 0.05]            # tabletop workspace center
+    up_vector: [1.0, 0.0, 0.0]           # keep Franka at the bottom of image in vertical top view
     resolution: [640, 480]
 
 asset:

@@ -1984,12 +1984,15 @@ class SimSkills:
         object_name: str,
         approach_offset: float = 0.10,
         grasp_offset: Optional[float] = None,
+        object_position_override: Optional[np.ndarray] = None,
         approach_angle_deg: float | None = None,
         target_rotation_world: Optional[np.ndarray] = None,
         approach_direction_world: Optional[np.ndarray] = None,
         required_tool_axis_world: Optional[np.ndarray] = None,
         required_tool_axis_tolerance_deg: float = 25.0,
         allow_position_only_fallback: bool = True,
+        close_duration_override: Optional[float] = None,
+        breakout_lift_override: float = 0.0,
         skill_description: str | None = None,
     ) -> bool:
         """
@@ -2007,8 +2010,13 @@ class SimSkills:
         if self.detector is None:
             raise RuntimeError("SimDetector required for execute_pick")
 
-        obj_pos = self.detector.get_object_position(object_name)
-        pre_z = obj_pos[2]
+        live_obj_pos = self.detector.get_object_position(object_name)
+        obj_pos = (
+            np.asarray(object_position_override, dtype=np.float64).copy()
+            if object_position_override is not None
+            else np.asarray(live_obj_pos, dtype=np.float64).copy()
+        )
+        pre_z = float(np.asarray(live_obj_pos, dtype=np.float64)[2])
         if grasp_offset is None:
             grasp_offset = self.cfg.ee_finger_offset
         logger.info(f"Picking '{object_name}' at {obj_pos} (grasp_offset={grasp_offset:.3f})")
@@ -2136,16 +2144,21 @@ class SimSkills:
         # Franka (stiffness=2000 Nm/rad): 0.5s suffices.
         # UR10e Robotiq 2F-85 (stiffness=11.25 Nm/rad): needs ~2.0s for full closure.
         self.gripper_close(
-            duration=self.cfg.gripper_close_duration,
+            duration=(
+                float(close_duration_override)
+                if close_duration_override is not None
+                else self.cfg.gripper_close_duration
+            ),
             skill_description=step_desc(f"close the gripper to grasp {object_name}"),
         )
 
         # OpenArm benefits from a short breakout lift immediately after grasp
         # so the cube clears table contact before the longer transport move.
-        if self.cfg.name == "openarm":
+        if self.cfg.name == "openarm" or float(breakout_lift_override) > 1e-6:
             ee_pos_after_close, _ = self.robot.read_ee_pose()
             breakout_pos = np.asarray(ee_pos_after_close, dtype=np.float64).copy()
-            breakout_pos[2] = min(approach_pos[2], breakout_pos[2] + 0.05)
+            breakout_step = max(float(breakout_lift_override), 0.05 if self.cfg.name == "openarm" else 0.0)
+            breakout_pos[2] = min(approach_pos[2], breakout_pos[2] + breakout_step)
             self._move_with_target_rotation(
                 breakout_pos,
                 target_rotation_world=target_rotation_world,
@@ -2662,7 +2675,9 @@ class SimSkills:
         elif self.recorder.should_capture_front_video_frame(self._global_step_count):
             if self.cameras is not None:
                 try:
-                    front_video_image = self.cameras.capture_named(("front_cam", "front"))
+                    front_video_image = self.cameras.capture_named(
+                        self.recorder.front_video_camera_capture_names
+                    )
                 except Exception as e:
                     logger.debug(f"Front video capture failed: {e}")
             elif self.camera is not None:

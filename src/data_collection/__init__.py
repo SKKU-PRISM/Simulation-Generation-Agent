@@ -19,10 +19,19 @@ from .dataset_export import (
     export_dataset,
 )
 from .dataset_preprocess import preprocess_exported_dataset
+from .e2e_orchestrator import load_e2e_batch_config, run_e2e_batch
 from .lerobot_tools import (
     check_lerobot_dataset,
     convert_raw_dataset_to_lerobot,
+    ensure_huggingface_hub_available,
+    ensure_lerobot_available,
     publish_lerobot_dataset,
+)
+from .multitask_orchestrator import run_multitask_to_hf
+from .raw_dataset_merge import (
+    filter_raw_dataset_episodes,
+    load_raw_dataset_metadata,
+    merge_raw_datasets,
 )
 from .sim_camera import SimCamera
 from .sim_detector import SimDetector

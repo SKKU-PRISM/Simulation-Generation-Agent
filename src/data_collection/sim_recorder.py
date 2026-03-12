@@ -58,6 +58,9 @@ class SimRecorder:
         dataset_name: str = "sim_dataset",
         fps: int = 20,
         front_video_fps: int = 10,
+        front_video_max_priority: int = 1,
+        front_video_camera_name: str = "front",
+        dataset_cameras: list[str] | None = None,
     ) -> None:
         self._robot_cfg = robot_cfg
         self._fps = fps
@@ -70,6 +73,11 @@ class SimRecorder:
         self._front_video_target_fps = max(1, min(int(front_video_fps), int(fps)))
         self._front_video_stride = max(1, round(float(fps) / float(self._front_video_target_fps)))
         self._front_video_actual_fps = max(1, round(float(fps) / float(self._front_video_stride)))
+        self._front_video_max_priority = max(0, int(front_video_max_priority))
+        self._front_video_camera_name = str(front_video_camera_name or "front").strip() or "front"
+        self._front_video_camera_aliases = self._aliases_for_camera_name(self._front_video_camera_name)
+        self._dataset_cameras = list(dataset_cameras or ["top", "wrist", "front"])
+        self._dataset_camera_aliases = self._build_camera_aliases(self._dataset_cameras)
 
         # Episode tracking
         self._episode_idx: int = 0
@@ -93,9 +101,27 @@ class SimRecorder:
         # Dataset-level stats
         self._completed_episodes: list[dict] = []
         self._front_video_generated: bool = False
+        self._front_video_priority: int = 0
         self._front_video_episode: Optional[int] = None
         self._front_video_path: Optional[Path] = None
+        self._front_video_success_type: Optional[str] = None
         self._front_video_error: Optional[str] = None
+
+    @staticmethod
+    def _aliases_for_camera_name(name: str) -> set[str]:
+        aliases = {str(name)}
+        if name.endswith("_cam"):
+            aliases.add(name[:-4])
+        else:
+            aliases.add(f"{name}_cam")
+        return aliases
+
+    @classmethod
+    def _build_camera_aliases(cls, names: list[str]) -> set[str]:
+        aliases: set[str] = set()
+        for name in names:
+            aliases.update(cls._aliases_for_camera_name(name))
+        return aliases
 
     # ------------------------------------------------------------------
     # Properties
@@ -118,6 +144,10 @@ class SimRecorder:
         return self._front_video_generated and self._front_video_path is not None
 
     @property
+    def front_video_priority(self) -> int:
+        return self._front_video_priority
+
+    @property
     def front_video_path(self) -> Path | None:
         if self._front_video_path is None:
             return None
@@ -128,14 +158,28 @@ class SimRecorder:
         return self._front_video_episode
 
     @property
+    def front_video_success_type(self) -> str | None:
+        return self._front_video_success_type
+
+    @property
     def front_video_error(self) -> str | None:
         return self._front_video_error
+
+    @property
+    def front_video_camera_name(self) -> str:
+        return self._front_video_camera_name
+
+    @property
+    def front_video_camera_capture_names(self) -> tuple[str, ...]:
+        if self._front_video_camera_name.endswith("_cam"):
+            return (self._front_video_camera_name, self._front_video_camera_name[:-4])
+        return (f"{self._front_video_camera_name}_cam", self._front_video_camera_name)
 
     def should_capture_front_video_frame(self, step_idx: int) -> bool:
         """Whether the current step should capture a front video frame."""
         return (
             self._recording
-            and not self._front_video_generated
+            and self._front_video_priority < self._front_video_max_priority
             and self._current_front_video_frames_dir is not None
             and step_idx % self._front_video_stride == 0
         )
@@ -180,7 +224,7 @@ class SimRecorder:
         self._front_video_frame_count = 0
         self._recording = True
         self._current_task_description = task_description
-        if not self._front_video_generated:
+        if self._front_video_priority < self._front_video_max_priority:
             self._current_front_video_frames_dir = (
                 self._front_video_tmp_root / f"episode_{self._episode_idx:06d}"
             )
@@ -259,18 +303,16 @@ class SimRecorder:
             self._coerce_pose_vector(goal_robot_xyzrpy, "goal_robot_xyzrpy")
         )
 
-        # Judge-only cameras: excluded from dataset recording (VLM judge only)
-        _JUDGE_ONLY_CAMERAS = {"front_cam", "front"}
         front_frame = front_video_image
 
         # Save images (multi-camera or legacy single-camera)
         if images is not None:
             # Multi-camera path
             for cam_name, cam_img in images.items():
-                if front_frame is None and cam_name in _JUDGE_ONLY_CAMERAS and cam_img is not None:
+                if front_frame is None and cam_name in self._front_video_camera_aliases and cam_img is not None:
                     front_frame = cam_img
-                if cam_name in _JUDGE_ONLY_CAMERAS:
-                    continue  # VLM judge only, not in dataset
+                if cam_name not in self._dataset_camera_aliases:
+                    continue
                 if cam_img is not None:
                     self._save_image(cam_img, self._image_count, cam_name=cam_name)
                     self._has_images = True
@@ -280,10 +322,11 @@ class SimRecorder:
             # Legacy single-camera (save as "front")
             if front_frame is None:
                 front_frame = image
-            self._save_image(image, self._image_count, cam_name="front")
-            self._has_images = True
-            if "front" not in self._camera_names:
-                self._camera_names.append("front")
+            if "front" in self._dataset_camera_aliases:
+                self._save_image(image, self._image_count, cam_name="front")
+                self._has_images = True
+                if "front" not in self._camera_names:
+                    self._camera_names.append("front")
         self._maybe_save_front_video_frame(front_frame, self._image_count)
         self._image_count += 1
 
@@ -307,12 +350,22 @@ class SimRecorder:
         }
         self._skills.append(skill_entry)
 
-    def end_episode(self, success: bool = False, discard: bool = False) -> None:
+    def end_episode(
+        self,
+        success: bool = False,
+        discard: bool = False,
+        front_video_priority: int | None = None,
+        front_video_success_type: str | None = None,
+    ) -> None:
         """Finish the current episode and flush data to disk.
 
         Args:
             success: Whether the episode completed the task successfully.
             discard: If True, delete the episode directory instead of saving.
+            front_video_priority: Higher-priority successful episodes replace
+                lower-priority representative videos.
+            front_video_success_type: Human-readable label for the representative
+                video selection (`overall`, `geometry_only`, `vlm_only`, etc.).
         """
         if not self._recording:
             raise RuntimeError("Not recording. Call start_episode() first.")
@@ -342,7 +395,12 @@ class SimRecorder:
         with open(ep_dir / "skills.json", "w") as f:
             json.dump(self._skills, f)
 
-        self._finalize_front_video(success)
+        if front_video_priority is None:
+            front_video_priority = 1 if success else 0
+        self._finalize_front_video(
+            int(front_video_priority),
+            front_video_success_type,
+        )
 
         # Track completed episode
         self._completed_episodes.append(
@@ -420,7 +478,9 @@ class SimRecorder:
                 if self.front_video_path is not None
                 else None
             ),
+            "front_video_camera_name": self._front_video_camera_name,
             "front_video_episode": self._front_video_episode,
+            "front_video_success_type": self._front_video_success_type,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
 
@@ -484,6 +544,7 @@ class SimRecorder:
             raise ValueError(
                 f"Expected (H, W, 3) uint8 image for front video, got shape {img.shape}"
             )
+        self._current_front_video_frames_dir.mkdir(parents=True, exist_ok=True)
         out_path = self._current_front_video_frames_dir / f"{self._front_video_frame_count:06d}.png"
         try:
             from PIL import Image
@@ -509,15 +570,19 @@ class SimRecorder:
         self._current_front_video_frames_dir = None
         self._front_video_frame_count = 0
 
-    def _finalize_front_video(self, success: bool) -> None:
-        """Encode the representative front-view mp4 for the first successful episode."""
+    def _finalize_front_video(
+        self,
+        success_priority: int,
+        success_type: str | None,
+    ) -> None:
+        """Encode or replace the representative front-view mp4."""
         self._front_video_error = None
         frames_dir = self._current_front_video_frames_dir
         frame_count = self._front_video_frame_count
         if frames_dir is None:
             return
         try:
-            if success and not self._front_video_generated and frame_count > 0:
+            if success_priority > self._front_video_priority and frame_count > 0:
                 self._videos_dir.mkdir(parents=True, exist_ok=True)
                 out_path = self._videos_dir / "front_success.mp4"
                 meta_path = self._videos_dir / "front_success_meta.json"
@@ -527,13 +592,18 @@ class SimRecorder:
                     "fps": self._front_video_actual_fps,
                     "frame_count": frame_count,
                     "codec": "libx264",
+                    "camera_name": self._front_video_camera_name,
+                    "success_priority": int(success_priority),
+                    "success_type": success_type,
                 }
                 with open(meta_path, "w", encoding="utf-8") as f:
                     json.dump(meta, f, indent=2)
                 self._front_video_generated = True
+                self._front_video_priority = int(success_priority)
                 self._front_video_episode = self._episode_idx
                 self._front_video_path = out_path
-            elif not success and self._videos_dir.exists() and not any(self._videos_dir.iterdir()):
+                self._front_video_success_type = success_type
+            elif success_priority <= 0 and self._videos_dir.exists() and not any(self._videos_dir.iterdir()):
                 self._videos_dir.rmdir()
         except Exception as exc:
             self._front_video_error = str(exc)
@@ -686,13 +756,23 @@ def convert_to_lerobot(
     has_images = any(e.get("has_images", False) for e in episodes_info)
     camera_names = metadata.get("camera_names", ["front"] if has_images else [])
 
-    try:
-        from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
-    except ImportError:
+    import_errors: list[Exception] = []
+    LeRobotDataset = None
+    for import_path in (
+        "lerobot.datasets.lerobot_dataset",
+        "lerobot.common.datasets.lerobot_dataset",
+    ):
+        try:
+            module = __import__(import_path, fromlist=["LeRobotDataset"])
+            LeRobotDataset = module.LeRobotDataset
+            break
+        except ImportError as exc:
+            import_errors.append(exc)
+    if LeRobotDataset is None:
         raise ImportError(
             "lerobot package is required for conversion. "
             "Install it with: pip install lerobot"
-        )
+        ) from import_errors[-1]
 
     # Define LeRobot v3.0 features
     features = {
@@ -743,13 +823,15 @@ def convert_to_lerobot(
         }
 
     if output_root is None:
-        output_root = str(raw_dir.parent)
+        dataset_root = raw_dir.parent / repo_id
+    else:
+        dataset_root = Path(output_root).expanduser().resolve() / repo_id
 
     dataset = LeRobotDataset.create(
         repo_id=repo_id,
         fps=fps,
         features=features,
-        root=output_root,
+        root=dataset_root,
     )
 
     for ep_info in episodes_info:
@@ -806,9 +888,13 @@ def convert_to_lerobot(
                 "observation.tcp.world_xyzrpy": tcp_world[t],
                 "observation.tcp.robot_xyzrpy": tcp_robot[t],
                 "action": actions[t],
+                "task": ep_info.get("task_description", ""),
                 "skill.natural_language": skill.get("label", ""),
                 "skill.type": skill.get("type", ""),
-                "skill.progress": np.float32(skill.get("progress", 0.0)),
+                "skill.progress": np.array(
+                    [skill.get("progress", 0.0)],
+                    dtype=np.float32,
+                ),
                 "skill.goal_position.joint": goal_joint,
                 "skill.goal_position.world_xyzrpy": (
                     np.array(goal_xyzrpy, dtype=np.float32)
@@ -820,8 +906,9 @@ def convert_to_lerobot(
                     if goal_robot_xyzrpy is not None
                     else np.zeros(6, dtype=np.float32)
                 ),
-                "skill.goal_position.gripper": np.float32(
-                    skill.get("goal_gripper", 0.0)
+                "skill.goal_position.gripper": np.array(
+                    [skill.get("goal_gripper", 0.0)],
+                    dtype=np.float32,
                 ),
             }
 
@@ -834,13 +921,18 @@ def convert_to_lerobot(
                     frame[f"observation.images.{cam_name}"] = np.array(
                         Image.open(paths[t])
                     )
+                else:
+                    frame[f"observation.images.{cam_name}"] = np.zeros(
+                        (480, 640, 3),
+                        dtype=np.uint8,
+                    )
 
             dataset.add_frame(frame)
 
-        dataset.save_episode(task=ep_info.get("task_description", ""))
+        dataset.save_episode()
 
-    dataset.consolidate()
-    dataset_path = str(Path(output_root).resolve() / repo_id)
+    dataset.finalize()
+    dataset_path = str(dataset_root.resolve())
     logger.info("LeRobot dataset created at: %s", dataset_path)
     return dataset_path
 

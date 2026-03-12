@@ -132,8 +132,8 @@ assets:
 
 camera:
   prim_path: "/World/Camera"
-  position: [1.0, 0.8, 0.6]          # angled view of table workspace
-  target: [0.6, 0.0, 0.05]           # looking at hole position
+  position: [0.6, 0.0, 0.90]         # normalized top-down precision view
+  target: [0.6, 0.0, 0.04]
   fov: 60
   resolution: [1280, 720]
 

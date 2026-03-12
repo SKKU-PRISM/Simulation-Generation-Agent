@@ -29,6 +29,42 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _camera_optics(cam_name: str, cam_type: str) -> tuple[float, float, tuple[float, float]]:
+    """Return focal length, horizontal aperture, and clipping range for a camera."""
+
+    focal_length = 24.0
+    horizontal_aperture = 20.955
+    clipping_range = (0.1, 20.0)
+
+    if cam_name == "top" and cam_type == "fixed":
+        focal_length = 14.0
+        horizontal_aperture = 36.0
+    elif cam_type == "body_mounted":
+        clipping_range = (0.1, 2.0)
+
+    return focal_length, horizontal_aperture, clipping_range
+
+
+def _intrinsics_from_optics(
+    width: int,
+    height: int,
+    focal_length: float,
+    horizontal_aperture: float,
+) -> dict[str, float]:
+    """Compute pinhole intrinsics in pixel units from USD camera optics."""
+
+    fx = float(width) * float(focal_length) / max(float(horizontal_aperture), 1e-9)
+    fy = fx
+    return {
+        "fx": fx,
+        "fy": fy,
+        "cx": (float(width) - 1.0) * 0.5,
+        "cy": (float(height) - 1.0) * 0.5,
+        "width": float(width),
+        "height": float(height),
+    }
+
+
 def _look_at_quaternion(
     eye: list[float], target: list[float], up: list[float] | None = None
 ) -> tuple[float, float, float, float]:
@@ -150,10 +186,12 @@ class SimCamera:
             if cam_config.cam_type == "fixed":
                 self._position = list(cam_config.position) or self.DEFAULT_POSITION.copy()
                 self._target = list(cam_config.target) or self.DEFAULT_TARGET.copy()
+                self._up_vector = list(cam_config.up_vector) or [0.0, 0.0, 1.0]
                 self._prim_path = f"{self._env_regex_ns}/{cam_config.name}Camera"
             else:  # body_mounted
                 self._position = []  # not used for body_mounted
                 self._target = []
+                self._up_vector = [0.0, 0.0, 1.0]
                 self._prim_path = prim_path  # will be overridden in setup
         else:
             # Legacy mode
@@ -162,6 +200,7 @@ class SimCamera:
             self._cam_name = "front"
             self._position = camera_position or self.DEFAULT_POSITION.copy()
             self._target = camera_target or self.DEFAULT_TARGET.copy()
+            self._up_vector = [0.0, 0.0, 1.0]
             self._prim_path = f"{self._env_regex_ns}/DataCollectionCamera"
 
         self._camera = None  # IsaacLab Camera sensor
@@ -169,6 +208,8 @@ class SimCamera:
         self._rep_annotator = None  # replicator RGB annotator
         self._rep_depth_annotator = None  # replicator depth annotator
         self._rep_render_product = None
+        self._focal_length = 24.0
+        self._horizontal_aperture = 20.955
 
         self._setup()
 
@@ -212,7 +253,11 @@ class SimCamera:
         import isaaclab.sim as sim_utils
         from isaaclab.sensors import Camera, CameraCfg
 
-        quat_wxyz = _look_at_quaternion(self._position, self._target)
+        quat_wxyz = _look_at_quaternion(self._position, self._target, self._up_vector)
+        self._focal_length, self._horizontal_aperture, clipping_range = _camera_optics(
+            self._cam_name,
+            "fixed",
+        )
 
         camera_cfg = CameraCfg(
             prim_path=self._prim_path,
@@ -221,10 +266,10 @@ class SimCamera:
             width=self._width,
             data_types=["rgb", "distance_to_image_plane"],
             spawn=sim_utils.PinholeCameraCfg(
-                focal_length=24.0,
+                focal_length=self._focal_length,
                 focus_distance=400.0,
-                horizontal_aperture=20.955,
-                clipping_range=(0.1, 20.0),
+                horizontal_aperture=self._horizontal_aperture,
+                clipping_range=clipping_range,
             ),
             offset=CameraCfg.OffsetCfg(
                 pos=tuple(self._position),
@@ -253,6 +298,10 @@ class SimCamera:
         cfg = self._cam_config
         parent_body = cfg.parent_body
         cam_name = cfg.name
+        self._focal_length, self._horizontal_aperture, clipping_range = _camera_optics(
+            cam_name,
+            "body_mounted",
+        )
 
         # Prim path: child of the robot body (resolve env_regex_ns)
         self._prim_path = f"{self._env_regex_ns}/Robot/{parent_body}/{cam_name}_cam"
@@ -264,10 +313,10 @@ class SimCamera:
             width=self._width,
             data_types=["rgb", "distance_to_image_plane"],
             spawn=sim_utils.PinholeCameraCfg(
-                focal_length=24.0,
+                focal_length=self._focal_length,
                 focus_distance=400.0,
-                horizontal_aperture=20.955,
-                clipping_range=(0.1, 2.0),  # shorter range for wrist cam
+                horizontal_aperture=self._horizontal_aperture,
+                clipping_range=clipping_range,  # shorter range for wrist cam
             ),
             offset=CameraCfg.OffsetCfg(
                 pos=tuple(cfg.offset_pos),
@@ -332,6 +381,11 @@ class SimCamera:
             return self._capture_replicator_depth()
         return self._capture_sensor_depth()
 
+    def capture_rgb_depth(self) -> tuple[np.ndarray, np.ndarray | None]:
+        """Capture RGB and depth together."""
+
+        return self.capture(), self.capture_depth()
+
     @property
     def resolution(self) -> tuple[int, int]:
         """(width, height) in pixels."""
@@ -341,6 +395,29 @@ class SimCamera:
     def name(self) -> str:
         """Camera name (e.g., 'front', 'wrist', 'top')."""
         return self._cam_name
+
+    def get_intrinsics(self) -> dict[str, float]:
+        """Return camera intrinsics in pixel units."""
+
+        return _intrinsics_from_optics(
+            self._width,
+            self._height,
+            self._focal_length,
+            self._horizontal_aperture,
+        )
+
+    def get_camera_transform_world(self) -> np.ndarray:
+        """Return the camera prim world transform as a 4x4 matrix."""
+
+        from pxr import UsdGeom
+        import omni.usd
+
+        stage = omni.usd.get_context().get_stage()
+        prim = stage.GetPrimAtPath(self._prim_path)
+        if not prim.IsValid():
+            raise RuntimeError(f"SimCamera prim '{self._prim_path}' not found")
+        transform = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(0.0)
+        return np.array(transform, dtype=np.float64)
 
     # ------------------------------------------------------------------
     # IsaacLab Camera sensor capture
@@ -441,7 +518,7 @@ class SimCamera:
             xformable = UsdGeom.Xformable(prim)
             xformable.ClearXformOpOrder()
 
-            quat_wxyz = _look_at_quaternion(self._position, self._target)
+            quat_wxyz = _look_at_quaternion(self._position, self._target, self._up_vector)
             pos = Gf.Vec3d(*self._position)
             rot = Gf.Quatd(quat_wxyz[0], Gf.Vec3d(quat_wxyz[1], quat_wxyz[2], quat_wxyz[3]))
 
@@ -575,6 +652,42 @@ class MultiCameraManager:
                 )
         return None
 
+    def capture_rgb_depth(self, camera_name: str) -> tuple[np.ndarray | None, np.ndarray | None]:
+        """Capture RGB and depth for a single camera."""
+
+        cam = self.cameras.get(camera_name)
+        if cam is None and camera_name.endswith("_cam"):
+            cam = self.cameras.get(camera_name[:-4])
+        if cam is None:
+            cam = self.cameras.get(f"{camera_name}_cam")
+        if cam is None:
+            return None, None
+        try:
+            return cam.capture_rgb_depth()
+        except Exception as exc:
+            logger.warning("MultiCameraManager: capture_rgb_depth failed for '%s': %s", camera_name, exc)
+            return None, None
+
+    def get_intrinsics(self, camera_name: str) -> dict[str, float]:
+        cam = self.cameras.get(camera_name)
+        if cam is None and camera_name.endswith("_cam"):
+            cam = self.cameras.get(camera_name[:-4])
+        if cam is None:
+            cam = self.cameras.get(f"{camera_name}_cam")
+        if cam is None:
+            raise KeyError(camera_name)
+        return cam.get_intrinsics()
+
+    def get_camera_transform_world(self, camera_name: str) -> np.ndarray:
+        cam = self.cameras.get(camera_name)
+        if cam is None and camera_name.endswith("_cam"):
+            cam = self.cameras.get(camera_name[:-4])
+        if cam is None:
+            cam = self.cameras.get(f"{camera_name}_cam")
+        if cam is None:
+            raise KeyError(camera_name)
+        return cam.get_camera_transform_world()
+
     @property
     def camera_names(self) -> list[str]:
         """List of successfully initialized camera names."""
@@ -625,26 +738,24 @@ def inject_cameras_into_scene(env_cfg, robot_cfg, camera_names: list[str] | None
         attr_name = f"{cam_name}_cam"
 
         if cam_cfg.cam_type == "fixed":
-            quat_wxyz = _look_at_quaternion(cam_cfg.position, cam_cfg.target)
+            quat_wxyz = _look_at_quaternion(
+                cam_cfg.position,
+                cam_cfg.target,
+                cam_cfg.up_vector or [0.0, 0.0, 1.0],
+            )
             prim_path = f"{env_ns_template}/{cam_name}Camera"
-            focal_length = 24.0
-            horizontal_aperture = 20.955
-            if cam_name == "top":
-                # Widen the overhead judge view so zone/marker targets near the
-                # table edges remain visible for sorting/arrangement tasks.
-                focal_length = 14.0
-                horizontal_aperture = 36.0
+            focal_length, horizontal_aperture, clipping_range = _camera_optics(cam_name, "fixed")
             camera_cfg = CameraCfg(
                 prim_path=prim_path,
                 update_period=0.0,
                 height=cam_cfg.resolution[1],
                 width=cam_cfg.resolution[0],
-                data_types=["rgb"],
+                data_types=["rgb", "distance_to_image_plane"],
                 spawn=sim_utils.PinholeCameraCfg(
                     focal_length=focal_length,
                     focus_distance=400.0,
                     horizontal_aperture=horizontal_aperture,
-                    clipping_range=(0.1, 20.0),
+                    clipping_range=clipping_range,
                 ),
                 offset=CameraCfg.OffsetCfg(
                     pos=tuple(cam_cfg.position),
@@ -654,17 +765,18 @@ def inject_cameras_into_scene(env_cfg, robot_cfg, camera_names: list[str] | None
             )
         elif cam_cfg.cam_type == "body_mounted":
             prim_path = f"{env_ns_template}/Robot/{cam_cfg.parent_body}/{cam_name}_cam"
+            focal_length, horizontal_aperture, clipping_range = _camera_optics(cam_name, "body_mounted")
             camera_cfg = CameraCfg(
                 prim_path=prim_path,
                 update_period=0.0,
                 height=cam_cfg.resolution[1],
                 width=cam_cfg.resolution[0],
-                data_types=["rgb"],
+                data_types=["rgb", "distance_to_image_plane"],
                 spawn=sim_utils.PinholeCameraCfg(
-                    focal_length=24.0,
+                    focal_length=focal_length,
                     focus_distance=400.0,
-                    horizontal_aperture=20.955,
-                    clipping_range=(0.1, 2.0),
+                    horizontal_aperture=horizontal_aperture,
+                    clipping_range=clipping_range,
                 ),
                 offset=CameraCfg.OffsetCfg(
                     pos=tuple(cam_cfg.offset_pos),
@@ -695,16 +807,46 @@ class SceneCameraManager:
         camera_attr_names: Attribute names on env.scene (from inject_cameras_into_scene).
     """
 
-    def __init__(self, env, camera_attr_names: list[str]) -> None:
+    def __init__(self, env, camera_attr_names: list[str], camera_configs: dict[str, CameraConfig] | None = None) -> None:
         self._env = env
         self._cameras: dict[str, object] = {}
+        self._env_prefix = ""
+        env_prim_paths = getattr(getattr(env, "scene", None), "env_prim_paths", None)
+        if isinstance(env_prim_paths, (list, tuple)) and len(env_prim_paths) > 0:
+            self._env_prefix = str(env_prim_paths[0])
+        elif hasattr(env, "scene") and hasattr(env.scene, "env_regex_ns"):
+            self._env_prefix = str(env.scene.env_regex_ns)
+        self._camera_configs = camera_configs or {}
+        self._camera_attr_by_logical: dict[str, str] = {}
+        self._camera_prim_paths: dict[str, str] = {}
         for attr_name in camera_attr_names:
             try:
                 cam_sensor = env.scene[attr_name]
                 self._cameras[attr_name] = cam_sensor
+                logical_name = attr_name[:-4] if attr_name.endswith("_cam") else attr_name
+                self._camera_attr_by_logical[logical_name] = attr_name
+                cam_cfg = self._camera_configs.get(logical_name)
+                if cam_cfg is not None:
+                    if cam_cfg.cam_type == "fixed":
+                        prim_path = f"{self._env_prefix}/{logical_name}Camera"
+                    else:
+                        prim_path = f"{self._env_prefix}/Robot/{cam_cfg.parent_body}/{logical_name}_cam"
+                    self._camera_prim_paths[attr_name] = prim_path
                 logger.info("SceneCameraManager: '%s' ready", attr_name)
             except Exception as e:
                 logger.warning("SceneCameraManager: '%s' not found in scene: %s", attr_name, e)
+
+    def _resolve_attr_name(self, camera_name: str) -> str:
+        if camera_name in self._cameras:
+            return camera_name
+        if camera_name in self._camera_attr_by_logical:
+            return self._camera_attr_by_logical[camera_name]
+        if camera_name.endswith("_cam") and camera_name[:-4] in self._camera_attr_by_logical:
+            return self._camera_attr_by_logical[camera_name[:-4]]
+        candidate = f"{camera_name}_cam"
+        if candidate in self._cameras:
+            return candidate
+        raise KeyError(camera_name)
 
     def capture_all(self) -> dict[str, np.ndarray | None]:
         """Capture RGB images from all scene cameras.
@@ -742,6 +884,61 @@ class SceneCameraManager:
                     exc,
                 )
         return None
+
+    def capture_rgb_depth(self, camera_name: str) -> tuple[np.ndarray | None, np.ndarray | None]:
+        """Capture RGB and depth from a single named scene camera."""
+
+        try:
+            attr_name = self._resolve_attr_name(camera_name)
+        except KeyError:
+            return None, None
+
+        cam_sensor = self._cameras[attr_name]
+        try:
+            cam_sensor.update(dt=0.0)
+            rgba = cam_sensor.data.output["rgb"]
+            rgb = rgba[0, :, :, :3].cpu().numpy().astype(np.uint8)
+            depth = cam_sensor.data.output.get("distance_to_image_plane")
+            depth_np = None
+            if depth is not None:
+                depth_np = depth[0, :, :].cpu().numpy().astype(np.float32)
+            return rgb, depth_np
+        except Exception as exc:
+            logger.warning(
+                "SceneCameraManager: capture_rgb_depth failed for '%s': %s",
+                camera_name,
+                exc,
+            )
+            return None, None
+
+    def get_intrinsics(self, camera_name: str) -> dict[str, float]:
+        attr_name = self._resolve_attr_name(camera_name)
+        logical_name = attr_name[:-4] if attr_name.endswith("_cam") else attr_name
+        cam_cfg = self._camera_configs.get(logical_name)
+        if cam_cfg is None:
+            raise KeyError(f"camera config unavailable for '{camera_name}'")
+        focal_length, horizontal_aperture, _ = _camera_optics(logical_name, cam_cfg.cam_type)
+        return _intrinsics_from_optics(
+            cam_cfg.resolution[0],
+            cam_cfg.resolution[1],
+            focal_length,
+            horizontal_aperture,
+        )
+
+    def get_camera_transform_world(self, camera_name: str) -> np.ndarray:
+        from pxr import UsdGeom
+        import omni.usd
+
+        attr_name = self._resolve_attr_name(camera_name)
+        prim_path = self._camera_prim_paths.get(attr_name)
+        if prim_path is None:
+            raise KeyError(f"camera prim path unavailable for '{camera_name}'")
+        stage = omni.usd.get_context().get_stage()
+        prim = stage.GetPrimAtPath(prim_path)
+        if not prim.IsValid():
+            raise RuntimeError(f"SceneCameraManager prim '{prim_path}' not found")
+        transform = UsdGeom.Xformable(prim).ComputeLocalToWorldTransform(0.0)
+        return np.array(transform, dtype=np.float64)
 
     @property
     def camera_names(self) -> list[str]:

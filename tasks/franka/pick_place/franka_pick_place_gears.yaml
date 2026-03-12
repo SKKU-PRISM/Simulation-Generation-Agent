@@ -207,8 +207,8 @@ goal:
 
 camera:
   prim_path: "/World/Camera"
-  position: [1.5, 1.2, 1.0]
-  target: [0.45, 0, 0.25]
+  position: [0.45, 0.0, 1.05]        # normalized top-down tabletop view
+  target: [0.45, 0.0, 0.05]
   fov: 60
   resolution: [1280, 720]
 

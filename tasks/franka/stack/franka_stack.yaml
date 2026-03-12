@@ -187,8 +187,8 @@ goal:
 
 camera:
   prim_path: "/World/Camera"
-  position: [1.5, 1.2, 1.0]              # from GT metadata (franka_stack.jpg)
-  target: [0.25, 0, 0.3]               # from GT metadata
+  position: [0.25, 0.0, 1.05]            # normalized top-down view centered on stack workspace
+  target: [0.25, 0.0, 0.05]
   fov: 60
   resolution: [1280, 720]
 

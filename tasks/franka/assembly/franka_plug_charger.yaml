@@ -292,8 +292,8 @@ goal:
 
 camera:
   prim_path: "/World/Camera"
-  position: [0.25, -0.30, 0.30]        # closer front-left, tight framing to show small charger/receptacle details
-  target: [0.48, 0.0, 0.03]
+  position: [0.48, 0.0, 0.90]          # normalized top-down precision view
+  target: [0.48, 0.0, 0.04]
   fov: 50
   resolution: [1280, 720]
 

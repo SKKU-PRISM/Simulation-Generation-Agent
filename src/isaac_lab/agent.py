@@ -619,6 +619,53 @@ Use this structure/pattern, but fill in values from the YAML above.
         return False
 
     @staticmethod
+    def _patch_articulation_spawn_scales(content: str, task_doc: dict) -> tuple[str, bool]:
+        """Ensure articulated USD assets preserve YAML scale in generated ArticulationCfg blocks."""
+        changed = False
+
+        for asset in task_doc.get("assets", []):
+            if asset.get("type") != "articulation":
+                continue
+
+            scale = asset.get("scale")
+            if not isinstance(scale, (list, tuple)) or len(scale) != 3:
+                continue
+            if all(abs(float(value) - 1.0) < 1e-6 for value in scale):
+                continue
+
+            asset_name = str(asset.get("name", "")).strip()
+            if not asset_name:
+                continue
+
+            scale_literal = f"scale=({float(scale[0])}, {float(scale[1])}, {float(scale[2])})"
+            pattern = re.compile(
+                rf'(?P<prefix>{re.escape(asset_name)}\s*=\s*ArticulationCfg\([\s\S]*?spawn=UsdFileCfg\()'
+                rf'(?P<args>[\s\S]*?)'
+                rf'(?P<suffix>\)\s*,\s*init_state=)',
+                re.MULTILINE,
+            )
+
+            def repl(match: re.Match[str]) -> str:
+                args = match.group("args")
+                if "scale=" in args:
+                    return match.group(0)
+
+                stripped_args = args.rstrip()
+                trailing = args[len(stripped_args):]
+                if "\n" in stripped_args:
+                    stripped_args += f",\n                {scale_literal}"
+                else:
+                    stripped_args += f", {scale_literal}"
+                return match.group("prefix") + stripped_args + trailing + match.group("suffix")
+
+            updated, count = pattern.subn(repl, content, count=1)
+            if count > 0 and updated != content:
+                content = updated
+                changed = True
+
+        return content, changed
+
+    @staticmethod
     def _build_disable_randomization_snippet(task_doc: dict) -> str:
         if not IsaacLabAgent._task_has_min_separation(task_doc):
             return ""
@@ -915,6 +962,29 @@ Use this structure/pattern, but fill in values from the YAML above.
         original = env_cfg_path.read_text()
         content = original
         fixes = []
+
+        content = re.sub(
+            r'SceneEntityCfg\(\s*(?P<entity>"[^"]+"|\'[^\']+\')\s*,\s*body_name\s*=\s*(?P<name>"[^"]+"|\'[^\']+\')(?P<suffix>\s*,[^\)]*)?\)',
+            lambda match: (
+                "SceneEntityCfg("
+                + match.group("entity")
+                + ", body_names=["
+                + match.group("name")
+                + "]"
+                + (match.group("suffix") or "")
+                + ")"
+            ),
+            content,
+        )
+        if content != original:
+            fixes.append("Patched env_cfg.py: normalized SceneEntityCfg body_name -> body_names")
+            original = content
+
+        if task_doc:
+            content, scaled = self._patch_articulation_spawn_scales(content, task_doc)
+            if scaled:
+                fixes.append("Patched env_cfg.py: restored articulation spawn scale from YAML")
+                original = content
 
         if robot == "ur10e":
             replacements = [
