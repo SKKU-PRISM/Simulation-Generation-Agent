@@ -353,6 +353,7 @@ class DataCollectionConfig:
     # Dataset
     dataset_repo_id: str = "local/sim_dataset"
     output_dir: str = "outputs/data_collection"
+    keep_failed_raw_dataset: bool = False
 
     # LLM (CaP code generation)
     llm_model: str = "gpt-5-mini"
@@ -370,6 +371,7 @@ class DataCollectionConfig:
     env_headless: bool = True
     env_num_envs: int = 1           # single env for data collection
     execution_timeout: int = 1800   # seconds (30 min; first-run shader compilation takes ~10 min)
+    ik_debug: bool = False          # emit verbose IK / grasp diagnostics to stdout
 
     @property
     def effective_fps(self) -> int:
@@ -406,6 +408,7 @@ def load_pipeline_config(config_path: Optional[str] = None) -> DataCollectionCon
     llm = data.get("llm", {})
     vlm = data.get("vlm", {})
     skill = data.get("skill", {})
+    ik = data.get("ik", {})
     cameras = data.get("cameras", {})
     env = data.get("environment", {})
 
@@ -424,6 +427,7 @@ def load_pipeline_config(config_path: Optional[str] = None) -> DataCollectionCon
         max_total_attempts=episodes.get("max_total_attempts", 0),
         dataset_repo_id=dataset.get("repo_id", "local/sim_dataset"),
         output_dir=dataset.get("output_dir", "outputs/data_collection"),
+        keep_failed_raw_dataset=bool(dataset.get("keep_failed_raw_dataset", False)),
         llm_model=llm.get("model", "gpt-5-mini"),
         use_vlm_judge=vlm.get("enabled", True),
         vlm_backend=vlm.get("backend", "auto"),
@@ -433,5 +437,6 @@ def load_pipeline_config(config_path: Optional[str] = None) -> DataCollectionCon
         env_headless=env.get("headless", True),
         env_num_envs=env.get("num_envs", 1),
         execution_timeout=env.get("timeout", 600),
+        ik_debug=bool(ik.get("debug", False)),
     )
     return config

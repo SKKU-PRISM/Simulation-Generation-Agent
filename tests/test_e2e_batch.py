@@ -61,7 +61,7 @@ class E2EBatchTests(unittest.TestCase):
                         },
                         "hf": {
                             "upload": True,
-                            "namespace": "vpraise00",
+                            "namespace": "test-user",
                             "dataset_name": "env-check",
                             "private": True,
                             "token_env": "HF_TOKEN",
@@ -121,6 +121,7 @@ class E2EBatchTests(unittest.TestCase):
                             "vlm_model": "gpt-5",
                             "execution_timeout": 3600,
                             "task_retry_limit": 2,
+                            "keep_failed_raw_dataset": False,
                         },
                         "tasks": [
                             {
@@ -146,11 +147,119 @@ class E2EBatchTests(unittest.TestCase):
             self.assertEqual(config.collection.vlm_model, "gpt-5")
             self.assertEqual(config.collection.execution_timeout, 3600)
             self.assertEqual(config.collection.task_retry_limit, 2)
+            self.assertFalse(config.collection.keep_failed_raw_dataset)
             self.assertTrue(
                 str(config.tasks[1].yaml_path).endswith(
                     "tasks/franka/assembly/franka_assembling_kits.yaml"
                 )
             )
+
+    def test_run_e2e_batch_removes_invalid_failed_raw_and_preserves_counts(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            invalid_raw = tmp_path / "failed_run" / "raw_dataset"
+            ep_dir = invalid_raw / "episodes" / "episode_000000"
+            ep_dir.mkdir(parents=True, exist_ok=True)
+            (ep_dir / "states.npy").write_bytes(b"not-real-npy")
+            output_dir = tmp_path / "failed_output"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            env_dir = tmp_path / "invalid_env"
+            env_dir.mkdir(parents=True, exist_ok=True)
+            (env_dir / "env_cfg.py").write_text("class FrankaStackEnvCfg:\n    pass\n")
+
+            config_path = tmp_path / "batch_invalid_raw.yaml"
+            config_path.write_text(
+                yaml.safe_dump(
+                    {
+                        "run": {
+                            "output_root": str(tmp_path / "outputs"),
+                            "continue_on_failure": True,
+                            "export_schema": "adc_compatible",
+                            "preprocess_success_only": True,
+                            "generate_report": True,
+                            "cleanup_intermediates": False,
+                        },
+                        "collection": {
+                            "llm_model": "gpt-5",
+                            "vlm_model": "gpt-5",
+                            "use_vlm_judge": True,
+                            "keep_failed_raw_dataset": False,
+                        },
+                        "hf": {
+                            "upload": False,
+                            "dataset_name": "invalid-raw-unit",
+                            "private": True,
+                        },
+                        "tasks": [
+                            {
+                                "yaml": "tasks/franka/pick_place/franka_pick_place_mug.yaml",
+                                "demos": 1,
+                                "max_attempts": 1,
+                            }
+                        ],
+                    },
+                    sort_keys=False,
+                    allow_unicode=True,
+                )
+            )
+
+            class _FakePipeline:
+                def __init__(self, yaml_path, config=None, env_dir=None, auto_convert_to_lerobot=True):
+                    self.yaml_path = yaml_path
+
+                def run(self):
+                    return {
+                        "success": False,
+                        "pipeline_completed": True,
+                        "target_met": False,
+                        "successful_episodes": 0,
+                        "geometry_successful_episodes": 0,
+                        "vlm_successful_episodes": 0,
+                        "overall_successful_episodes": 0,
+                        "total_episodes": 3,
+                        "output_dir": str(output_dir),
+                        "env_dir": str(env_dir),
+                        "raw_dataset": str(invalid_raw),
+                        "robot": "franka",
+                        "task": "FrankaPickPlaceMug",
+                        "results": {
+                            "episodes": [
+                                {"episode": 0, "success": False, "discarded": True},
+                                {"episode": 1, "success": False, "discarded": True},
+                                {"episode": 2, "success": False, "discarded": True},
+                            ],
+                            "failure_category": None,
+                            "pipeline_error": None,
+                        },
+                    }
+
+            with patch.dict(
+                os.environ,
+                {
+                    "AZURE_OPENAI_API_KEY": "test-key",
+                    "AZURE_OPENAI_BASE_URL": "https://example.invalid",
+                },
+                clear=False,
+            ):
+                with (
+                    patch("src.data_collection.e2e_orchestrator.load_dotenv", return_value=None),
+                    patch("src.data_collection.e2e_orchestrator.ensure_lerobot_available"),
+                    patch("src.data_collection.e2e_orchestrator.DataCollectionPipeline", _FakePipeline),
+                ):
+                    report = run_e2e_batch(config_path)
+
+            task_report = report["task_runs"][0]
+            self.assertFalse(invalid_raw.exists())
+            self.assertTrue(task_report["pipeline_completed"])
+            self.assertEqual(task_report["attempted_episodes"], 3)
+            self.assertEqual(task_report["successful_episodes"], 0)
+            self.assertEqual(task_report["failed_episode_attempts"], 3)
+            self.assertTrue(task_report["failed_raw_dataset_removed"])
+            self.assertEqual(
+                task_report["failed_raw_dataset_cleanup_reason"],
+                "invalid_raw_dataset_removed",
+            )
+            self.assertEqual(report["summary"]["total_failed_attempts"], 3)
 
     def test_run_e2e_batch_retries_pipeline_failures_before_task_success(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -190,6 +299,7 @@ class E2EBatchTests(unittest.TestCase):
                             "export_schema": "adc_compatible",
                             "preprocess_success_only": True,
                             "generate_report": True,
+                            "cleanup_intermediates": False,
                         },
                         "collection": {
                             "llm_model": "gpt-5",
@@ -639,10 +749,11 @@ class E2EBatchTests(unittest.TestCase):
             self.assertIn("target_marker.position", franka_task["domain_randomization"]["goals"])
             self.assertEqual(franka_task["terminal_status"], "pipeline_completed")
 
-            merged_meta = load_raw_dataset_metadata(
-                report["robot_datasets"]["franka"]["merged_raw_dataset"]
+            self.assertTrue(
+                report["robot_datasets"]["franka"]["merged_raw_dataset"].endswith(
+                    "merged_raw/franka/raw_dataset"
+                )
             )
-            self.assertEqual(merged_meta["total_episodes"], 1)
             markdown_report = Path(report["markdown_report_path"]).read_text()
             vlm_audit_markdown = Path(report["vlm_audit_markdown_path"]).read_text()
             vlm_audit_json = json.loads(Path(report["vlm_audit_json_path"]).read_text())

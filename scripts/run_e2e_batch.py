@@ -24,21 +24,26 @@ def main() -> int:
     )
     parser.add_argument("config", help="Path to E2E batch config YAML")
     parser.add_argument(
-        "-v",
-        "--verbose",
+        "--resume",
         action="store_true",
-        help="Enable verbose logging",
+        help="Resume a previous batch run, skipping completed tasks",
+    )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        action="store_true",
+        help="Reduce logging to INFO level (default is DEBUG)",
     )
     args = parser.parse_args()
 
-    log_level = logging.DEBUG if args.verbose else logging.INFO
+    log_level = logging.INFO if args.quiet else logging.DEBUG
     logging.basicConfig(
         level=log_level,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
 
-    report = run_e2e_batch(args.config)
+    report = run_e2e_batch(args.config, resume=args.resume or None)
     print(json.dumps(report.get("summary", {}), indent=2, ensure_ascii=False))
     print(f"Markdown report: {report.get('markdown_report_path')}")
     print(f"JSON report: {report.get('json_report_path')}")

@@ -18,6 +18,7 @@ episodes:
 dataset:
   repo_id: "local/sim_dataset"
   output_dir: "outputs/data_collection"
+  keep_failed_raw_dataset: false
 
 llm:
   model: "gpt-5-mini"         # Azure OpenAI model for CaP code generation
@@ -41,6 +42,7 @@ goal_verification:
 ik:
   num_random_samples: 30      # Pinocchio multi-start IK attempts
   orientation_tolerance: 0.15 # rad (~8.6°), allowed orientation error for 6-DOF IK
+  debug: false                # verbose IK / grasp diagnostics to stdout
 
 # Camera configuration
 cameras:

@@ -106,6 +106,7 @@ class SimRecorder:
         self._front_video_path: Optional[Path] = None
         self._front_video_success_type: Optional[str] = None
         self._front_video_error: Optional[str] = None
+        self._write_metadata()
 
     @staticmethod
     def _aliases_for_camera_name(name: str) -> set[str]:
@@ -378,6 +379,7 @@ class SimRecorder:
             self._cleanup_front_video_frames()
             if ep_dir is not None and ep_dir.exists():
                 shutil.rmtree(ep_dir)
+            self._write_metadata()
             logger.info(
                 "Discarded episode %d (%d steps)", self._episode_idx, steps
             )
@@ -412,6 +414,7 @@ class SimRecorder:
                 "task_description": self._current_task_description,
             }
         )
+        self._write_metadata()
         logger.info(
             "Saved episode %d: %d steps, success=%s",
             self._episode_idx,
@@ -424,20 +427,9 @@ class SimRecorder:
     # Finalize
     # ------------------------------------------------------------------
 
-    def finalize(self) -> str:
-        """Write dataset metadata and return the dataset directory path.
-
-        Must be called after all episodes are recorded.
-
-        Returns:
-            Absolute path to the raw dataset directory.
-        """
-        if self._recording:
-            raise RuntimeError(
-                "Cannot finalize while recording. Call end_episode() first."
-            )
-
-        metadata = {
+    def _build_metadata(self) -> dict:
+        """Build dataset metadata from the episodes recorded so far."""
+        return {
             "robot_name": self._robot_cfg.name,
             "robot_full_name": self._robot_cfg.full_name,
             "total_dofs": self._robot_cfg.total_dofs,
@@ -483,6 +475,27 @@ class SimRecorder:
             "front_video_success_type": self._front_video_success_type,
             "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         }
+
+    def _write_metadata(self) -> None:
+        """Persist a checkpoint metadata.json for partial-progress recovery."""
+        self._dataset_dir.mkdir(parents=True, exist_ok=True)
+        with open(self._dataset_dir / "metadata.json", "w") as f:
+            json.dump(self._build_metadata(), f, indent=2)
+
+    def finalize(self) -> str:
+        """Write dataset metadata and return the dataset directory path.
+
+        Must be called after all episodes are recorded.
+
+        Returns:
+            Absolute path to the raw dataset directory.
+        """
+        if self._recording:
+            raise RuntimeError(
+                "Cannot finalize while recording. Call end_episode() first."
+            )
+
+        metadata = self._build_metadata()
 
         with open(self._dataset_dir / "metadata.json", "w") as f:
             json.dump(metadata, f, indent=2)

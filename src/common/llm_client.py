@@ -60,15 +60,26 @@ class AzureOpenAIClient:
                 {"role": "user", "content": user_prompt},
             ],
         )
-        # Some models (e.g. gpt-5-mini) don't support temperature
-        if temperature is not None:
+        # Azure GPT-5 family rejects temperature on the Responses API.
+        if temperature is not None and self._supports_temperature():
             kwargs["temperature"] = temperature
         try:
             response = self.client.responses.create(**kwargs)
         except Exception as e:
-            if "temperature" in str(e):
+            if self._is_unsupported_temperature_error(e):
                 kwargs.pop("temperature", None)
                 response = self.client.responses.create(**kwargs)
             else:
                 raise
         return response.output_text
+
+    def _supports_temperature(self) -> bool:
+        model_name = str(self.model or "").lower()
+        return not model_name.startswith("gpt-5")
+
+    @staticmethod
+    def _is_unsupported_temperature_error(error: Exception) -> bool:
+        body = getattr(error, "body", None) or {}
+        if isinstance(body, dict) and body.get("param") == "temperature":
+            return True
+        return "temperature" in str(error).lower()

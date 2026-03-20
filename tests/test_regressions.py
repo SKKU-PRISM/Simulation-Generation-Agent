@@ -1174,6 +1174,19 @@ cameras:
         self.assertEqual(cfg.dataset_cameras, ["top", "wrist", "front"])
         self.assertEqual(cfg.judge_cameras, ["front"])
 
+    def test_load_pipeline_config_reads_keep_failed_raw_dataset(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            config_path = Path(tmpdir) / "data_collection.yaml"
+            config_path.write_text(
+                """
+dataset:
+  keep_failed_raw_dataset: true
+""".strip()
+            )
+            cfg = load_pipeline_config(str(config_path))
+
+        self.assertTrue(cfg.keep_failed_raw_dataset)
+
     def test_sim_robot_interface_read_gripper_state_uses_primary_finger_joint(self):
         iface = SimRobotInterface.__new__(SimRobotInterface)
         iface.cfg = load_robot_config("openarm")

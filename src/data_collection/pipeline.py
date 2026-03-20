@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import signal
 import subprocess
 import sys
 import textwrap
@@ -285,6 +286,10 @@ class DataCollectionPipeline:
         if results_path.exists():
             with open(results_path) as f:
                 results = json.load(f)
+        if self._last_execution_timed_out:
+            results.setdefault("failure_category", "timed_out")
+            results.setdefault("failure_phase", "execution_timeout")
+            results.setdefault("pipeline_error", "execution timeout")
 
         # Step 5: Post-process (convert to LeRobot if raw data exists)
         raw_data_dir = self.output_dir / "raw_dataset"
@@ -417,6 +422,8 @@ class DataCollectionPipeline:
             "max_total_attempts": max_attempts,
             "dataset_cameras": list(self.config.dataset_cameras),
             "judge_cameras": list(self.config.judge_cameras),
+            "keep_failed_raw_dataset": bool(self.config.keep_failed_raw_dataset),
+            "ik_debug": bool(self.config.ik_debug),
         }
         config_json_path = self.output_dir / "pipeline_config.json"
         with open(config_json_path, "w") as f:
@@ -437,6 +444,7 @@ class DataCollectionPipeline:
             import sys
             import os
             import re
+            import shutil
             import time
             import traceback
             from datetime import datetime
@@ -578,89 +586,81 @@ class DataCollectionPipeline:
                 def _rewrite_articulation_joints_arg(content):
                     lines = content.splitlines()
                     patched_lines = []
-                    in_articulation = False
-                    paren_depth = 0
-                    skip_joints = False
-                    joints_brace_depth = 0
                     replaced = False
-                    articulation_target = None
-                    articulation_indent = ""
-                    articulation_joints_lines = []
 
                     articulation_pattern = re.compile(
                         r'^(?P<indent>\s*)(?P<target>self\.scene\.[A-Za-z_][A-Za-z0-9_]*)\s*=\s*ArticulationCfg\('
                     )
 
-                    def _flush_articulation_joint_assignment():
-                        nonlocal articulation_joints_lines
-                        if not articulation_target or not articulation_joints_lines:
-                            articulation_joints_lines = []
-                            return
-                        normalized = articulation_joints_lines[:]
-                        for idx in range(len(normalized) - 1, -1, -1):
-                            stripped = normalized[idx].rstrip()
-                            if not stripped:
-                                continue
-                            if stripped.endswith(","):
-                                normalized[idx] = stripped[:-1]
-                            else:
-                                normalized[idx] = stripped
-                            break
-                        first_line = normalized[0].lstrip()
-                        patched_lines.append(
-                            f"{{articulation_indent}}{{articulation_target}}.init_state.joint_pos = {{first_line}}"
-                        )
-                        patched_lines.extend(normalized[1:])
-                        articulation_joints_lines = []
-
-                    for line in lines:
-                        if not in_articulation:
-                            match = articulation_pattern.match(line)
-                            if match:
-                                in_articulation = True
-                                articulation_target = match.group("target")
-                                articulation_indent = match.group("indent")
-                                articulation_joints_lines = []
-                                paren_depth = line.count("(") - line.count(")")
+                    line_idx = 0
+                    while line_idx < len(lines):
+                        line = lines[line_idx]
+                        match = articulation_pattern.match(line)
+                        if not match:
                             patched_lines.append(line)
+                            line_idx += 1
                             continue
 
-                        if skip_joints:
-                            articulation_joints_lines.append(line)
-                            joints_brace_depth += line.count("{") - line.count("}")
-                            if joints_brace_depth <= 0:
-                                skip_joints = False
-                                replaced = True
-                            paren_depth += line.count("(") - line.count(")")
+                        articulation_target = match.group("target")
+                        articulation_indent = match.group("indent")
+                        block_lines = [line]
+                        paren_depth = line.count("(") - line.count(")")
+                        line_idx += 1
+                        while line_idx < len(lines):
+                            block_line = lines[line_idx]
+                            block_lines.append(block_line)
+                            paren_depth += block_line.count("(") - block_line.count(")")
+                            line_idx += 1
                             if paren_depth <= 0:
-                                _flush_articulation_joint_assignment()
-                                in_articulation = False
-                                articulation_target = None
-                                articulation_indent = ""
-                            continue
+                                break
 
-                        if "joints=" in line:
-                            _, rhs = line.split("joints=", 1)
-                            articulation_joints_lines = [rhs]
-                            joints_brace_depth = rhs.count("{") - rhs.count("}")
-                            skip_joints = joints_brace_depth > 0
-                            if not skip_joints:
+                        rewritten_block = []
+                        articulation_joints_lines = []
+                        block_idx = 0
+                        while block_idx < len(block_lines):
+                            block_line = block_lines[block_idx]
+                            block_line = re.sub(
+                                r'init_state\s*=\s*AssetBaseCfg\.InitialStateCfg\(',
+                                'init_state=ArticulationCfg.InitialStateCfg(',
+                                block_line,
+                            )
+                            joints_match = re.match(
+                                r'^(?P<indent>\s*)joints\s*=\s*(?P<rhs>.+)$',
+                                block_line,
+                            )
+                            if joints_match:
+                                rhs = joints_match.group("rhs")
+                                articulation_joints_lines = [rhs]
+                                joints_brace_depth = rhs.count("{") - rhs.count("}")
+                                block_idx += 1
+                                while block_idx < len(block_lines) and joints_brace_depth > 0:
+                                    joint_line = block_lines[block_idx]
+                                    articulation_joints_lines.append(joint_line)
+                                    joints_brace_depth += joint_line.count("{") - joint_line.count("}")
+                                    block_idx += 1
                                 replaced = True
-                            paren_depth += line.count("(") - line.count(")")
-                            if paren_depth <= 0:
-                                _flush_articulation_joint_assignment()
-                                in_articulation = False
-                                articulation_target = None
-                                articulation_indent = ""
-                            continue
+                                continue
 
-                        patched_lines.append(line)
-                        paren_depth += line.count("(") - line.count(")")
-                        if paren_depth <= 0:
-                            _flush_articulation_joint_assignment()
-                            in_articulation = False
-                            articulation_target = None
-                            articulation_indent = ""
+                            rewritten_block.append(block_line)
+                            block_idx += 1
+
+                        patched_lines.extend(rewritten_block)
+                        if articulation_joints_lines:
+                            normalized = articulation_joints_lines[:]
+                            for idx in range(len(normalized) - 1, -1, -1):
+                                stripped = normalized[idx].rstrip()
+                                if not stripped:
+                                    continue
+                                if stripped.endswith(","):
+                                    normalized[idx] = stripped[:-1]
+                                else:
+                                    normalized[idx] = stripped
+                                break
+                            first_line = normalized[0].lstrip()
+                            patched_lines.append(
+                                f"{{articulation_indent}}{{articulation_target}}.init_state.joint_pos = {{first_line}}"
+                            )
+                            patched_lines.extend(normalized[1:])
 
                     return "\\n".join(patched_lines), replaced
 
@@ -1420,6 +1420,16 @@ class DataCollectionPipeline:
                                 ],
                             )
                             patched_scene_assets.append("scene.ee_frame injected for franka")
+                            scene_ee_frame = scene.ee_frame
+
+                    env_ee_frame = getattr(env_cfg, "ee_frame", None)
+                    if (
+                        (env_ee_frame is None or env_ee_frame is MISSING)
+                        and scene_ee_frame is not None
+                        and scene_ee_frame is not MISSING
+                    ):
+                        env_cfg.ee_frame = scene_ee_frame
+                        patched_scene_assets.append("env_cfg.ee_frame synced from scene.ee_frame")
 
                 patched_actuators = []
                 robot_scene_cfg = getattr(scene, "robot", None) if scene is not None else None
@@ -2833,6 +2843,7 @@ class DataCollectionPipeline:
                         cameras=cameras,
                         ik_solver=ik_solver,
                         base_offset=robot_base_pos,
+                        ik_debug=bool(cfg.get("ik_debug", False)),
                     )
                     _record_phase("components_init", "ok")
                 except Exception as exc:
@@ -3308,6 +3319,7 @@ class DataCollectionPipeline:
                         if overall_success:
                             results["overall_successful_episodes"] += 1
 
+                        _write_results()
                         print(
                             f"Episode {{episode_idx + 1}} complete: "
                             f"success={{'SUCCESS' if success else 'FAILED'}} "
@@ -3356,9 +3368,13 @@ class DataCollectionPipeline:
                     _write_exception_artifacts(e, _LAST_PHASE, failure_category)
                     traceback.print_exc()
                 finally:
+                    keep_failed_raw_dataset = bool(cfg.get("keep_failed_raw_dataset", False))
                     if recorder is not None and recorder.is_recording:
                         try:
-                            recorder.end_episode(success=False, discard=False)
+                            recorder.end_episode(
+                                success=False,
+                                discard=not keep_failed_raw_dataset,
+                            )
                         except Exception as end_err:
                             print(f"WARNING: Failed to close active episode: {{end_err}}")
                             traceback.print_exc()
@@ -3415,7 +3431,27 @@ class DataCollectionPipeline:
                     results["overall_target_met"] = (
                         results["overall_successful_episodes"] >= target_success
                     )
-                    results["pipeline_completed"] = dataset_path is not None
+                    if (
+                        dataset_path
+                        and not keep_failed_raw_dataset
+                        and int(results.get("successful_episodes", 0)) <= 0
+                    ):
+                        try:
+                            shutil.rmtree(dataset_path, ignore_errors=False)
+                            dataset_path = None
+                            results["dataset_path"] = None
+                            results["raw_dataset"] = None
+                            results["failed_raw_dataset_removed"] = True
+                            results["failed_raw_dataset_cleanup_reason"] = "zero_success_dataset_removed"
+                        except Exception as cleanup_err:
+                            print(f"WARNING: Failed to remove failed raw dataset: {{cleanup_err}}")
+                            traceback.print_exc()
+                            results.setdefault("cleanup_errors", []).append(
+                                f"failed raw cleanup failed: {{cleanup_err}}"
+                            )
+                    results["pipeline_completed"] = not bool(
+                        results.get("pipeline_error") or results.get("failure_category")
+                    )
                     results["success"] = results["pipeline_completed"]
                     _update_startup_diagnostics(
                         pipeline_completed=bool(results["pipeline_completed"]),
@@ -3501,6 +3537,7 @@ class DataCollectionPipeline:
                 text=True,
                 env=env,
                 cwd=str(self.env_dir),
+                preexec_fn=os.setsid,
             )
 
             output_lines = []
@@ -3513,12 +3550,20 @@ class DataCollectionPipeline:
 
                 # Check timeout
                 if time.time() - start_time > self.config.execution_timeout:
-                    proc.kill()
+                    try:
+                        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError):
+                        proc.kill()
                     self._last_execution_timed_out = True
                     logger.error("Execution timeout reached")
                     break
 
             proc.wait()
+            # Safety: kill any remaining processes in the group
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
             output = "\n".join(output_lines)
 
             # Check completion marker / results file

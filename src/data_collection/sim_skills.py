@@ -553,14 +553,18 @@ class SimSkills:
         interpolation_points: int = 50,
         use_s_curve: bool = False,
         base_offset: Optional[np.ndarray] = None,
+        ik_debug: bool = False,
     ):
         self.robot = robot_interface
         self.cfg = robot_cfg
+        self._ik_debug = bool(ik_debug)
         # Robot base offset: IK solver works in base frame, sim works in world frame.
         # All IK targets must be converted: target_base = target_world - _base_offset
         self._base_offset = np.asarray(base_offset, dtype=np.float64) if base_offset is not None else np.zeros(3)
         if np.linalg.norm(self._base_offset) > 0.001:
-            print(f"SimSkills: robot base offset = {self._base_offset} (IK targets will be converted)")
+            self._ik_debug_print(
+                f"SimSkills: robot base offset = {self._base_offset} (IK targets will be converted)"
+            )
         self.detector = detector
         self.recorder = recorder
         # Multi-camera: prefer 'cameras' over legacy single 'camera'
@@ -626,7 +630,9 @@ class SimSkills:
             try:
                 ready_joints = self._pose_to_arm_array(self.cfg.ready_pose)
                 self._palm_down_pitch = self.ik.get_gripper_pitch(ready_joints)
-                print(f"6-DOF palm-down pitch (Pinocchio): {np.degrees(self._palm_down_pitch):.1f}deg")
+                self._ik_debug_print(
+                    f"6-DOF palm-down pitch (Pinocchio): {np.degrees(self._palm_down_pitch):.1f}deg"
+                )
             except Exception as e:
                 logger.warning(f"Palm-down pitch init failed: {e}, defaulting to -pi/2")
                 self._palm_down_pitch = -np.pi / 2
@@ -635,6 +641,11 @@ class SimSkills:
             logger.info(f"Orientation lock joints: {self._orientation_lock_joints}")
         else:
             self._orientation_lock_joints = []
+
+    def _ik_debug_print(self, message: str) -> None:
+        """Emit verbose IK diagnostics only when explicitly enabled."""
+        if self._ik_debug:
+            print(message)
 
     # ---- FK-based coordinate computation ----
 
@@ -1144,20 +1155,20 @@ class SimSkills:
                 )
             except Exception as e:
                 logger.warning(f"Palm-down init (live pose) failed: {e}, using defaults")
-                print(f"Palm-down init failed: {e}")
+                self._ik_debug_print(f"Palm-down init failed: {e}")
             return
 
         try:
             ready_joints = self._pose_to_arm_array(self.cfg.ready_pose)
             _, R_pinocchio = self.ik.forward_kinematics_pose(ready_joints)
             hand_z_pin = R_pinocchio[:, 2]
-            print(f"Pinocchio FK at ready pose: hand_z={np.round(hand_z_pin, 3)}")
+            self._ik_debug_print(f"Pinocchio FK at ready pose: hand_z={np.round(hand_z_pin, 3)}")
 
             # Query actual sim EE orientation at ready pose
             _, ee_quat = self.robot.read_ee_pose()
             R_sim = self._quat_to_rotation_matrix(ee_quat)
             hand_z_sim = R_sim[:, 2]
-            print(f"Sim EE at ready pose:       hand_z={np.round(hand_z_sim, 3)}")
+            self._ik_debug_print(f"Sim EE at ready pose:       hand_z={np.round(hand_z_sim, 3)}")
 
             # Local frame offset: R_local = R_pinocchio.T @ R_sim
             # This is the rotation from Pinocchio's EE frame to the sim's EE
@@ -1168,7 +1179,7 @@ class SimSkills:
             offset_angle = np.arccos(
                 np.clip((np.trace(self._local_frame_offset) - 1) / 2, -1, 1)
             )
-            print(f"URDF/USD frame offset: {np.degrees(offset_angle):.1f}°")
+            self._ik_debug_print(f"URDF/USD frame offset: {np.degrees(offset_angle):.1f}°")
 
             if offset_angle > np.radians(5):
                 # Significant mismatch — use compensation.
@@ -1183,11 +1194,11 @@ class SimSkills:
                 # Negligible offset — no compensation needed
                 self._local_frame_offset = np.eye(3)
                 self.PALM_DOWN_ROTATION = R_pinocchio
-                print("  Negligible frame offset — no compensation needed")
+                self._ik_debug_print("  Negligible frame offset - no compensation needed")
 
         except Exception as e:
             logger.warning(f"Palm-down init failed: {e}, using defaults")
-            print(f"Palm-down init failed: {e}")
+            self._ik_debug_print(f"Palm-down init failed: {e}")
 
     def move_to_position(
         self,
@@ -1261,7 +1272,7 @@ class SimSkills:
             else self.ik.forward_kinematics(target_arm_joints) + self._base_offset
         )
         fk_error = np.linalg.norm(goal_xyz_world - target_xyz)
-        print(
+        self._ik_debug_print(
             f"IK diagnostic: target={target_xyz}, FK={goal_xyz_world}, "
             f"fk_error={fk_error:.4f}m, ik_success={ik_success}"
         )
@@ -1275,7 +1286,7 @@ class SimSkills:
 
         actual_joints = self.robot.read_arm_joint_positions()
         joint_errors = target_arm_joints - actual_joints
-        print(
+        self._ik_debug_print(
             f"Joint convergence: max_err={np.max(np.abs(joint_errors)):.4f}rad, "
             f"per_joint_err={np.round(joint_errors, 4).tolist()}"
         )
@@ -1338,7 +1349,7 @@ class SimSkills:
         fk_error = np.linalg.norm(goal_xyz_world - target_xyz)
         achieved_pitch = self.ik.get_gripper_pitch(target_arm_joints)
         pitch_err = abs(np.degrees(achieved_pitch - target_pitch))
-        print(
+        self._ik_debug_print(
             f"IK pitch: target={target_xyz}, FK={goal_xyz_world}, "
             f"fk_err={fk_error:.4f}m, pitch={np.degrees(achieved_pitch):.1f}deg "
             f"(target={np.degrees(target_pitch):.1f}, err={pitch_err:.1f}deg), "
@@ -1354,7 +1365,7 @@ class SimSkills:
 
         actual_joints = self.robot.read_arm_joint_positions()
         joint_errors = target_arm_joints - actual_joints
-        print(
+        self._ik_debug_print(
             f"Joint convergence: max_err={np.max(np.abs(joint_errors)):.4f}rad, "
             f"per_joint_err={np.round(joint_errors, 4).tolist()}"
         )
@@ -1459,7 +1470,7 @@ class SimSkills:
             else self.ik.forward_kinematics(target_arm_joints) + self._base_offset
         )
         fk_error = np.linalg.norm(goal_xyz_world - target_xyz)
-        print(
+        self._ik_debug_print(
             f"IK 6DOF: target={target_xyz}, FK={goal_xyz_world}, "
             f"fk_error={fk_error:.4f}m, ik_success={ik_success}"
         )
@@ -1584,14 +1595,16 @@ class SimSkills:
         final_arm = self.robot.read_arm_joint_positions()
         joint_err = final_arm - hold_arm
         max_err_idx = np.argmax(np.abs(joint_err))
-        print(f"  Joint convergence: max_err={joint_err[max_err_idx]:.4f}rad "
-              f"(joint {max_err_idx}), per_joint_err={np.round(joint_err, 4)}")
+        self._ik_debug_print(
+            f"  Joint convergence: max_err={joint_err[max_err_idx]:.4f}rad "
+            f"(joint {max_err_idx}), per_joint_err={np.round(joint_err, 4)}"
+        )
 
         # Log final finger state
         if self.robot._finger_indices:
             finger_state = self.robot._articulation.data.joint_pos[
                 self.robot.env_idx][self.robot._finger_indices].cpu().numpy()
-            print(f"  gripper_close done: finger_state={np.round(finger_state, 4)}")
+            self._ik_debug_print(f"  gripper_close done: finger_state={np.round(finger_state, 4)}")
 
         self._gripper_is_closed = True
         return True
@@ -1769,7 +1782,7 @@ class SimSkills:
                     for idx in self._orientation_lock_joints:
                         dev = abs(actual_joints[idx] - ready_joints[idx])
                         if dev > 0.5:
-                            print(
+                            self._ik_debug_print(
                                 f"  [ABORT] Wrist joint {idx} diverged by "
                                 f"{dev:.3f}rad at step {i}/{num_steps}"
                             )
@@ -2114,11 +2127,13 @@ class SimSkills:
                 return False
 
         hand_z = self._quat_to_hand_z(ee_quat)
-        print(f"  PRE-GRASP '{object_name}': EE={np.round(ee_pos, 4)}, "
-              f"hand_z={np.round(hand_z, 3)}, obj_z={obj_pos[2]:.4f}, "
-              f"grasp_err={grasp_error:.4f}m")
+        self._ik_debug_print(
+            f"  PRE-GRASP '{object_name}': EE={np.round(ee_pos, 4)}, "
+            f"hand_z={np.round(hand_z, 3)}, obj_z={obj_pos[2]:.4f}, "
+            f"grasp_err={grasp_error:.4f}m"
+        )
         if axis_error_deg is not None and aligned_axis is not None:
-            print(
+            self._ik_debug_print(
                 f"  TOOL-AXIS '{object_name}': actual={np.round(aligned_axis, 3)}, "
                 f"target={np.round(np.asarray(required_tool_axis_world, dtype=np.float64), 3)}, "
                 f"angle={axis_error_deg:.1f}deg"
@@ -2132,7 +2147,7 @@ class SimSkills:
                     obj_pos,
                     env_idx=self.robot.env_idx,
                 )
-                print(
+                self._ik_debug_print(
                     "  SO101 pad alignment: "
                     f"midpoint_delta={np.round(alignment['midpoint_delta'], 4)}, "
                     f"separation={alignment['separation']:.4f}m"
@@ -2285,7 +2300,7 @@ class SimSkills:
                 corrected_place_reference[:2] -= live_xy_offset[:2]
                 correction_xy = corrected_place_reference[:2] - place_reference[:2]
                 correction_norm = float(np.linalg.norm(correction_xy))
-                print(
+                self._ik_debug_print(
                     f"  LIVE-HOLD '{_placed_object}': xy_offset={np.round(live_xy_offset, 4)}, "
                     f"correction={np.round(correction_xy, 4)}"
                 )
@@ -2345,7 +2360,7 @@ class SimSkills:
                 )
                 return False
         if axis_error_deg is not None and aligned_axis is not None:
-            print(
+            self._ik_debug_print(
                 f"  PLACE-AXIS '{_placed_object or 'held_object'}': actual={np.round(aligned_axis, 3)}, "
                 f"target={np.round(np.asarray(required_tool_axis_world, dtype=np.float64), 3)}, "
                 f"angle={axis_error_deg:.1f}deg"

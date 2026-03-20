@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import copy
+import gc
 import json
 import logging
 import os
+import re
+import signal
+import shutil
+import subprocess
+import time
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field, is_dataclass
 from datetime import datetime
@@ -56,6 +62,8 @@ class E2ERunConfig:
     export_schema: str = ADC_COMPATIBLE_SCHEMA
     preprocess_success_only: bool = True
     generate_report: bool = True
+    resume: bool = False
+    cleanup_intermediates: bool = True
 
 
 @dataclass(frozen=True)
@@ -64,10 +72,12 @@ class E2ECollectionConfig:
     llm_model: str = "gpt-5-mini"
     vlm_model: str = "gpt-5"
     use_vlm_judge: bool = True
+    keep_failed_raw_dataset: bool | None = None
     gui: bool = False
     execution_timeout: int | None = None
     default_max_attempts_multiplier: int = 5
     task_retry_limit: int = 0
+    require_target: bool = False
 
 
 @dataclass(frozen=True)
@@ -121,6 +131,8 @@ def load_e2e_batch_config(config_path: str | Path) -> E2EBatchConfig:
         export_schema=str(run_section.get("export_schema", ADC_COMPATIBLE_SCHEMA)),
         preprocess_success_only=bool(run_section.get("preprocess_success_only", True)),
         generate_report=bool(run_section.get("generate_report", True)),
+        resume=bool(run_section.get("resume", False)),
+        cleanup_intermediates=bool(run_section.get("cleanup_intermediates", True)),
     )
     if run_cfg.export_schema != ADC_COMPATIBLE_SCHEMA:
         raise ValueError(
@@ -132,6 +144,11 @@ def load_e2e_batch_config(config_path: str | Path) -> E2EBatchConfig:
         llm_model=str(collection_section.get("llm_model", "gpt-5-mini")),
         vlm_model=str(collection_section.get("vlm_model", "gpt-5")),
         use_vlm_judge=bool(collection_section.get("use_vlm_judge", True)),
+        keep_failed_raw_dataset=(
+            bool(collection_section["keep_failed_raw_dataset"])
+            if "keep_failed_raw_dataset" in collection_section
+            else None
+        ),
         gui=bool(collection_section.get("gui", False)),
         execution_timeout=(
             int(collection_section["execution_timeout"])
@@ -142,6 +159,7 @@ def load_e2e_batch_config(config_path: str | Path) -> E2EBatchConfig:
             collection_section.get("default_max_attempts_multiplier", 5)
         ),
         task_retry_limit=int(collection_section.get("task_retry_limit", 0)),
+        require_target=bool(collection_section.get("require_target", False)),
     )
     if collection_cfg.default_max_attempts_multiplier <= 0:
         raise ValueError("default_max_attempts_multiplier must be positive")
@@ -208,7 +226,11 @@ def load_e2e_batch_config(config_path: str | Path) -> E2EBatchConfig:
     )
 
 
-def run_e2e_batch(config: str | Path | E2EBatchConfig) -> dict[str, Any]:
+def run_e2e_batch(
+    config: str | Path | E2EBatchConfig,
+    *,
+    resume: bool | None = None,
+) -> dict[str, Any]:
     """Run the full collection/export/preprocess/LeRobot/HF batch from YAML config."""
 
     load_dotenv(PROJECT_ROOT / ".env")
@@ -242,16 +264,50 @@ def run_e2e_batch(config: str | Path | E2EBatchConfig) -> dict[str, Any]:
     ):
         path.mkdir(parents=True, exist_ok=True)
 
+    resume_mode = resume if resume is not None else batch_cfg.run.resume
+
     snapshot_path = batch_root / "config_snapshot.yaml"
-    _write_config_snapshot(batch_cfg, snapshot_path)
+    if resume_mode:
+        resume_snapshot = batch_root / f"config_snapshot_resume_{datetime.now().strftime('%Y%m%d_%H%M%S')}.yaml"
+        _write_config_snapshot(batch_cfg, resume_snapshot)
+    else:
+        _write_config_snapshot(batch_cfg, snapshot_path)
 
     base_collection_cfg = load_pipeline_config(batch_cfg.collection.config_path)
     base_collection_cfg.llm_model = batch_cfg.collection.llm_model
     base_collection_cfg.vlm_model = batch_cfg.collection.vlm_model
     base_collection_cfg.use_vlm_judge = batch_cfg.collection.use_vlm_judge
+    if batch_cfg.collection.keep_failed_raw_dataset is not None:
+        base_collection_cfg.keep_failed_raw_dataset = batch_cfg.collection.keep_failed_raw_dataset
     base_collection_cfg.env_headless = not batch_cfg.collection.gui
     if batch_cfg.collection.execution_timeout is not None:
         base_collection_cfg.execution_timeout = batch_cfg.collection.execution_timeout
+
+    failed_raw_cleanup = _cleanup_failed_task_raw_datasets(
+        task_reports_root=task_reports_root,
+        enabled=not base_collection_cfg.keep_failed_raw_dataset,
+    )
+
+    # --- Resume: skip only successful completed tasks; rerun all failed/incomplete tasks ---
+    completed_task_results: dict[int, dict[str, Any]] = {}
+    if resume_mode:
+        if not batch_cfg.run.output_root:
+            raise ValueError(
+                "Resume mode requires an explicit 'run.output_root' in the batch config."
+            )
+        if not batch_root.exists():
+            raise FileNotFoundError(
+                f"Resume mode: batch root {batch_root} does not exist."
+            )
+        completed_task_results = _load_resume_task_results(
+            task_reports_root, batch_cfg.tasks
+        )
+        logger.info(
+            "Resume mode: found %d/%d successful completed tasks; rerunning the remaining %d task(s)",
+            len(completed_task_results),
+            len(batch_cfg.tasks),
+            len(batch_cfg.tasks) - len(completed_task_results),
+        )
 
     report: dict[str, Any] = {
         "batch_root": str(batch_root),
@@ -262,12 +318,33 @@ def run_e2e_batch(config: str | Path | E2EBatchConfig) -> dict[str, Any]:
         "summary": {},
         "batch_completed": False,
         "pass": False,
+        "resumed": resume_mode,
+        "resumed_task_count": len(completed_task_results),
+        "failed_raw_cleanup": failed_raw_cleanup,
     }
 
     successful_task_records: list[dict[str, Any]] = []
     for task_idx, task_cfg in enumerate(batch_cfg.tasks):
         task_slug = _slugify_task(task_cfg.yaml_path)
         task_json_report_path = task_reports_root / f"{task_idx:03d}_{task_slug}.json"
+
+        # Resume: preserve successful completed tasks and rerun failed/incomplete ones.
+        if resume_mode and task_idx in completed_task_results:
+            prev_result = completed_task_results[task_idx]
+            prev_result["resumed_from_previous"] = True
+            _normalize_resume_task_result(prev_result)
+            report["task_runs"].append(prev_result)
+            if prev_result.get("successful_raw_dataset"):
+                successful_task_records.append(prev_result)
+            logger.info(
+                "Resume: skipping completed task %d/%d (%s) — successful_episodes=%d",
+                task_idx + 1,
+                len(batch_cfg.tasks),
+                task_slug,
+                prev_result.get("successful_episodes", 0),
+            )
+            continue
+
         try:
             task_result = _run_single_task_with_retries(
                 task_cfg=task_cfg,
@@ -282,6 +359,7 @@ def run_e2e_batch(config: str | Path | E2EBatchConfig) -> dict[str, Any]:
             task_result["task_report_path"] = str(task_json_report_path)
             write_json_report(task_result, task_json_report_path)
             report["task_runs"].append(task_result)
+            _cleanup_gpu_between_tasks()
             if not batch_cfg.run.continue_on_failure:
                 raise
             continue
@@ -291,6 +369,7 @@ def run_e2e_batch(config: str | Path | E2EBatchConfig) -> dict[str, Any]:
         report["task_runs"].append(task_result)
         if task_result.get("successful_raw_dataset"):
             successful_task_records.append(task_result)
+        _cleanup_gpu_between_tasks()
 
     single_robot_run = len({record["robot"] for record in successful_task_records}) <= 1
     grouped_records = _group_successful_task_records(successful_task_records)
@@ -308,14 +387,20 @@ def run_e2e_batch(config: str | Path | E2EBatchConfig) -> dict[str, Any]:
         )
         report["robot_datasets"][robot_name] = robot_report
 
+    # Cleanup intermediate directories to save disk space
+    if batch_cfg.run.cleanup_intermediates and report["robot_datasets"]:
+        _cleanup_intermediate_dirs(
+            successful_raw_root=successful_raw_root,
+            merged_raw_root=merged_raw_root,
+            exported_root=exported_root,
+        )
+
     report["batch_completed"] = len(report["task_runs"]) == len(batch_cfg.tasks)
     report["summary"] = _build_batch_summary(report, batch_cfg)
     report["pass"] = (
         bool(report["batch_completed"])
-        and (
-            not report["robot_datasets"]
-            or all(robot.get("pass", False) for robot in report["robot_datasets"].values())
-        )
+        and bool(report["robot_datasets"])
+        and all(robot.get("pass", False) for robot in report["robot_datasets"].values())
         and (not batch_cfg.hf.upload or bool(report["robot_datasets"]))
     )
 
@@ -395,6 +480,11 @@ def _run_single_task_with_retries(
     final_result: dict[str, Any] | None = None
     first_successful_pipeline_attempt: int | None = None
     max_pipeline_attempts = retry_limit + 1
+    # require_target: keep re-running until target is met (with hard cap)
+    require_target = collection_cfg.require_target
+    require_target_max_rounds = 10  # hard cap to prevent infinite loops
+    round_count = 0
+    cumulative_successful = 0
 
     for pipeline_attempt in range(1, max_pipeline_attempts + 1):
         try:
@@ -415,11 +505,34 @@ def _run_single_task_with_retries(
 
         attempt_history.append(_build_pipeline_attempt_entry(attempt_result))
         final_result = attempt_result
+        cumulative_successful += int(attempt_result.get("successful_episodes", 0))
 
         if attempt_result.get("pipeline_completed") and first_successful_pipeline_attempt is None:
             first_successful_pipeline_attempt = pipeline_attempt
 
         if pipeline_attempt >= max_pipeline_attempts or not _should_retry_task_pipeline(attempt_result):
+            # Check require_target: if target not met, extend attempts
+            if (
+                require_target
+                and attempt_result.get("pipeline_completed")
+                and not attempt_result.get("target_met")
+                and cumulative_successful < task_cfg.demos
+                and round_count < require_target_max_rounds
+            ):
+                remaining = task_cfg.demos - cumulative_successful
+                round_count += 1
+                logger.info(
+                    "require_target: %s has %d/%d successful episodes, need %d more (round %d/%d)",
+                    task_cfg.yaml_path.stem,
+                    cumulative_successful,
+                    task_cfg.demos,
+                    remaining,
+                    round_count,
+                    require_target_max_rounds,
+                )
+                # Continue — don't break
+                max_pipeline_attempts += 1
+                continue
             break
 
         logger.warning(
@@ -439,6 +552,8 @@ def _run_single_task_with_retries(
     final_result["pipeline_retried"] = len(attempt_history) > 1
     final_result["successful_pipeline_attempt"] = first_successful_pipeline_attempt
     final_result["pipeline_attempt_history"] = attempt_history
+    final_result["require_target_rounds_used"] = round_count
+    final_result["cumulative_successful"] = cumulative_successful
     return final_result
 
 
@@ -451,18 +566,35 @@ def _run_single_task(
     successful_raw_root: Path,
     pipeline_attempt: int = 1,
 ) -> dict[str, Any]:
+    carryover = _load_partial_task_progress(
+        task_cfg=task_cfg,
+        task_runs_root=task_runs_root,
+    )
     task_collection_cfg = copy.deepcopy(base_config)
     task_collection_cfg.output_dir = str(task_runs_root.resolve())
-    task_collection_cfg.max_episodes = task_cfg.demos
-    task_collection_cfg.target_successful_episodes = task_cfg.demos
+    prior_successful = int(carryover.get("successful_episodes", 0))
+    prior_attempted = int(carryover.get("attempted_episodes", 0))
+    remaining_demos = max(0, task_cfg.demos - prior_successful)
+    task_collection_cfg.max_episodes = max(1, remaining_demos)
+    task_collection_cfg.target_successful_episodes = max(1, remaining_demos)
     resolved_max_attempts = (
         task_cfg.max_attempts
         if task_cfg.max_attempts is not None
         else task_cfg.demos * collection_cfg.default_max_attempts_multiplier
     )
-    task_collection_cfg.max_total_attempts = resolved_max_attempts
+    remaining_attempts = max(1, resolved_max_attempts - prior_attempted)
+    task_collection_cfg.max_total_attempts = remaining_attempts
     if collection_cfg.execution_timeout is not None:
         task_collection_cfg.execution_timeout = collection_cfg.execution_timeout
+
+    if prior_successful > 0:
+        logger.info(
+            "Resume carryover for %s: reusing %d successful episode(s) from prior partial run(s); collecting %d more with up to %d remaining attempts",
+            task_cfg.yaml_path.stem,
+            prior_successful,
+            remaining_demos,
+            remaining_attempts,
+        )
 
     pipeline = DataCollectionPipeline(
         yaml_path=str(task_cfg.yaml_path),
@@ -470,21 +602,52 @@ def _run_single_task(
         auto_convert_to_lerobot=False,
     )
     pipeline_result = pipeline.run()
+    pipeline_result = _apply_partial_task_progress(
+        pipeline_result=pipeline_result,
+        carryover=carryover,
+        requested_demos=task_cfg.demos,
+    )
 
     successful_raw_dataset = None
     filtered_raw_episode_count = 0
+    failed_raw_dataset_removed = False
+    failed_raw_dataset_cleanup_reason = None
+    candidate_raw_paths = [
+        Path(path).expanduser().resolve()
+        for path in carryover.get("raw_dataset_paths", [])
+        if path
+    ]
     raw_dataset_dir = pipeline_result.get("raw_dataset")
     if raw_dataset_dir:
-        raw_meta = load_raw_dataset_metadata(raw_dataset_dir)
-        if int(raw_meta.get("successful_episodes", 0)) > 0:
-            subset_dir = successful_raw_root / _slugify_task(task_cfg.yaml_path) / "raw_dataset"
-            successful_raw_dataset = filter_raw_dataset_episodes(
-                raw_dataset_dir,
-                subset_dir,
-                success_only=True,
-            )
-            filtered_meta = load_raw_dataset_metadata(successful_raw_dataset)
-            filtered_raw_episode_count = int(filtered_meta.get("total_episodes", 0))
+        raw_path = Path(raw_dataset_dir).expanduser().resolve()
+        try:
+            raw_meta = load_raw_dataset_metadata(raw_path)
+        except (FileNotFoundError, json.JSONDecodeError) as exc:
+            logger.warning("Ignoring unusable raw dataset for %s: %s", task_cfg.yaml_path, exc)
+            if raw_path.exists() and not task_collection_cfg.keep_failed_raw_dataset:
+                import shutil
+
+                shutil.rmtree(raw_path)
+                failed_raw_dataset_removed = True
+                failed_raw_dataset_cleanup_reason = "invalid_raw_dataset_removed"
+            pipeline_result["raw_dataset"] = None
+        else:
+            raw_successful = int(raw_meta.get("successful_episodes", 0))
+            if raw_successful > 0:
+                candidate_raw_paths.append(raw_path)
+            elif raw_path.exists() and not task_collection_cfg.keep_failed_raw_dataset:
+                import shutil
+
+                shutil.rmtree(raw_path)
+                failed_raw_dataset_removed = True
+                failed_raw_dataset_cleanup_reason = "zero_success_raw_dataset_removed"
+                pipeline_result["raw_dataset"] = None
+
+    successful_raw_dataset, filtered_raw_episode_count = _materialize_successful_raw_dataset(
+        task_cfg=task_cfg,
+        raw_dataset_paths=candidate_raw_paths,
+        successful_raw_root=successful_raw_root,
+    )
 
     classification = classify_task_yaml(task_cfg.yaml_path)
     task_report = _build_task_run_report(
@@ -495,8 +658,262 @@ def _run_single_task(
         filtered_raw_episode_count=filtered_raw_episode_count,
         resolved_max_attempts=resolved_max_attempts,
         pipeline_attempt=pipeline_attempt,
+        failed_raw_dataset_removed=failed_raw_dataset_removed,
+        failed_raw_dataset_cleanup_reason=failed_raw_dataset_cleanup_reason,
+        keep_failed_raw_dataset=task_collection_cfg.keep_failed_raw_dataset,
     )
+    task_report["carryover_successful_episodes"] = prior_successful
+    task_report["carryover_attempted_episodes"] = prior_attempted
+    task_report["remaining_requested_demos"] = remaining_demos
     return task_report
+
+
+def _load_partial_task_progress(
+    *,
+    task_cfg: E2ETaskConfig,
+    task_runs_root: Path,
+) -> dict[str, Any]:
+    """Load partial successful progress from prior interrupted/failed runs for a task."""
+
+    task_name = _load_task_name_from_yaml(task_cfg.yaml_path)
+    run_dirs = sorted(
+        [
+            path
+            for path in task_runs_root.glob(f"{task_name}_*")
+            if path.is_dir()
+        ]
+    )
+
+    partial_runs: list[dict[str, Any]] = []
+    for run_dir in run_dirs:
+        raw_dataset_dir = run_dir / "raw_dataset"
+        metadata = None
+        if raw_dataset_dir.exists():
+            try:
+                metadata = load_raw_dataset_metadata(raw_dataset_dir)
+            except (FileNotFoundError, json.JSONDecodeError):
+                metadata = None
+
+        collection_results = None
+        collection_results_path = run_dir / "collection_results.json"
+        if collection_results_path.exists():
+            try:
+                with open(collection_results_path) as f:
+                    collection_results = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                collection_results = None
+
+        successful = 0
+        attempted = 0
+        geometry_successful = 0
+        vlm_successful = 0
+        overall_successful = 0
+        episodes: list[dict[str, Any]] = []
+
+        if collection_results:
+            successful = int(collection_results.get("successful_episodes", 0))
+            attempted = int(collection_results.get("total_episodes", 0))
+            geometry_successful = int(collection_results.get("geometry_successful_episodes", successful))
+            vlm_successful = int(collection_results.get("vlm_successful_episodes", 0))
+            overall_successful = int(collection_results.get("overall_successful_episodes", 0))
+            episodes = list(collection_results.get("episodes") or [])
+        elif metadata:
+            successful = int(metadata.get("successful_episodes", 0))
+            attempted = int(metadata.get("total_episodes", 0))
+            geometry_successful = successful
+
+        if successful <= 0 or metadata is None:
+            continue
+
+        partial_runs.append(
+            {
+                "run_dir": str(run_dir.resolve()),
+                "raw_dataset_dir": str(raw_dataset_dir.resolve()),
+                "successful_episodes": successful,
+                "attempted_episodes": attempted,
+                "geometry_successful_episodes": geometry_successful,
+                "vlm_successful_episodes": vlm_successful,
+                "overall_successful_episodes": overall_successful,
+                "episodes": episodes,
+                "front_video_generated": bool(metadata.get("front_video_generated", False)),
+                "front_video_path": (
+                    str((run_dir / metadata["front_video_path"]).resolve())
+                    if metadata.get("front_video_path")
+                    else None
+                ),
+                "front_video_camera_name": metadata.get("front_video_camera_name"),
+                "front_video_episode": metadata.get("front_video_episode"),
+                "front_video_success_type": metadata.get("front_video_success_type"),
+            }
+        )
+
+    if not partial_runs:
+        return {
+            "successful_episodes": 0,
+            "attempted_episodes": 0,
+            "geometry_successful_episodes": 0,
+            "vlm_successful_episodes": 0,
+            "overall_successful_episodes": 0,
+            "episodes": [],
+            "raw_dataset_paths": [],
+            "front_video_generated": False,
+            "front_video_path": None,
+            "front_video_camera_name": None,
+            "front_video_episode": None,
+            "front_video_success_type": None,
+            "source_runs": [],
+        }
+
+    preferred_video = next(
+        (
+            run
+            for run in partial_runs
+            if run.get("front_video_generated") and run.get("front_video_path")
+        ),
+        partial_runs[0],
+    )
+
+    return {
+        "successful_episodes": sum(int(run["successful_episodes"]) for run in partial_runs),
+        "attempted_episodes": sum(int(run["attempted_episodes"]) for run in partial_runs),
+        "geometry_successful_episodes": sum(int(run["geometry_successful_episodes"]) for run in partial_runs),
+        "vlm_successful_episodes": sum(int(run["vlm_successful_episodes"]) for run in partial_runs),
+        "overall_successful_episodes": sum(int(run["overall_successful_episodes"]) for run in partial_runs),
+        "episodes": [episode for run in partial_runs for episode in run.get("episodes", [])],
+        "raw_dataset_paths": [run["raw_dataset_dir"] for run in partial_runs],
+        "front_video_generated": bool(preferred_video.get("front_video_generated")),
+        "front_video_path": preferred_video.get("front_video_path"),
+        "front_video_camera_name": preferred_video.get("front_video_camera_name"),
+        "front_video_episode": preferred_video.get("front_video_episode"),
+        "front_video_success_type": preferred_video.get("front_video_success_type"),
+        "source_runs": [run["run_dir"] for run in partial_runs],
+    }
+
+
+def _apply_partial_task_progress(
+    *,
+    pipeline_result: dict[str, Any],
+    carryover: dict[str, Any],
+    requested_demos: int,
+) -> dict[str, Any]:
+    """Aggregate prior partial progress into the current pipeline result."""
+
+    prior_successful = int(carryover.get("successful_episodes", 0))
+    if prior_successful <= 0:
+        return pipeline_result
+
+    aggregated = dict(pipeline_result)
+    results = dict((aggregated.get("results") or {}))
+    current_episodes = list(results.get("episodes") or [])
+    prior_episodes = list(carryover.get("episodes") or [])
+    if prior_episodes:
+        results["episodes"] = prior_episodes + current_episodes
+
+    for key in (
+        "total_episodes",
+        "successful_episodes",
+        "geometry_successful_episodes",
+        "vlm_successful_episodes",
+        "overall_successful_episodes",
+    ):
+        results[key] = int(results.get(key, 0)) + int(carryover.get(key, 0))
+
+    results["target_met"] = int(results.get("successful_episodes", 0)) >= int(requested_demos)
+    results["geometry_target_met"] = (
+        int(results.get("geometry_successful_episodes", 0)) >= int(requested_demos)
+    )
+    results["vlm_target_met"] = (
+        int(results.get("vlm_successful_episodes", 0)) >= int(requested_demos)
+    )
+    results["overall_target_met"] = (
+        int(results.get("overall_successful_episodes", 0)) >= int(requested_demos)
+    )
+
+    if not aggregated.get("front_video_path") and carryover.get("front_video_path"):
+        aggregated["front_video_generated"] = bool(carryover.get("front_video_generated"))
+        aggregated["front_video_path"] = carryover.get("front_video_path")
+        aggregated["front_video_camera_name"] = carryover.get("front_video_camera_name")
+        aggregated["front_video_episode"] = carryover.get("front_video_episode")
+        aggregated["front_video_success_type"] = carryover.get("front_video_success_type")
+
+    aggregated["results"] = results
+    aggregated["total_episodes"] = int(results.get("total_episodes", 0))
+    aggregated["successful_episodes"] = int(results.get("successful_episodes", 0))
+    aggregated["geometry_successful_episodes"] = int(results.get("geometry_successful_episodes", 0))
+    aggregated["vlm_successful_episodes"] = int(results.get("vlm_successful_episodes", 0))
+    aggregated["overall_successful_episodes"] = int(results.get("overall_successful_episodes", 0))
+    aggregated["target_met"] = bool(results.get("target_met", False))
+    return aggregated
+
+
+def _materialize_successful_raw_dataset(
+    *,
+    task_cfg: E2ETaskConfig,
+    raw_dataset_paths: list[Path],
+    successful_raw_root: Path,
+) -> tuple[Path | None, int]:
+    """Build a combined success-only raw dataset for all known successful task runs."""
+
+    usable_raw_paths: list[Path] = []
+    for raw_path in raw_dataset_paths:
+        try:
+            metadata = load_raw_dataset_metadata(raw_path)
+        except (FileNotFoundError, json.JSONDecodeError):
+            continue
+        if int(metadata.get("successful_episodes", 0)) > 0:
+            usable_raw_paths.append(raw_path)
+
+    if not usable_raw_paths:
+        return None, 0
+
+    task_success_root = successful_raw_root / _slugify_task(task_cfg.yaml_path)
+    if task_success_root.exists():
+        shutil.rmtree(task_success_root)
+    task_success_root.mkdir(parents=True, exist_ok=True)
+
+    filtered_parts: list[Path] = []
+    source_records: list[dict[str, Any]] = []
+    for raw_path in usable_raw_paths:
+        part_dir = task_success_root / "parts" / raw_path.parent.name / "raw_dataset"
+        filtered = filter_raw_dataset_episodes(
+            raw_path,
+            part_dir,
+            success_only=True,
+        )
+        filtered_meta = load_raw_dataset_metadata(filtered)
+        if int(filtered_meta.get("total_episodes", 0)) <= 0:
+            continue
+        filtered_parts.append(filtered)
+        source_records.append(
+            {
+                "task": _load_task_name_from_yaml(task_cfg.yaml_path),
+                "yaml_path": str(task_cfg.yaml_path),
+                "output_dir": str(raw_path.parent),
+            }
+        )
+
+    if not filtered_parts:
+        return None, 0
+
+    merged_dir = task_success_root / "raw_dataset"
+    merge_raw_datasets(
+        [str(path) for path in filtered_parts],
+        merged_dir,
+        source_records=source_records,
+    )
+    merged_meta = load_raw_dataset_metadata(merged_dir)
+    return merged_dir, int(merged_meta.get("total_episodes", 0))
+
+
+def _load_task_name_from_yaml(yaml_path: Path) -> str:
+    """Read the runtime task name from a task YAML document."""
+
+    try:
+        with open(yaml_path) as f:
+            task_doc = yaml.safe_load(f) or {}
+    except OSError:
+        return yaml_path.stem
+    return str((task_doc.get("task") or {}).get("name") or yaml_path.stem)
 
 
 def _build_failed_task_result(
@@ -527,6 +944,7 @@ def _build_failed_task_result(
         "vlm_successful_episodes": 0,
         "overall_successful_episodes": 0,
         "successful_dataset_episodes": 0,
+        "failed_episode_attempts": 0,
         "success_rate": 0.0,
         "success_policy": "geometry_or_vlm",
         "pipeline_completed": False,
@@ -546,7 +964,48 @@ def _build_failed_task_result(
         },
         "representative_cap_code_path": None,
         "representative_cap_code": None,
+        "keep_failed_raw_dataset": False,
+        "failed_raw_dataset_removed": False,
+        "failed_raw_dataset_cleanup_reason": None,
     }
+
+
+def _classify_episode_failures(episodes: list[dict[str, Any]]) -> dict[str, Any]:
+    """Classify episode failures into categories for reporting."""
+    counts: dict[str, int] = {
+        "codegen_failed": 0,
+        "execution_failed": 0,
+        "vlm_false": 0,
+        "vlm_uncertain": 0,
+        "geometry_failed": 0,
+        "success_kept": 0,
+    }
+    for ep in episodes:
+        if ep.get("discarded"):
+            if not ep.get("codegen_success", True):
+                counts["codegen_failed"] += 1
+            elif not ep.get("execution_success", True):
+                counts["execution_failed"] += 1
+            elif ep.get("judge_prediction") == "FALSE":
+                counts["vlm_false"] += 1
+            elif ep.get("judge_prediction") == "UNCERTAIN":
+                counts["vlm_uncertain"] += 1
+            else:
+                counts["geometry_failed"] += 1
+        else:
+            counts["success_kept"] += 1
+    counts["total_discarded"] = sum(v for k, v in counts.items() if k != "success_kept")
+    return counts
+
+
+def _aggregate_failure_breakdown(task_runs: list[dict[str, Any]]) -> dict[str, int]:
+    """Aggregate failure breakdown across all tasks."""
+    totals: dict[str, int] = {}
+    for task in task_runs:
+        fb = task.get("failure_breakdown") or {}
+        for k, v in fb.items():
+            totals[k] = totals.get(k, 0) + int(v)
+    return totals
 
 
 def _build_task_run_report(
@@ -558,6 +1017,9 @@ def _build_task_run_report(
     filtered_raw_episode_count: int,
     resolved_max_attempts: int,
     pipeline_attempt: int,
+    failed_raw_dataset_removed: bool,
+    failed_raw_dataset_cleanup_reason: str | None,
+    keep_failed_raw_dataset: bool,
 ) -> dict[str, Any]:
     episodes = list((pipeline_result.get("results") or {}).get("episodes", []))
     representative_episode = _select_representative_episode(episodes)
@@ -583,11 +1045,15 @@ def _build_task_run_report(
     geometry_successful = int(pipeline_result.get("geometry_successful_episodes", 0))
     vlm_successful = int(pipeline_result.get("vlm_successful_episodes", 0))
     overall_successful = int(pipeline_result.get("overall_successful_episodes", 0))
+    failed_attempts = max(0, attempted - successful)
     success_rate = 0.0 if attempted <= 0 else successful / attempted
     collection_results = pipeline_result.get("results", {}) or {}
     failure_category = collection_results.get("failure_category")
     pipeline_error = collection_results.get("pipeline_error")
     pipeline_completed = bool(pipeline_result.get("pipeline_completed", False))
+
+    # Episode-level failure breakdown
+    failure_breakdown = _classify_episode_failures(episodes)
 
     return {
         "task": pipeline_result.get("task", task_cfg.yaml_path.stem),
@@ -606,6 +1072,7 @@ def _build_task_run_report(
         "vlm_successful_episodes": vlm_successful,
         "overall_successful_episodes": overall_successful,
         "successful_dataset_episodes": filtered_raw_episode_count,
+        "failed_episode_attempts": failed_attempts,
         "success_rate": success_rate,
         "pipeline_completed": pipeline_completed,
         "target_met": bool(pipeline_result.get("target_met", False)),
@@ -620,6 +1087,7 @@ def _build_task_run_report(
         "successful_raw_dataset": str(successful_raw_dataset) if successful_raw_dataset else None,
         "pipeline_error": pipeline_error,
         "failure_category": failure_category,
+        "failure_breakdown": failure_breakdown,
         "domain_randomization": _summarize_domain_randomization(episodes),
         "front_video_generated": bool(pipeline_result.get("front_video_generated", False)),
         "front_video_path": pipeline_result.get("front_video_path"),
@@ -635,6 +1103,9 @@ def _build_task_run_report(
         "representative_cap_code": representative_code,
         "representative_episode": representative_episode,
         "collection_results": collection_results,
+        "keep_failed_raw_dataset": keep_failed_raw_dataset,
+        "failed_raw_dataset_removed": failed_raw_dataset_removed,
+        "failed_raw_dataset_cleanup_reason": failed_raw_dataset_cleanup_reason,
     }
 
 
@@ -674,6 +1145,16 @@ def _build_robot_dataset(
     lerobot_root: Path,
     publish_reports_root: Path,
 ) -> dict[str, Any]:
+    local_repo_id = _build_local_repo_id(batch_cfg.hf.dataset_name, robot_name, single_robot_run)
+    _reset_robot_dataset_outputs(
+        robot_name=robot_name,
+        merged_raw_root=merged_raw_root,
+        exported_root=exported_root,
+        preprocessed_root=preprocessed_root,
+        lerobot_root=lerobot_root,
+        local_repo_id=local_repo_id,
+    )
+
     merged_raw_dir = merged_raw_root / robot_name / "raw_dataset"
     merge_raw_datasets(
         [record["successful_raw_dataset"] for record in task_records if record.get("successful_raw_dataset")],
@@ -703,7 +1184,6 @@ def _build_robot_dataset(
         success_only=batch_cfg.run.preprocess_success_only,
     )
 
-    local_repo_id = _build_local_repo_id(batch_cfg.hf.dataset_name, robot_name, single_robot_run)
     lerobot_dataset_root = convert_raw_dataset_to_lerobot(
         merged_raw_dir,
         repo_id=local_repo_id,
@@ -762,6 +1242,7 @@ def _build_batch_summary(report: dict[str, Any], batch_cfg: E2EBatchConfig) -> d
     collected_demos = sum(int(task.get("successful_dataset_episodes", 0)) for task in task_runs)
     total_attempts = sum(int(task.get("attempted_episodes", 0)) for task in task_runs)
     total_successes = sum(int(task.get("successful_episodes", 0)) for task in task_runs)
+    total_failed_attempts = sum(int(task.get("failed_episode_attempts", 0)) for task in task_runs)
     aggregate_success_rate = 0.0 if total_attempts <= 0 else total_successes / total_attempts
     hf_repo_ids = {
         robot: robot_report.get("hf_repo_id")
@@ -780,6 +1261,7 @@ def _build_batch_summary(report: dict[str, Any], batch_cfg: E2EBatchConfig) -> d
             "target_met_task_count": "요청한 성공 demo 수를 채운 task 수",
             "pipeline_failed_task_count": "collection pipeline이 중간에 실패한 task 수",
             "successful_demo_total": "최종 dataset에 포함된 성공 episode 수",
+            "total_failed_attempts": "전체 시도 episode 중 실패로 끝난 episode 수",
             "aggregate_success_rate": "전체 시도 episode 대비 성공 episode 비율 (geometry OR vlm)",
             "pipeline_retry_limit": "task pipeline이 조기 실패했을 때 허용하는 추가 재시도 횟수",
             "pipeline_attempts_used": "각 task에서 실제로 사용한 pipeline 실행 횟수",
@@ -799,7 +1281,10 @@ def _build_batch_summary(report: dict[str, Any], batch_cfg: E2EBatchConfig) -> d
         "collected_successful_demos": collected_demos,
         "total_episode_attempts": total_attempts,
         "total_successful_attempts": total_successes,
+        "total_failed_attempts": total_failed_attempts,
         "aggregate_success_rate": aggregate_success_rate,
+        "aggregate_failure_breakdown": _aggregate_failure_breakdown(task_runs),
+        "failed_raw_dataset_cleanup_count": int((report.get("failed_raw_cleanup") or {}).get("removed_count", 0)),
         "llm_model": batch_cfg.collection.llm_model,
         "vlm_model": batch_cfg.collection.vlm_model,
         "hf_upload": batch_cfg.hf.upload,
@@ -835,7 +1320,9 @@ def _render_markdown_report(report: dict[str, Any], batch_cfg: E2EBatchConfig) -
         f"- 수집 성공 demo 수: **{summary.get('collected_successful_demos', 0)}**",
         f"- 전체 시도 수: **{summary.get('total_episode_attempts', 0)}**",
         f"- 전체 성공 수: **{summary.get('total_successful_attempts', 0)}**",
+        f"- 전체 실패 수: **{summary.get('total_failed_attempts', 0)}**",
         f"- 전체 성공률: **{summary.get('aggregate_success_rate', 0.0):.2%}**",
+        f"- 실패 raw 정리 수: **{summary.get('failed_raw_dataset_cleanup_count', 0)}**",
         "",
         "## Summary 설명",
         "",
@@ -844,8 +1331,10 @@ def _render_markdown_report(report: dict[str, Any], batch_cfg: E2EBatchConfig) -
         "- `성공 task 수`: 성공 episode가 1개 이상 있는 task 수",
         "- `Target 달성 task 수`: 요청한 성공 demo 수를 채운 task 수",
         "- `수집 성공 demo 수`: 최종 dataset에 포함된 성공 episode 수",
+        "- `전체 실패 수`: 전체 시도 episode 중 실패로 끝난 episode 수",
         "- `전체 성공률`: 전체 시도 episode 대비 성공 episode 비율",
         "- `성공 판정 기준`: `geometry OR vlm`",
+        "- `실패 raw 정리 수`: 실행 시작 시 stale failed raw dataset을 자동 정리한 개수",
         "- `Pipeline retry limit`: task pipeline이 조기 실패했을 때 추가로 다시 띄우는 최대 횟수",
         "- `Pipeline attempts used`: 해당 task에서 실제로 사용한 pipeline 실행 횟수",
         "",
@@ -934,6 +1423,7 @@ def _render_markdown_report(report: dict[str, Any], batch_cfg: E2EBatchConfig) -
                 f"- 요청 demo: `{task_report.get('requested_demos')}`",
                 f"- 성공 demo: `{task_report.get('successful_dataset_episodes')}`",
                 f"- 전체 시도: `{task_report.get('attempted_episodes')}`",
+                f"- 실패 시도: `{task_report.get('failed_episode_attempts', 0)}`",
                 f"- task 수집 성공률: `{float(task_report.get('success_rate', 0.0)):.2%}`",
                 f"- pipeline retry limit: `{task_report.get('pipeline_retry_limit', 0)}`",
                 f"- pipeline attempts used: `{task_report.get('pipeline_attempts_used', 1)}`",
@@ -947,6 +1437,31 @@ def _render_markdown_report(report: dict[str, Any], batch_cfg: E2EBatchConfig) -
                 f"- strict agreement 수: `{task_report.get('overall_successful_episodes', 0)}`",
                 f"- raw dataset: `{task_report.get('raw_dataset')}`",
                 f"- success-only raw dataset: `{task_report.get('successful_raw_dataset')}`",
+                f"- keep failed raw dataset: `{task_report.get('keep_failed_raw_dataset')}`",
+                f"- failed raw removed: `{task_report.get('failed_raw_dataset_removed')}`",
+                f"- failed raw cleanup reason: `{task_report.get('failed_raw_dataset_cleanup_reason')}`",
+            ]
+        )
+        fb = task_report.get("failure_breakdown") or {}
+        if fb.get("total_discarded", 0) > 0:
+            lines.extend(
+                [
+                    "",
+                    "#### 에피소드 실패 분류",
+                    "",
+                    "| 분류 | 건수 | 설명 |",
+                    "|------|------|------|",
+                    f"| codegen_failed | {fb.get('codegen_failed', 0)} | LLM 코드 생성 실패 (CaP plan 생성 불가) |",
+                    f"| execution_failed | {fb.get('execution_failed', 0)} | CaP 실행 중 오류 (IK 실패, 충돌, 타임아웃 등) |",
+                    f"| vlm_false | {fb.get('vlm_false', 0)} | VLM judge가 FALSE 판정 (물리적으로 태스크 미달성) |",
+                    f"| vlm_uncertain | {fb.get('vlm_uncertain', 0)} | VLM judge가 UNCERTAIN 판정 |",
+                    f"| geometry_failed | {fb.get('geometry_failed', 0)} | Geometry 검증 실패 |",
+                    f"| **total_discarded** | **{fb.get('total_discarded', 0)}** | **폐기된 에피소드 총계** |",
+                    f"| success_kept | {fb.get('success_kept', 0)} | 성공 에피소드 (보존) |",
+                ]
+            )
+        lines.extend(
+            [
                 "",
                 "#### 대표 아티팩트",
                 "",
@@ -1400,6 +1915,248 @@ def _build_hf_repo_id(
 ) -> str:
     suffix = "" if single_robot_run else f"-{robot_name}"
     return f"{namespace}/{dataset_name}{suffix}" if namespace else f"{dataset_name}{suffix}"
+
+
+def _reset_robot_dataset_outputs(
+    *,
+    robot_name: str,
+    merged_raw_root: Path,
+    exported_root: Path,
+    preprocessed_root: Path,
+    lerobot_root: Path,
+    local_repo_id: str,
+) -> None:
+    """Remove stale derived robot-level outputs before rebuilding merged datasets.
+
+    These directories are fully derived from `successful_raw_dataset` task outputs, so
+    clearing them makes resume idempotent after partial merge/export/LeRobot failures.
+    """
+
+    derived_paths = [
+        merged_raw_root / robot_name,
+        exported_root / robot_name,
+        preprocessed_root / robot_name,
+        lerobot_root / Path(local_repo_id),
+    ]
+    for path in derived_paths:
+        if not path.exists():
+            continue
+        shutil.rmtree(path)
+        logger.info("Removed stale derived dataset output before rebuild: %s", path)
+
+
+def _cleanup_intermediate_dirs(
+    *,
+    successful_raw_root: Path,
+    merged_raw_root: Path,
+    exported_root: Path,
+) -> None:
+    """Remove intermediate directories after LeRobot conversion is complete.
+
+    Keeps: task_runs/ (original raw), lerobot/ (final output), preprocessed/, reports/
+    Removes: successful_raw/, merged_raw/, exported/ (redundant copies)
+    """
+    import shutil
+
+    for path in (successful_raw_root, merged_raw_root, exported_root):
+        if path.exists():
+            try:
+                size_mb = sum(f.stat().st_size for f in path.rglob("*") if f.is_file()) / (1024 * 1024)
+                shutil.rmtree(path)
+                logger.info("Cleaned up intermediate dir %s (freed ~%.0f MB)", path.name, size_mb)
+            except Exception as exc:
+                logger.warning("Failed to clean up %s: %s", path, exc)
+
+
+def _cleanup_failed_task_raw_datasets(
+    *,
+    task_reports_root: Path,
+    enabled: bool,
+) -> dict[str, Any]:
+    """Remove stale failed raw_dataset directories referenced by failed task reports."""
+
+    summary = {
+        "enabled": bool(enabled),
+        "removed_count": 0,
+        "removed_paths": [],
+    }
+    if not enabled or not task_reports_root.exists():
+        return summary
+
+    pattern = re.compile(r"metadata\.json not found in raw dataset: (?P<path>.+)$")
+    removed_paths: list[str] = []
+    for report_path in sorted(task_reports_root.glob("*.json")):
+        try:
+            with open(report_path) as f:
+                report = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            continue
+        if report.get("pass") or int(report.get("successful_dataset_episodes", 0)) > 0:
+            continue
+
+        candidates: list[Path] = []
+        raw_dataset = report.get("raw_dataset")
+        if raw_dataset:
+            candidates.append(Path(raw_dataset).expanduser().resolve())
+        output_dir = report.get("output_dir")
+        if output_dir:
+            candidates.append(Path(output_dir).expanduser().resolve() / "raw_dataset")
+        pipeline_error = str(report.get("pipeline_error") or "")
+        match = pattern.search(pipeline_error)
+        if match:
+            candidates.append(Path(match.group("path")).expanduser().resolve())
+
+        seen: set[Path] = set()
+        for candidate in candidates:
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            if not candidate.exists():
+                continue
+            import shutil
+
+            shutil.rmtree(candidate)
+            removed_paths.append(str(candidate))
+            logger.info("Removed stale failed raw dataset: %s", candidate)
+
+    summary["removed_count"] = len(removed_paths)
+    summary["removed_paths"] = removed_paths
+    return summary
+
+
+def _cleanup_gpu_between_tasks() -> None:
+    """Best-effort GPU memory cleanup between tasks."""
+    gc.collect()
+
+    # Run torch.cuda.empty_cache() in a subprocess
+    try:
+        subprocess.run(
+            [
+                "python3",
+                "-c",
+                "import torch; torch.cuda.empty_cache(); torch.cuda.ipc_collect()",
+            ],
+            timeout=30,
+            capture_output=True,
+        )
+    except Exception:
+        pass
+
+    # Check GPU memory via nvidia-smi
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=memory.used,memory.free",
+                "--format=csv,noheader,nounits",
+            ],
+            timeout=10,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            for line in result.stdout.strip().split("\n"):
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) >= 2:
+                    used_mb = int(parts[0])
+                    logger.info(
+                        "GPU memory: %d MB used, %s MB free", used_mb, parts[1]
+                    )
+                    if used_mb > 2000:
+                        logger.warning(
+                            "GPU memory still high (%d MB) — attempting orphan cleanup",
+                            used_mb,
+                        )
+                        _kill_orphan_gpu_processes()
+    except Exception:
+        pass
+
+    # Brief pause for GPU driver to reclaim memory
+    time.sleep(3)
+
+
+def _kill_orphan_gpu_processes() -> None:
+    """Kill GPU-using processes owned by the current user."""
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-compute-apps=pid",
+                "--format=csv,noheader,nounits",
+            ],
+            timeout=10,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            return
+        my_uid = os.getuid()
+        for line in result.stdout.strip().split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                pid = int(line)
+                # Only kill processes owned by us
+                stat_path = Path(f"/proc/{pid}/status")
+                if stat_path.exists():
+                    for sline in stat_path.read_text().split("\n"):
+                        if sline.startswith("Uid:"):
+                            uid = int(sline.split()[1])
+                            if uid == my_uid:
+                                logger.info("Killing orphan GPU process PID %d", pid)
+                                os.kill(pid, signal.SIGKILL)
+                            break
+            except (ValueError, ProcessLookupError, PermissionError):
+                continue
+    except Exception:
+        pass
+
+
+def _load_resume_task_results(
+    task_reports_root: Path,
+    tasks: tuple[E2ETaskConfig, ...],
+) -> dict[int, dict[str, Any]]:
+    """Load successful completed task reports that can be safely reused on resume."""
+
+    completed: dict[int, dict[str, Any]] = {}
+    for task_idx, task_cfg in enumerate(tasks):
+        task_slug = _slugify_task(task_cfg.yaml_path)
+        report_path = task_reports_root / f"{task_idx:03d}_{task_slug}.json"
+        if not report_path.exists():
+            continue
+        try:
+            with open(report_path) as f:
+                report = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            logger.warning("Resume: could not read %s, will re-run that task", report_path)
+            continue
+        if not (bool(report.get("pass")) and bool(report.get("target_met"))):
+            continue
+        _normalize_resume_task_result(report)
+        raw_dataset_path = report.get("successful_raw_dataset") or report.get("raw_dataset")
+        if raw_dataset_path and Path(raw_dataset_path).exists():
+            completed[task_idx] = report
+        else:
+            logger.warning(
+                "Resume: task %d (%s) is marked complete but dataset is missing at %s, will re-run",
+                task_idx + 1,
+                task_slug,
+                raw_dataset_path,
+            )
+    return completed
+
+
+def _normalize_resume_task_result(task_result: dict[str, Any]) -> dict[str, Any]:
+    """Repair resume task paths after cleanup so downstream merge can reuse originals."""
+
+    successful_raw_dataset = task_result.get("successful_raw_dataset")
+    raw_dataset = task_result.get("raw_dataset")
+    if successful_raw_dataset and Path(successful_raw_dataset).exists():
+        return task_result
+    if raw_dataset and Path(raw_dataset).exists():
+        task_result["successful_raw_dataset"] = raw_dataset
+    return task_result
 
 
 def _resolve_batch_root(output_root: str | None) -> Path:
