@@ -353,6 +353,7 @@ class DataCollectionConfig:
     # Dataset
     dataset_repo_id: str = "local/sim_dataset"
     output_dir: str = "outputs/data_collection"
+    discard_failed_episodes: bool = True
     keep_failed_raw_dataset: bool = False
 
     # LLM (CaP code generation)
@@ -427,6 +428,7 @@ def load_pipeline_config(config_path: Optional[str] = None) -> DataCollectionCon
         max_total_attempts=episodes.get("max_total_attempts", 0),
         dataset_repo_id=dataset.get("repo_id", "local/sim_dataset"),
         output_dir=dataset.get("output_dir", "outputs/data_collection"),
+        discard_failed_episodes=bool(dataset.get("discard_failed_episodes", True)),
         keep_failed_raw_dataset=bool(dataset.get("keep_failed_raw_dataset", False)),
         llm_model=llm.get("model", "gpt-5-mini"),
         use_vlm_judge=vlm.get("enabled", True),

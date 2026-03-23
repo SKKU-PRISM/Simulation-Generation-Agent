@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+import pyarrow.parquet as pq
+
 from .sim_recorder import convert_to_lerobot
 
 REQUIRED_LEROBOT_FEATURES = (
@@ -57,16 +59,21 @@ def check_lerobot_dataset(
     *,
     repo_id: str | None = None,
 ) -> dict[str, Any]:
-    """Validate a local LeRobot dataset by structure and by loading one sample."""
+    """Validate a local LeRobot dataset without any Hugging Face network access."""
 
     root = Path(dataset_root).expanduser().resolve()
     if not root.exists():
         raise FileNotFoundError(f"LeRobot dataset path not found: {root}")
 
+    info_path = root / "meta" / "info.json"
+    if not info_path.exists():
+        raise FileNotFoundError(f"LeRobot info.json not found: {info_path}")
+    info = json.loads(info_path.read_text())
+
     report: dict[str, Any] = {
         "dataset_root": str(root),
-        "repo_id": None,
-        "root_dir": None,
+        "repo_id": repo_id or root.name,
+        "root_dir": str(root),
         "required_features": list(REQUIRED_LEROBOT_FEATURES),
         "feature_keys": [],
         "num_frames": 0,
@@ -80,17 +87,7 @@ def check_lerobot_dataset(
         "pass": False,
     }
 
-    LeRobotDataset = _load_lerobot_dataset_class()
-    dataset, resolved_repo_id, resolved_root = _load_local_lerobot_dataset(
-        LeRobotDataset,
-        root,
-        repo_id=repo_id,
-    )
-
-    report["repo_id"] = resolved_repo_id
-    report["root_dir"] = str(resolved_root)
-
-    feature_map = getattr(dataset, "features", {}) or {}
+    feature_map = info.get("features", {}) or {}
     if isinstance(feature_map, dict):
         report["feature_keys"] = sorted(feature_map.keys())
 
@@ -98,14 +95,15 @@ def check_lerobot_dataset(
         key for key in REQUIRED_LEROBOT_FEATURES if key not in report["feature_keys"]
     ]
 
-    report["num_frames"] = int(len(dataset))
+    report["num_frames"] = int(info.get("total_frames", 0) or 0)
     if report["num_frames"] <= 0:
         raise ValueError(f"LeRobot dataset contains no frames: {root}")
 
-    sample = dataset[0]
-    if not isinstance(sample, dict):
-        raise TypeError("Expected LeRobotDataset sample to be a dict-like frame")
-    report["sample_keys"] = sorted(sample.keys())
+    first_parquet = next((root / "data").glob("chunk-*/file-*.parquet"), None)
+    if first_parquet is None:
+        raise FileNotFoundError(f"No LeRobot parquet shards found under {root / 'data'}")
+    table = pq.read_table(first_parquet).slice(0, 1)
+    report["sample_keys"] = sorted(table.column_names)
 
     missing_sample_keys = [
         key for key in REQUIRED_LEROBOT_FEATURES if key not in report["sample_keys"]

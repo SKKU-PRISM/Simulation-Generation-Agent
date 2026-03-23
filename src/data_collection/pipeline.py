@@ -422,6 +422,7 @@ class DataCollectionPipeline:
             "max_total_attempts": max_attempts,
             "dataset_cameras": list(self.config.dataset_cameras),
             "judge_cameras": list(self.config.judge_cameras),
+            "discard_failed_episodes": bool(self.config.discard_failed_episodes),
             "keep_failed_raw_dataset": bool(self.config.keep_failed_raw_dataset),
             "ik_debug": bool(self.config.ik_debug),
         }
@@ -3247,10 +3248,8 @@ class DataCollectionPipeline:
                         elif vlm_success:
                             success_basis = "vlm_only"
 
-                        # End episode (discard failures when targeting success count)
-                        discard_failed = (cfg.get("target_successful_episodes", 0) > 0
-                                         and cfg.get("target_successful_episodes", 0) < cfg.get("max_total_attempts", 999)
-                                         and not success)
+                        # End episode (optionally discard every failed episode immediately)
+                        discard_failed = bool(cfg.get("discard_failed_episodes", True)) and not success
                         front_video_before_priority = recorder.front_video_priority
                         front_video_priority = 3 if overall_success else (2 if geometry_success else (1 if vlm_success else 0))
                         front_video_success_type = success_basis
@@ -3369,11 +3368,12 @@ class DataCollectionPipeline:
                     traceback.print_exc()
                 finally:
                     keep_failed_raw_dataset = bool(cfg.get("keep_failed_raw_dataset", False))
+                    discard_failed_episodes = bool(cfg.get("discard_failed_episodes", True))
                     if recorder is not None and recorder.is_recording:
                         try:
                             recorder.end_episode(
                                 success=False,
-                                discard=not keep_failed_raw_dataset,
+                                discard=discard_failed_episodes,
                             )
                         except Exception as end_err:
                             print(f"WARNING: Failed to close active episode: {{end_err}}")
@@ -3398,6 +3398,7 @@ class DataCollectionPipeline:
 
                     results["dataset_path"] = dataset_path
                     results["raw_dataset"] = dataset_path
+                    results["discard_failed_episodes"] = discard_failed_episodes
                     results["front_video_generated"] = bool(recorder and recorder.front_video_generated)
                     results["front_video_path"] = (
                         str(recorder.front_video_path) if recorder and recorder.front_video_path is not None else None

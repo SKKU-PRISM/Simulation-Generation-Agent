@@ -2,14 +2,18 @@ run:
   output_root: outputs/e2e_batches/franka30_production
   continue_on_failure: true
   export_schema: adc_compatible
+  build_export_artifacts: false
+  build_preprocessed_artifacts: false
   preprocess_success_only: true
   generate_report: true
+  require_all_targets_for_robot_dataset: true
 
 collection:
   config_path: configs/data_collection_config.yaml
   llm_model: gpt-5
   vlm_model: gpt-5
   use_vlm_judge: true
+  discard_failed_episodes: true
   keep_failed_raw_dataset: false
   gui: false
   execution_timeout: 5400
@@ -54,6 +58,7 @@ tasks:
     max_attempts: 60
     baseline_tag: target_validation
   - yaml: tasks/franka/pick_place/franka_pick_place_mug.yaml
+    enabled: false
     demos: 30
     max_attempts: 60
     baseline_tag: target_validation
@@ -66,6 +71,7 @@ tasks:
     max_attempts: 60
     baseline_tag: known_working
   - yaml: tasks/franka/cabinet/franka_cabinet_blocks.yaml
+    enabled: false
     demos: 30
     max_attempts: 60
     baseline_tag: pipeline_error
@@ -81,7 +87,7 @@ tasks:
     task_retry_limit: 3
   - yaml: tasks/franka/sort/franka_line_arrange.yaml
     demos: 30
-    max_attempts: 60
+    max_attempts: 150
     baseline_tag: startup_hang
     task_retry_limit: 3
   - yaml: tasks/franka/stack/franka_stack_tray.yaml

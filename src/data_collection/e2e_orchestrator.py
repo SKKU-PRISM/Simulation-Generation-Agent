@@ -60,10 +60,13 @@ class E2ERunConfig:
     output_root: str | None = None
     continue_on_failure: bool = True
     export_schema: str = ADC_COMPATIBLE_SCHEMA
+    build_export_artifacts: bool = True
+    build_preprocessed_artifacts: bool = True
     preprocess_success_only: bool = True
     generate_report: bool = True
     resume: bool = False
     cleanup_intermediates: bool = True
+    require_all_targets_for_robot_dataset: bool = True
 
 
 @dataclass(frozen=True)
@@ -72,6 +75,7 @@ class E2ECollectionConfig:
     llm_model: str = "gpt-5-mini"
     vlm_model: str = "gpt-5"
     use_vlm_judge: bool = True
+    discard_failed_episodes: bool | None = None
     keep_failed_raw_dataset: bool | None = None
     gui: bool = False
     execution_timeout: int | None = None
@@ -94,6 +98,7 @@ class E2ETaskConfig:
     requested_ref: str
     yaml_path: Path
     demos: int
+    enabled: bool = True
     max_attempts: int | None = None
     baseline_tag: str | None = None
     task_retry_limit: int | None = None
@@ -129,10 +134,15 @@ def load_e2e_batch_config(config_path: str | Path) -> E2EBatchConfig:
         output_root=run_section.get("output_root"),
         continue_on_failure=bool(run_section.get("continue_on_failure", True)),
         export_schema=str(run_section.get("export_schema", ADC_COMPATIBLE_SCHEMA)),
+        build_export_artifacts=bool(run_section.get("build_export_artifacts", True)),
+        build_preprocessed_artifacts=bool(run_section.get("build_preprocessed_artifacts", True)),
         preprocess_success_only=bool(run_section.get("preprocess_success_only", True)),
         generate_report=bool(run_section.get("generate_report", True)),
         resume=bool(run_section.get("resume", False)),
         cleanup_intermediates=bool(run_section.get("cleanup_intermediates", True)),
+        require_all_targets_for_robot_dataset=bool(
+            run_section.get("require_all_targets_for_robot_dataset", True)
+        ),
     )
     if run_cfg.export_schema != ADC_COMPATIBLE_SCHEMA:
         raise ValueError(
@@ -144,6 +154,11 @@ def load_e2e_batch_config(config_path: str | Path) -> E2EBatchConfig:
         llm_model=str(collection_section.get("llm_model", "gpt-5-mini")),
         vlm_model=str(collection_section.get("vlm_model", "gpt-5")),
         use_vlm_judge=bool(collection_section.get("use_vlm_judge", True)),
+        discard_failed_episodes=(
+            bool(collection_section["discard_failed_episodes"])
+            if "discard_failed_episodes" in collection_section
+            else None
+        ),
         keep_failed_raw_dataset=(
             bool(collection_section["keep_failed_raw_dataset"])
             if "keep_failed_raw_dataset" in collection_section
@@ -187,6 +202,7 @@ def load_e2e_batch_config(config_path: str | Path) -> E2EBatchConfig:
         raw_ref = str(task_entry.get("yaml") or task_entry.get("task") or "").strip()
         if not raw_ref:
             raise ValueError("Each task entry must define either 'yaml' or 'task'")
+        enabled = bool(task_entry.get("enabled", True))
         demos = int(task_entry.get("demos", 0))
         if demos <= 0:
             raise ValueError(f"Task '{raw_ref}' must set demos > 0")
@@ -207,6 +223,7 @@ def load_e2e_batch_config(config_path: str | Path) -> E2EBatchConfig:
                 requested_ref=raw_ref,
                 yaml_path=resolved_yaml,
                 demos=demos,
+                enabled=enabled,
                 max_attempts=max_attempts,
                 baseline_tag=(
                     str(task_entry.get("baseline_tag")).strip()
@@ -277,6 +294,8 @@ def run_e2e_batch(
     base_collection_cfg.llm_model = batch_cfg.collection.llm_model
     base_collection_cfg.vlm_model = batch_cfg.collection.vlm_model
     base_collection_cfg.use_vlm_judge = batch_cfg.collection.use_vlm_judge
+    if batch_cfg.collection.discard_failed_episodes is not None:
+        base_collection_cfg.discard_failed_episodes = batch_cfg.collection.discard_failed_episodes
     if batch_cfg.collection.keep_failed_raw_dataset is not None:
         base_collection_cfg.keep_failed_raw_dataset = batch_cfg.collection.keep_failed_raw_dataset
     base_collection_cfg.env_headless = not batch_cfg.collection.gui
@@ -315,6 +334,8 @@ def run_e2e_batch(
         "config_snapshot_path": str(snapshot_path),
         "task_runs": [],
         "robot_datasets": {},
+        "robot_dataset_build_deferred": False,
+        "robot_dataset_build_blockers": [],
         "summary": {},
         "batch_completed": False,
         "pass": False,
@@ -345,6 +366,19 @@ def run_e2e_batch(
             )
             continue
 
+        if not task_cfg.enabled:
+            task_result = _build_skipped_task_result(task_cfg)
+            task_result["task_report_path"] = str(task_json_report_path)
+            write_json_report(task_result, task_json_report_path)
+            report["task_runs"].append(task_result)
+            logger.info(
+                "Skipping disabled task %d/%d (%s)",
+                task_idx + 1,
+                len(batch_cfg.tasks),
+                task_slug,
+            )
+            continue
+
         try:
             task_result = _run_single_task_with_retries(
                 task_cfg=task_cfg,
@@ -371,21 +405,53 @@ def run_e2e_batch(
             successful_task_records.append(task_result)
         _cleanup_gpu_between_tasks()
 
-    single_robot_run = len({record["robot"] for record in successful_task_records}) <= 1
-    grouped_records = _group_successful_task_records(successful_task_records)
-    for robot_name, robot_records in sorted(grouped_records.items()):
-        robot_report = _build_robot_dataset(
-            robot_name=robot_name,
-            task_records=robot_records,
-            batch_cfg=batch_cfg,
-            single_robot_run=single_robot_run,
-            merged_raw_root=merged_raw_root,
-            exported_root=exported_root,
-            preprocessed_root=preprocessed_root,
-            lerobot_root=lerobot_root,
-            publish_reports_root=publish_reports_root,
+    robot_dataset_build_blockers: list[dict[str, Any]] = []
+    if batch_cfg.run.require_all_targets_for_robot_dataset:
+        for task_result in report["task_runs"]:
+            if task_result.get("skipped") or not task_result.get("enabled", True):
+                continue
+            if task_result.get("target_met", False):
+                continue
+            robot_dataset_build_blockers.append(
+                {
+                    "task_name": task_result.get("task_name"),
+                    "requested_demos": int(task_result.get("requested_demos", 0) or 0),
+                    "successful_dataset_episodes": int(
+                        task_result.get("successful_dataset_episodes", 0) or 0
+                    ),
+                    "remaining_requested_demos": int(
+                        task_result.get("remaining_requested_demos", 0) or 0
+                    ),
+                    "terminal_status": task_result.get("terminal_status"),
+                }
+            )
+
+    if robot_dataset_build_blockers:
+        report["robot_dataset_build_deferred"] = True
+        report["robot_dataset_build_blockers"] = robot_dataset_build_blockers
+        logger.info(
+            "Deferring robot-level dataset build until all enabled tasks reach target demos. Remaining blockers: %s",
+            ", ".join(
+                f"{entry['task_name']} ({entry['successful_dataset_episodes']}/{entry['requested_demos']})"
+                for entry in robot_dataset_build_blockers
+            ),
         )
-        report["robot_datasets"][robot_name] = robot_report
+    else:
+        single_robot_run = len({record["robot"] for record in successful_task_records}) <= 1
+        grouped_records = _group_successful_task_records(successful_task_records)
+        for robot_name, robot_records in sorted(grouped_records.items()):
+            robot_report = _build_robot_dataset(
+                robot_name=robot_name,
+                task_records=robot_records,
+                batch_cfg=batch_cfg,
+                single_robot_run=single_robot_run,
+                merged_raw_root=merged_raw_root,
+                exported_root=exported_root,
+                preprocessed_root=preprocessed_root,
+                lerobot_root=lerobot_root,
+                publish_reports_root=publish_reports_root,
+            )
+            report["robot_datasets"][robot_name] = robot_report
 
     # Cleanup intermediate directories to save disk space
     if batch_cfg.run.cleanup_intermediates and report["robot_datasets"]:
@@ -964,9 +1030,12 @@ def _build_failed_task_result(
         },
         "representative_cap_code_path": None,
         "representative_cap_code": None,
+        "discard_failed_episodes": True,
         "keep_failed_raw_dataset": False,
         "failed_raw_dataset_removed": False,
         "failed_raw_dataset_cleanup_reason": None,
+        "enabled": bool(task_cfg.enabled),
+        "skipped": False,
     }
 
 
@@ -1103,9 +1172,70 @@ def _build_task_run_report(
         "representative_cap_code": representative_code,
         "representative_episode": representative_episode,
         "collection_results": collection_results,
+        "discard_failed_episodes": bool(pipeline_result.get("discard_failed_episodes", True)),
         "keep_failed_raw_dataset": keep_failed_raw_dataset,
         "failed_raw_dataset_removed": failed_raw_dataset_removed,
         "failed_raw_dataset_cleanup_reason": failed_raw_dataset_cleanup_reason,
+        "enabled": bool(task_cfg.enabled),
+        "skipped": False,
+    }
+
+
+def _build_skipped_task_result(task_cfg: E2ETaskConfig) -> dict[str, Any]:
+    classification = classify_task_yaml(task_cfg.yaml_path)
+    task_name = _load_task_name_from_yaml(task_cfg.yaml_path)
+    return {
+        "task": task_cfg.yaml_path.stem,
+        "task_name": task_name,
+        "yaml_path": str(task_cfg.yaml_path),
+        "requested_ref": task_cfg.requested_ref,
+        "robot": _detect_robot_from_task_path(task_cfg.yaml_path),
+        "classification": asdict(classification),
+        "requested_demos": 0,
+        "max_attempts": 0,
+        "baseline_tag": task_cfg.baseline_tag,
+        "pipeline_attempt": 0,
+        "pipeline_attempts_used": 0,
+        "pipeline_retry_limit": 0,
+        "attempted_episodes": 0,
+        "successful_episodes": 0,
+        "geometry_successful_episodes": 0,
+        "vlm_successful_episodes": 0,
+        "overall_successful_episodes": 0,
+        "successful_dataset_episodes": 0,
+        "failed_episode_attempts": 0,
+        "success_rate": 0.0,
+        "success_policy": "geometry_or_vlm",
+        "pipeline_completed": True,
+        "pass": True,
+        "terminal_status": "task_disabled",
+        "target_met": True,
+        "pipeline_error": "Task disabled in batch config",
+        "pipeline_error_only": False,
+        "successful_raw_dataset": None,
+        "raw_dataset": None,
+        "output_dir": None,
+        "domain_randomization": {},
+        "failure_category": "task_disabled",
+        "failure_breakdown": {},
+        "front_video_generated": False,
+        "front_video_path": None,
+        "front_video_camera_name": None,
+        "front_video_episode": None,
+        "front_video_success_type": None,
+        "front_video_error": None,
+        "representative_env_cfg_path": None,
+        "representative_env_cfg": None,
+        "representative_cap_code_path": None,
+        "representative_cap_code": None,
+        "representative_episode": None,
+        "collection_results": {},
+        "discard_failed_episodes": True,
+        "keep_failed_raw_dataset": False,
+        "failed_raw_dataset_removed": False,
+        "failed_raw_dataset_cleanup_reason": None,
+        "enabled": False,
+        "skipped": True,
     }
 
 
@@ -1170,19 +1300,24 @@ def _build_robot_dataset(
         ],
     )
 
-    export_dir = export_dataset(
-        source_path=merged_raw_dir,
-        source_type="sim_raw",
-        schema=batch_cfg.run.export_schema,
-        output_dir=exported_root / robot_name,
-        robot_name=robot_name,
-        link_images=True,
-    )
-    preprocess_dir = preprocess_exported_dataset(
-        export_dir=export_dir,
-        output_dir=preprocessed_root / robot_name,
-        success_only=batch_cfg.run.preprocess_success_only,
-    )
+    export_dir = None
+    if batch_cfg.run.build_export_artifacts:
+        export_dir = export_dataset(
+            source_path=merged_raw_dir,
+            source_type="sim_raw",
+            schema=batch_cfg.run.export_schema,
+            output_dir=exported_root / robot_name,
+            robot_name=robot_name,
+            link_images=True,
+        )
+
+    preprocess_dir = None
+    if batch_cfg.run.build_preprocessed_artifacts and export_dir is not None:
+        preprocess_dir = preprocess_exported_dataset(
+            export_dir=export_dir,
+            output_dir=preprocessed_root / robot_name,
+            success_only=batch_cfg.run.preprocess_success_only,
+        )
 
     lerobot_dataset_root = convert_raw_dataset_to_lerobot(
         merged_raw_dir,
@@ -1190,6 +1325,13 @@ def _build_robot_dataset(
         output_root=lerobot_root,
     )
     validation_report = check_lerobot_dataset(lerobot_dataset_root, repo_id=local_repo_id)
+
+    if batch_cfg.run.cleanup_intermediates and bool(validation_report.get("pass", False)):
+        _cleanup_robot_build_dirs(
+            merged_raw_root / robot_name,
+            exported_root / robot_name,
+            preprocessed_root / robot_name,
+        )
 
     publish_report = None
     publish_report_path = None
@@ -1215,8 +1357,8 @@ def _build_robot_dataset(
         "task_count": len(task_records),
         "tasks": [record.get("task_name") for record in task_records],
         "merged_raw_dataset": str(merged_raw_dir),
-        "export_dir": str(export_dir),
-        "preprocess_dir": str(preprocess_dir),
+        "export_dir": str(export_dir) if export_dir is not None else None,
+        "preprocess_dir": str(preprocess_dir) if preprocess_dir is not None else None,
         "local_repo_id": local_repo_id,
         "lerobot_dataset_root": str(lerobot_dataset_root),
         "validation_report": validation_report,
@@ -1228,21 +1370,44 @@ def _build_robot_dataset(
     }
 
 
+def _cleanup_robot_build_dirs(*paths: Path) -> None:
+    """Remove derived robot-level build directories as soon as LeRobot validation passes."""
+
+    for path in paths:
+        if not path.exists():
+            continue
+        try:
+            shutil.rmtree(path)
+            logger.info("Cleaned derived robot build dir after LeRobot conversion: %s", path)
+        except Exception as exc:
+            logger.warning("Failed to clean derived robot build dir %s: %s", path, exc)
+
+
 def _build_batch_summary(report: dict[str, Any], batch_cfg: E2EBatchConfig) -> dict[str, Any]:
     task_runs = list(report.get("task_runs", []))
-    attempted_tasks = len(task_runs)
+    skipped_tasks = [task for task in task_runs if task.get("skipped")]
+    active_task_runs = [task for task in task_runs if not task.get("skipped")]
+    attempted_tasks = len(active_task_runs)
     configured_task_count = len(batch_cfg.tasks)
-    successful_tasks = sum(1 for task in task_runs if task.get("successful_episodes", 0) > 0)
-    merged_task_count = sum(
-        1 for task in task_runs if task.get("successful_raw_dataset")
+    successful_tasks = sum(
+        1 for task in active_task_runs if task.get("successful_episodes", 0) > 0
     )
-    target_met_task_count = sum(1 for task in task_runs if task.get("target_met"))
-    pipeline_failed_task_count = sum(1 for task in task_runs if not task.get("pipeline_completed", False))
-    requested_demos = sum(int(task.get("requested_demos", 0)) for task in task_runs)
-    collected_demos = sum(int(task.get("successful_dataset_episodes", 0)) for task in task_runs)
-    total_attempts = sum(int(task.get("attempted_episodes", 0)) for task in task_runs)
-    total_successes = sum(int(task.get("successful_episodes", 0)) for task in task_runs)
-    total_failed_attempts = sum(int(task.get("failed_episode_attempts", 0)) for task in task_runs)
+    merged_task_count = sum(
+        1 for task in active_task_runs if task.get("successful_raw_dataset")
+    )
+    target_met_task_count = sum(1 for task in active_task_runs if task.get("target_met"))
+    pipeline_failed_task_count = sum(
+        1 for task in active_task_runs if not task.get("pipeline_completed", False)
+    )
+    requested_demos = sum(int(task.get("requested_demos", 0)) for task in active_task_runs)
+    collected_demos = sum(
+        int(task.get("successful_dataset_episodes", 0)) for task in active_task_runs
+    )
+    total_attempts = sum(int(task.get("attempted_episodes", 0)) for task in active_task_runs)
+    total_successes = sum(int(task.get("successful_episodes", 0)) for task in active_task_runs)
+    total_failed_attempts = sum(
+        int(task.get("failed_episode_attempts", 0)) for task in active_task_runs
+    )
     aggregate_success_rate = 0.0 if total_attempts <= 0 else total_successes / total_attempts
     hf_repo_ids = {
         robot: robot_report.get("hf_repo_id")
@@ -1256,6 +1421,7 @@ def _build_batch_summary(report: dict[str, Any], batch_cfg: E2EBatchConfig) -> d
     return {
         "summary_guide": {
             "configured_task_count": "Config에 정의된 전체 task 수",
+            "skipped_task_count": "Config에 남아 있지만 disabled 되어 실행에서 제외된 task 수",
             "terminal_task_count": "성공/실패와 무관하게 terminal state까지 도달한 task 수",
             "task_with_success_count": "성공 episode가 하나 이상 있는 task 수",
             "target_met_task_count": "요청한 성공 demo 수를 채운 task 수",
@@ -1269,6 +1435,7 @@ def _build_batch_summary(report: dict[str, Any], batch_cfg: E2EBatchConfig) -> d
         },
         "batch_completed": bool(report.get("batch_completed", False)),
         "configured_task_count": configured_task_count,
+        "skipped_task_count": len(skipped_tasks),
         "terminal_task_count": attempted_tasks,
         "task_count": attempted_tasks,
         "task_with_success_count": successful_tasks,
@@ -1283,7 +1450,7 @@ def _build_batch_summary(report: dict[str, Any], batch_cfg: E2EBatchConfig) -> d
         "total_successful_attempts": total_successes,
         "total_failed_attempts": total_failed_attempts,
         "aggregate_success_rate": aggregate_success_rate,
-        "aggregate_failure_breakdown": _aggregate_failure_breakdown(task_runs),
+        "aggregate_failure_breakdown": _aggregate_failure_breakdown(active_task_runs),
         "failed_raw_dataset_cleanup_count": int((report.get("failed_raw_cleanup") or {}).get("removed_count", 0)),
         "llm_model": batch_cfg.collection.llm_model,
         "vlm_model": batch_cfg.collection.vlm_model,
@@ -1311,6 +1478,7 @@ def _render_markdown_report(report: dict[str, Any], batch_cfg: E2EBatchConfig) -
         "",
         f"- Batch 완료: **{summary.get('batch_completed', False)}**",
         f"- Configured task 수: **{summary.get('configured_task_count', 0)}**",
+        f"- Skipped task 수: **{summary.get('skipped_task_count', 0)}**",
         f"- Terminal task 수: **{summary.get('terminal_task_count', 0)}**",
         f"- Pipeline 실패 task 수: **{summary.get('pipeline_failed_task_count', 0)}**",
         f"- Target 달성 task 수: **{summary.get('target_met_task_count', 0)}**",
@@ -1327,6 +1495,7 @@ def _render_markdown_report(report: dict[str, Any], batch_cfg: E2EBatchConfig) -
         "## Summary 설명",
         "",
         "- `Configured task 수`: config에 정의된 전체 task 수",
+        "- `Skipped task 수`: disabled 처리되어 실행에서 제외된 task 수",
         "- `Terminal task 수`: 성공/실패와 무관하게 실행이 종료된 task 수",
         "- `성공 task 수`: 성공 episode가 1개 이상 있는 task 수",
         "- `Target 달성 task 수`: 요청한 성공 demo 수를 채운 task 수",
@@ -1372,7 +1541,7 @@ def _render_markdown_report(report: dict[str, Any], batch_cfg: E2EBatchConfig) -
     )
     successful_videos = [
         task_report for task_report in report.get("task_runs", [])
-        if task_report.get("front_video_path")
+        if task_report.get("front_video_path") and not task_report.get("skipped")
     ]
     if not successful_videos:
         lines.append("- 대표 성공 영상이 생성된 task 없음")
@@ -1395,6 +1564,8 @@ def _render_markdown_report(report: dict[str, Any], batch_cfg: E2EBatchConfig) -
         ]
     )
     for task_report in report.get("task_runs", []):
+        if task_report.get("skipped"):
+            continue
         classification = task_report.get("classification", {})
         success_rate = float(task_report.get("success_rate", 0.0))
         lines.append(
@@ -1437,6 +1608,7 @@ def _render_markdown_report(report: dict[str, Any], batch_cfg: E2EBatchConfig) -
                 f"- strict agreement 수: `{task_report.get('overall_successful_episodes', 0)}`",
                 f"- raw dataset: `{task_report.get('raw_dataset')}`",
                 f"- success-only raw dataset: `{task_report.get('successful_raw_dataset')}`",
+                f"- discard failed episodes: `{task_report.get('discard_failed_episodes')}`",
                 f"- keep failed raw dataset: `{task_report.get('keep_failed_raw_dataset')}`",
                 f"- failed raw removed: `{task_report.get('failed_raw_dataset_removed')}`",
                 f"- failed raw cleanup reason: `{task_report.get('failed_raw_dataset_cleanup_reason')}`",
@@ -2130,6 +2302,9 @@ def _load_resume_task_results(
                 report = json.load(f)
         except (json.JSONDecodeError, OSError):
             logger.warning("Resume: could not read %s, will re-run that task", report_path)
+            continue
+        if bool(report.get("skipped", False)):
+            completed[task_idx] = report
             continue
         if not (bool(report.get("pass")) and bool(report.get("target_met"))):
             continue
