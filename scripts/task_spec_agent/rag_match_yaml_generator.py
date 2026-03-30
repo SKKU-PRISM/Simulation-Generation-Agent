@@ -71,8 +71,26 @@ class RAGYAMLGenerator:
                 robot = yaml_path.parts[-3] if len(yaml_path.parts) >= 3 else ""
                 task_type = yaml_path.parts[-2] if len(yaml_path.parts) >= 2 else ""
 
-                # Create searchable text
-                search_text = f"Task: {task_name}\nDescription: {description}\nRobot: {robot}\nType: {task_type}"
+                # Extract object names for richer search text
+                object_names = [
+                    a.get("name", "") for a in data.get("assets", [])
+                    if a.get("type") in ("rigid",) and a.get("name")
+                ]
+                objects_str = ", ".join(object_names) if object_names else ""
+
+                # Extract goal description
+                goal_desc = data.get("goal", {}).get("description", "")
+
+                # Create searchable text with strong keyword signals
+                search_text = (
+                    f"{task_type} {task_type} {task_type}\n"  # boost task type
+                    f"Task: {task_name}\n"
+                    f"Type: {task_type}\n"
+                    f"Description: {description}\n"
+                    f"Goal: {goal_desc}\n"
+                    f"Objects: {objects_str}\n"
+                    f"Robot: {robot}"
+                )
 
                 doc = Document(
                     page_content=search_text,
@@ -179,17 +197,27 @@ class RAGYAMLGenerator:
         Returns:
             Content of the most similar existing YAML file
         """
-        # Build enriched search query from pipeline stages
-        query_parts = [task_description]
-        if parsed_task:
-            if hasattr(parsed_task, 'objects') and parsed_task.objects:
-                query_parts.append(f"Objects: {', '.join(parsed_task.objects)}")
-            if hasattr(parsed_task, 'actions') and parsed_task.actions:
-                query_parts.append(f"Actions: {', '.join(parsed_task.actions)}")
-        if task_plan:
-            query_parts.append(f"Task: {task_plan.task_name}")
+        # Build search query as natural language sentence
+        # Structured formats ("Objects: x | Actions: y") match poorly against
+        # the DB's natural-language search text, so we reconstruct a sentence.
+        query = None
+        if task_plan and hasattr(task_plan, 'description') and task_plan.description:
+            # task_plan.description is already an English sentence from the LLM
+            query = task_plan.description
+        elif parsed_task:
+            # Build a natural sentence from parsed components
+            parts = []
+            actions = getattr(parsed_task, 'actions', []) or []
+            objects = getattr(parsed_task, 'objects', []) or []
+            if actions:
+                parts.append(" ".join(actions))
+            if objects:
+                parts.append("the " + " and ".join(objects))
+            query = " ".join(parts) if parts else None
 
-        query = " | ".join(query_parts)
+        # Fall back to raw task_description (works fine for English input)
+        if not query:
+            query = task_description
 
         # Retrieve the single most similar example
         examples = self.retrieve_similar_examples(query, k=1)

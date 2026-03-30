@@ -1125,6 +1125,8 @@ Use this structure/pattern, but fill in values from the YAML above.
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"  # Force unbuffered stdout in subprocess
         env["ISAACLAB_SUCCESS_MARKER"] = str(marker_file)
+        if "DISPLAY" not in env:
+            env["DISPLAY"] = ":0"  # Required for headless camera rendering
 
         try:
             result = subprocess.run(
