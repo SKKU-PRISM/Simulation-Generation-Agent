@@ -473,7 +473,7 @@ def _build_reset_event_block(asset: dict[str, Any]) -> str:
             "    func=randomize_static_asset_pose,",
             '    mode="reset",',
             "    params={",
-            f"        \"prim_path\": {asset.get('prim_path', f'/World/{asset['name']}')!r},",
+            f"        \"prim_path\": {asset.get('prim_path', '/World/' + asset.get('name', 'obj'))!r},",
             f"        \"base_pos\": {_tuple(asset.get('position', [0.0, 0.0, 0.0]))},",
             f"        \"base_quat\": {_tuple(asset.get('rotation', [1.0, 0.0, 0.0, 0.0]))},",
             f"        \"position_range\": { {axis: pose_range[axis] for axis in ('x', 'y', 'z') if axis in pose_range}!r},",

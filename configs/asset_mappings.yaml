@@ -1,0 +1,225 @@
+# Asset Mappings Configuration
+# Maps common object names to Isaac Sim USD assets or primitive configurations
+#
+# Structure:
+#   object_name:
+#     source: "usd" | "primitive"
+#     asset_path: USD path (if source=usd)
+#     primitive: primitive type (if source=primitive)
+#     scale: [x, y, z] default scale
+#     physics: default physics properties
+
+# Common objects from Isaac Sim library
+objects:
+  # Blocks and Cubes
+  cube:
+    source: primitive
+    primitive: cube
+    scale: [0.05, 0.05, 0.05]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.1
+
+  dexcube:
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd"
+    scale: [0.8, 0.8, 0.8]
+    physics:
+      rigid_body: true
+      collision: true
+      solver_position_iterations: 16
+      solver_velocity_iterations: 1
+      max_angular_velocity: 1000.0
+      max_linear_velocity: 1000.0
+      max_depenetration_velocity: 5.0
+
+  block:
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd"
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: true
+      collision: true
+
+  # YCB Objects
+  mustard_bottle:
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/006_mustard_bottle.usd"
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: true
+      collision: true
+
+  cracker_box:
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/003_cracker_box.usd"
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: true
+      collision: true
+
+  soup_can:
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/005_tomato_soup_can.usd"
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: true
+      collision: true
+
+  banana:
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/YCB/Axis_Aligned/011_banana.usd"
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      rigid_body: true
+      collision: true
+
+  # Primitives
+  sphere:
+    source: primitive
+    primitive: sphere
+    scale: [0.05, 0.05, 0.05]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.1
+
+  cylinder:
+    source: primitive
+    primitive: cylinder
+    scale: [0.05, 0.05, 0.1]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.15
+
+  cone:
+    source: primitive
+    primitive: cone
+    scale: [0.05, 0.05, 0.1]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.1
+
+  # Gears
+  gear:
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Gears/gear_0.usd"
+    scale: [10.0, 10.0, 10.0]
+    physics:
+      rigid_body: true
+      collision: true
+
+  # Markers (visual only, no physics)
+  marker:
+    source: primitive
+    primitive: sphere
+    scale: [0.05, 0.05, 0.05]
+    color: [1.0, 0.0, 0.0]
+    physics:
+      rigid_body: false
+      collision: false
+
+  target_marker:
+    source: primitive
+    primitive: cube
+    scale: [0.06, 0.06, 0.003]
+    color: [0.0, 0.8, 0.0]
+    physics:
+      rigid_body: false
+      collision: false
+
+# Furniture and Environment
+furniture:
+  table:
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    scale: [1.0, 1.0, 1.0]
+    rotation: [0.707, 0, 0, 0.707]  # wxyz: Z-axis 90-degree rotation
+    physics:
+      collision: true
+
+  cabinet:
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Sektion_Cabinet/sektion_cabinet_instanceable.usd"
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  drawer:
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Sektion_Cabinet/sektion_cabinet_instanceable.usd"
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  shelf:
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/Stand/stand_instanceable.usd"
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  tray:
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/KLT_Bin/small_KLT.usd"
+    scale: [10.0, 10.0, 10.0]
+    physics:
+      collision: true
+
+# Robot-specific end-effector frames
+robot_ee_frames:
+  franka:
+    body: panda_hand
+    offset_position: [0, 0, 0.1034]
+    tcp_frame: null
+
+  openarm:
+    body: openarm_hand
+    offset_position: null
+    tcp_frame: openarm_ee_tcp
+
+  ur10:
+    body: ee_link
+    offset_position: null
+    tcp_frame: null
+
+# Default physics parameters per robot type
+robot_physics:
+  franka:
+    self_collision: true
+    solver_position_iterations: 8
+    solver_velocity_iterations: 0
+    max_depenetration_velocity: 5.0
+
+  openarm:
+    self_collision: false
+    solver_position_iterations: 8
+    solver_velocity_iterations: 0
+    max_depenetration_velocity: 5.0
+
+  ur10:
+    self_collision: false
+    solver_position_iterations: 8
+    solver_velocity_iterations: 0
+    max_depenetration_velocity: 5.0
+
+# Common positions for spawning objects
+spawn_positions:
+  table_center:
+    position: [0.5, 0.0, 0.055]
+    description: "Center of table surface"
+
+  table_left:
+    position: [0.4, -0.15, 0.055]
+    description: "Left side of table"
+
+  table_right:
+    position: [0.5, 0.15, 0.055]
+    description: "Right side of table"
+
+  above_table:
+    position: [0.5, 0.0, 0.3]
+    description: "Above table center"

@@ -1,0 +1,86 @@
+# UR10 Robot Task Template
+# Version: 1.0.0
+# This template provides default configurations for UR10 robot tasks
+
+task:
+  name: "{TASK_NAME}"
+  description: "{TASK_DESCRIPTION}"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.0167                   # ~60 Hz simulation (1/60)
+  decimation: 2                      # control at ~30 Hz
+  episode_length: 12.0               # seconds (default)
+  render_interval: 2
+  physx:
+    bounce_threshold: 0.2            # m/s (reach task default)
+    friction_correlation_distance: 0.025  # m
+
+scene:
+  lighting:
+    type: dome
+    intensity: 2500
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]          # IsaacLab convention
+
+assets:
+  # UR10 robot (UR10_CFG)
+  - name: robot
+    type: articulation
+    source: usd
+    robot_type: ur10
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/UniversalRobots/ur10/ur10.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    initial_joints:                   # UR10_CFG default joint positions
+      shoulder_pan_joint: 0.0
+      shoulder_lift_joint: -1.712
+      elbow_joint: 1.712
+      wrist_1_joint: 0.0
+      wrist_2_joint: 0.0
+      wrist_3_joint: 0.0
+    actuators:
+      arm:
+        joint_names: ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint",
+                      "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"]
+        effort_limit: 87.0            # N*m
+        stiffness: 800.0              # N*m/rad
+        damping: 40.0                 # N*m*s/rad
+    ee_frame:
+      body: ee_link
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.55, 0.0, 0.0]       # UR10 default table position
+    rotation: [0.707, 0, 0, 0.707]   # wxyz: Z-axis 90-degree rotation
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # Additional assets will be inserted here by the generator
+
+goal:
+  description: "{GOAL_DESCRIPTION}"
+  conditions: []  # Will be populated by generator
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.5, 1.2, 1.0]
+  target: [0.3, 0, 0.3]
+  fov: 60
+  resolution: [1280, 720]

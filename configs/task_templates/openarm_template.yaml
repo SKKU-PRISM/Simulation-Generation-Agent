@@ -1,0 +1,105 @@
+# OpenArm Robot Task Template
+# Version: 1.0.0
+# This template provides default configurations for OpenArm Unimanual robot tasks
+
+task:
+  name: "{TASK_NAME}"
+  description: "{TASK_DESCRIPTION}"
+  version: "1.0.0"
+
+simulation:
+  gravity: [0, 0, -9.81]             # m/s^2
+  timestep: 0.01                     # 100 Hz simulation
+  decimation: 5                      # control at 20 Hz (every 5 sim steps)
+  episode_length: 15.0               # seconds (default, longer for slower OpenArm)
+  render_interval: 2
+  physx:
+    bounce_threshold: 0.01           # m/s
+    friction_correlation_distance: 0.00625  # m
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]          # IsaacLab convention
+
+assets:
+  # OpenArm Unimanual robot
+  - name: robot
+    type: articulation
+    source: usd
+    robot_type: openarm
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Robots/OpenArm/openarm_unimanual/openarm_unimanual.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]           # wxyz quaternion
+    initial_joints:
+      openarm_joint1: 1.57           # pi/2
+      openarm_joint2: 0.0
+      openarm_joint3: -1.57          # -pi/2
+      openarm_joint4: 1.57           # pi/2
+      openarm_joint5: 0.0
+      openarm_joint6: 0.0
+      openarm_joint7: 0.0
+      openarm_finger_joint1: 0.044   # gripper open
+      openarm_finger_joint2: 0.044   # gripper open
+    actuators:
+      arm:
+        joint_names: ["openarm_joint1", "openarm_joint2", "openarm_joint3", "openarm_joint4", "openarm_joint5", "openarm_joint6", "openarm_joint7"]
+        stiffness: 80.0
+        damping: 4.0
+        effort_limit_per_joint:
+          openarm_joint1: 40.0
+          openarm_joint2: 40.0
+          openarm_joint3: 27.0
+          openarm_joint4: 27.0
+          openarm_joint5: 7.0
+          openarm_joint6: 7.0
+          openarm_joint7: 7.0
+      gripper:
+        joint_names: ["openarm_finger_joint1", "openarm_finger_joint2"]
+        effort_limit: 333.33          # N
+        stiffness: 2000.0
+        damping: 100.0
+        open_position: 0.044
+        close_position: 0.0
+    ee_frame:
+      body: openarm_hand
+      tcp_frame: openarm_ee_tcp
+    physics:
+      self_collision: false
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  # SeattleLabTable (same as other OpenArm tasks)
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]   # wxyz: Z-axis 90-degree rotation
+    scale: [1.0, 1.0, 1.0]
+    physics:
+      collision: true
+
+  # Additional assets will be inserted here by the generator
+
+goal:
+  description: "{GOAL_DESCRIPTION}"
+  conditions: []  # Will be populated by generator
+
+camera:
+  prim_path: "/World/Camera"
+  position: [1.2, 1.0, 0.8]          # front-oblique tabletop view (OpenArm profile)
+  target: [0.3, 0, 0.2]              # looking at table center (closer for OpenArm)
+  fov: 60
+  resolution: [1280, 720]

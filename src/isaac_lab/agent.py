@@ -10,8 +10,10 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -28,6 +30,7 @@ from src.common.llm_client import AzureOpenAIClient
 from src.common.robot_names import contains_robot_name, normalize_robot_name
 from src.common.task_docs import dump_task_document, load_task_document
 from src.isaac_lab.assembling_kits_template import build_assembling_kits_template
+from src.isaac_lab.scene_capture import build_capture_script
 
 console = Console()
 
@@ -1109,13 +1112,10 @@ Use this structure/pattern, but fill in values from the YAML above.
         if enable_cameras:
             isaaclab_cmd += " --enable_cameras"
 
-        # Wrap with conda run to ensure correct Python environment
-        cmd = [
-            "conda", "run", "-n", conda_env, "--no-capture-output",
-            "bash", "-c", isaaclab_cmd,
-        ]
+        # Execute directly via isaaclab.sh (handles its own Python env)
+        cmd = ["bash", "-c", isaaclab_cmd]
 
-        console.print(f"  [blue]Executing[/blue]: conda run -n {conda_env} -- {isaaclab_cmd}")
+        console.print(f"  [blue]Executing[/blue]: {isaaclab_cmd}")
 
         # Marker file for reliable SUCCESS detection (stdout can be lost when simulation_app.close() hangs)
         marker_file = output_dir / ".success_marker"
@@ -1156,6 +1156,16 @@ Use this structure/pattern, but fill in values from the YAML above.
     def execute_isaaclab(self, output_dir: Path) -> tuple[bool, str]:
         """Execute generated run_env.py via isaaclab.sh inside the conda env."""
         return self._execute_isaaclab_script(output_dir, "run_env.py")
+
+    @staticmethod
+    def _detect_env_class(output_dir: Path) -> str | None:
+        """Detect the EnvCfg class name from generated env_cfg.py."""
+        env_cfg_path = output_dir / "env_cfg.py"
+        if not env_cfg_path.exists():
+            return None
+        content = env_cfg_path.read_text()
+        match = re.search(r"class\s+(\w+EnvCfg)\b", content)
+        return match.group(1) if match else None
 
     def capture_scene(self, output_dir: Path) -> tuple[bool, str]:
         """Capture a scene image for template-based tasks."""
@@ -1257,10 +1267,10 @@ Use this structure/pattern, but fill in values from the YAML above.
             border_style="blue",
         ))
 
-        # Output directory
+        # Output directory: outputs/{timestamp}_{task_name}/
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         task_slug = task_name.lower().replace(" ", "_")
-        output_dir = self.output_dir / f"{task_slug}_{timestamp}"
+        output_dir = self.output_dir / f"{timestamp}_{task_slug}"
 
         if use_assembling_kits_template:
             console.print("[bold]Step 1:[/bold] Using deterministic AssemblingKits template...")
@@ -1311,6 +1321,9 @@ Use this structure/pattern, but fill in values from the YAML above.
                 console.print(f"[green bold]SUCCESS[/green bold] on attempt {attempt}")
                 result = {"success": True, "output_dir": str(output_dir), "attempts": attempt, "error": None}
 
+                # Copy task YAML to output dir for traceability
+                shutil.copy2(yaml_path, output_dir / "task.yaml")
+
                 if evaluate:
                     console.print("[bold]Step 5:[/bold] Running quality evaluation...")
                     from src.isaac_lab.evaluator import IsaacLabEvaluator
@@ -1321,13 +1334,40 @@ Use this structure/pattern, but fill in values from the YAML above.
                     result["evaluation"] = eval_result
                     result["eval_score"] = eval_result.get("total_score", 0)
 
+                # Debug capture: 3-angle screenshots for all tasks
+                console.print("[bold]Step 6:[/bold] Capturing debug screenshots (front/top/wrist)...")
                 if use_assembling_kits_template:
-                    console.print("[bold]Step 6:[/bold] Capturing scene image...")
+                    # AssemblingKits: use existing single-camera capture
                     captured, capture_output = self.capture_scene(output_dir)
                     if captured and (output_dir / "scene_capture.png").exists():
                         result["scene_capture"] = str(output_dir / "scene_capture.png")
                     else:
                         result["scene_capture_error"] = capture_output[-500:] if capture_output else "Unknown capture error"
+                else:
+                    # General tasks: generate + run 3-angle capture script
+                    env_class = self._detect_env_class(output_dir)
+                    if env_class:
+                        capture_code = build_capture_script(env_class, robot)
+                        (output_dir / "capture_scene.py").write_text(capture_code)
+                        captured, capture_output = self.capture_scene(output_dir)
+                        debug_dir = output_dir / "debug"
+                        if captured and debug_dir.exists() and any(debug_dir.glob("*.png")):
+                            result["debug_captures"] = [str(p) for p in sorted(debug_dir.glob("*.png"))]
+                            console.print(f"  Saved {len(result['debug_captures'])} screenshots to debug/")
+                        else:
+                            result["debug_capture_error"] = capture_output[-500:] if capture_output else "Capture failed"
+                            console.print(f"  [yellow]Warning:[/yellow] Debug capture failed")
+                    else:
+                        console.print("  [yellow]Warning:[/yellow] Could not detect env class, skipping capture")
+
+                # Save result.json
+                result["timestamp"] = timestamp
+                result["task_name"] = task_name
+                result["robot"] = robot
+                result["category"] = category
+                result["yaml_path"] = yaml_path
+                with open(output_dir / "result.json", "w") as f:
+                    json.dump(result, f, indent=2, ensure_ascii=False)
 
                 return result
 
