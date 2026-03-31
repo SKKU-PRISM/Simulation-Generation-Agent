@@ -1,46 +1,25 @@
 """
-Centralized import bridge for AutoDataCollector (ADC) submodule.
+Import bridge for kinematics and judge utilities.
 
-ADC is a git submodule at external/AutoDataCollector/. This module provides
-clean import functions with graceful fallback when ADC is not initialized.
-
-Problem: ADC's ``lerobot_cap/__init__.py`` imports hardware modules
-(FeetechController, DynamixelController) which require ``feetech-servo-sdk``.
-Since ADC is read-only, we use ``importlib`` to load individual ``.py`` files
-directly, bypassing the package ``__init__.py`` chain.
-
-The ``judge/`` package has no hardware dependencies and can be imported
-normally via ``sys.path``.
+Previously loaded from the ADC submodule (external/AutoDataCollector/).
+Now uses SGA's internal ``src/kinematics/`` and ``src/common/judge_prompts``
+packages directly.
 
 Usage::
 
     from src.data_collection.adc_imports import get_kinematics_engine
 
-    KinematicsEngine = get_kinematics_engine()  # raises ImportError if unavailable
+    KinematicsEngine = get_kinematics_engine()
 """
 
 from __future__ import annotations
 
-import importlib.util
 import logging
-import os
-import sys
 from pathlib import Path
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Project root: two levels up from this file (src/data_collection/adc_imports.py)
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-# ADC location: env override > submodule
-_ADC_PATH_OVERRIDE = os.environ.get("ADC_PATH")
-if _ADC_PATH_OVERRIDE:
-    _ADC_ROOT = Path(_ADC_PATH_OVERRIDE)
-else:
-    _ADC_ROOT = _PROJECT_ROOT / "external" / "AutoDataCollector"
-
-_ADC_SRC = _ADC_ROOT / "src"
 
 
 # ------------------------------------------------------------------ #
@@ -49,87 +28,45 @@ _ADC_SRC = _ADC_ROOT / "src"
 
 
 def is_adc_available() -> bool:
-    """Check if ADC submodule is initialized and accessible."""
-    return (
-        _ADC_SRC.exists()
-        and (_ADC_SRC / "lerobot_cap" / "kinematics" / "engine.py").is_file()
-    )
+    """Always True — kinematics are now internal to SGA."""
+    return True
 
 
 def get_adc_root() -> Path:
-    """Return the ADC repository root (for assets/urdf/ etc)."""
-    if not _ADC_ROOT.exists():
-        raise ImportError(
-            f"ADC not found at {_ADC_ROOT}. "
-            "Run: git submodule update --init external/AutoDataCollector"
-        )
-    return _ADC_ROOT
+    """Return the SGA project root (replaces former ADC root)."""
+    return _PROJECT_ROOT
 
 
 # ------------------------------------------------------------------ #
-# Internal: importlib file loader (bypasses __init__.py)
-# ------------------------------------------------------------------ #
-
-
-def _load_module_from_file(module_name: str, file_path: Path) -> Any:
-    """Load a Python module directly from file path.
-
-    This bypasses the package ``__init__.py`` chain, avoiding hardware
-    dependency imports in ``lerobot_cap/__init__.py``.
-    """
-    if not file_path.is_file():
-        raise ImportError(f"Module file not found: {file_path}")
-
-    # Return cached module if already loaded
-    if module_name in sys.modules:
-        return sys.modules[module_name]
-
-    spec = importlib.util.spec_from_file_location(module_name, str(file_path))
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot create module spec for {file_path}")
-
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-# ------------------------------------------------------------------ #
-# lerobot_cap imports (importlib — bypass hardware __init__.py)
+# Kinematics imports (src/kinematics/)
 # ------------------------------------------------------------------ #
 
 
 def get_kinematics_engine():
-    """Import and return ``KinematicsEngine`` class from ADC.
+    """Return ``KinematicsEngine`` class.
 
     Requires: ``pinocchio`` (pin) package installed.
-
-    Raises:
-        ImportError: If ADC submodule or pinocchio is not available.
     """
-    engine_path = _ADC_SRC / "lerobot_cap" / "kinematics" / "engine.py"
-    mod = _load_module_from_file("_adc_kinematics_engine", engine_path)
-    return mod.KinematicsEngine
+    from src.kinematics.engine import KinematicsEngine
+    return KinematicsEngine
 
 
 def get_calibration_limits_loader():
-    """Import and return ADC's ``load_calibration_limits`` helper."""
-    calib_path = _ADC_SRC / "lerobot_cap" / "kinematics" / "calibration_limits.py"
-    mod = _load_module_from_file("_adc_calibration_limits", calib_path)
-    return mod.load_calibration_limits
+    """Return ``load_calibration_limits`` helper."""
+    from src.kinematics.calibration_limits import load_calibration_limits
+    return load_calibration_limits
 
 
 def get_frame_transformer():
-    """Import and return ADC's ``FrameTransformer`` class."""
-    transforms_path = _ADC_SRC / "lerobot_cap" / "transforms.py"
-    mod = _load_module_from_file("_adc_transforms", transforms_path)
-    return mod.FrameTransformer
+    """Return ``FrameTransformer`` class."""
+    from src.kinematics.transforms import FrameTransformer
+    return FrameTransformer
 
 
 def get_interpolation_module():
-    """Import and return ADC's interpolation module.
+    """Return the interpolation module.
 
-    Available functions on the returned module:
+    Available functions:
     - ``smoothstep(t)``
     - ``smooth_linear_interpolation(start, end, num_points, smooth_type)``
     - ``s_curve_profile(t, accel_ratio)``
@@ -138,47 +75,23 @@ def get_interpolation_module():
     - ``cubic_interpolation(start, end, num_points)``
 
     Requires: ``scipy`` package installed.
-
-    Raises:
-        ImportError: If ADC submodule or scipy is not available.
     """
-    interp_path = _ADC_SRC / "lerobot_cap" / "planning" / "interpolation.py"
-    return _load_module_from_file("_adc_interpolation", interp_path)
+    from src.kinematics import interpolation
+    return interpolation
 
 
 # ------------------------------------------------------------------ #
-# judge imports (sys.path — no hardware dependencies)
+# Judge prompt imports (src/common/judge_prompts.py)
 # ------------------------------------------------------------------ #
-
-_judge_path_registered = False
-
-
-def _ensure_judge_path():
-    """Add ADC root to sys.path for judge package import."""
-    global _judge_path_registered
-    if _judge_path_registered:
-        return
-
-    if not _ADC_ROOT.exists():
-        raise ImportError(
-            f"ADC not found at {_ADC_ROOT}. "
-            "Run: git submodule update --init external/AutoDataCollector"
-        )
-
-    adc_root_str = str(_ADC_ROOT)
-    if adc_root_str not in sys.path:
-        sys.path.insert(0, adc_root_str)
-    _judge_path_registered = True
 
 
 def get_judge_prompts():
-    """Import ADC's judge prompt templates.
+    """Return judge prompt templates.
 
     Returns:
         Tuple of (JUDGE_SYSTEM_PROMPT: str, build_judge_prompt: callable)
     """
-    _ensure_judge_path()
-    from judge.forward_execution.prompt import (  # type: ignore[import-untyped]
+    from src.common.judge_prompts import (
         JUDGE_SYSTEM_PROMPT,
         build_judge_prompt,
     )
@@ -186,12 +99,11 @@ def get_judge_prompts():
 
 
 def get_task_judge():
-    """Import and return ``TaskJudge`` class from ADC's judge module.
+    """Not available — use ``SimJudge`` (sim_judge.py) instead.
 
-    Note: For SGA usage, prefer ``SimJudge`` (sim_judge.py) which uses
-    ADC prompts with SGA's ``AzureOpenAIClient`` instead of ADC's
-    direct OpenAI calls.
+    Raises NotImplementedError as TaskJudge was ADC-specific and is
+    replaced by SGA's SimJudge which uses Azure OpenAI.
     """
-    _ensure_judge_path()
-    from judge.forward_execution.judge import TaskJudge  # type: ignore[import-untyped]
-    return TaskJudge
+    raise NotImplementedError(
+        "TaskJudge is no longer available. Use SimJudge from sim_judge.py instead."
+    )
