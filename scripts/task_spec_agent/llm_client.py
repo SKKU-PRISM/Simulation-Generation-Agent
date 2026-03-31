@@ -188,6 +188,18 @@ class AzureLLMClient(BaseLLMClient):
         """
         try:
             response = self.client.invoke(messages)
+            try:
+                usage = getattr(response, "usage_metadata", None)
+                if usage:
+                    from src.common.token_tracker import tracker
+                    tracker.record(
+                        step="task_spec_agent",
+                        model=getattr(self, "model_name", "azure"),
+                        input_tokens=usage.get("input_tokens", 0),
+                        output_tokens=usage.get("output_tokens", 0),
+                    )
+            except Exception:
+                pass
             return response.content
         except Exception as e:
             if retry_count < self.max_retries:

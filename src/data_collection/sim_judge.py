@@ -434,6 +434,14 @@ class SimJudge:
                 model=self._model,
                 input=messages,
             )
+            if hasattr(response, "usage") and response.usage:
+                from src.common.token_tracker import tracker
+                tracker.record(
+                    step="vlm_judge",
+                    model=self._model,
+                    input_tokens=getattr(response.usage, "input_tokens", 0),
+                    output_tokens=getattr(response.usage, "output_tokens", 0),
+                )
             raw_text = response.output_text
         except Exception as e:
             logger.error(f"SimJudge VLM call failed: {e}")

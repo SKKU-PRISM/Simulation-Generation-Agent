@@ -71,6 +71,14 @@ class AzureOpenAIClient:
                 response = self.client.responses.create(**kwargs)
             else:
                 raise
+        if hasattr(response, "usage") and response.usage:
+            from src.common.token_tracker import tracker
+            tracker.record(
+                step="llm_generate",
+                model=self.model,
+                input_tokens=getattr(response.usage, "input_tokens", 0),
+                output_tokens=getattr(response.usage, "output_tokens", 0),
+            )
         return response.output_text
 
     def _supports_temperature(self) -> bool:
