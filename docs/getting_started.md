@@ -1,10 +1,7 @@
 # 설치 가이드
 
-대상: 처음 이 레포를 실행하는 사용자  
-이 문서가 다루는 것: 설치, 외부 의존성 연결, 첫 성공 실행  
+대상: 처음 이 레포를 실행하는 사용자
 세부 CLI 옵션과 결과 해석: `docs/usage.md`
-
-이 레포는 세 경로를 제공한다. 기본 설치 대상은 **IsaacLab Pipeline**이며, Isaac Sim과 Data Collection은 선택 확장이다.
 
 ## 1. 공통 설치
 
@@ -19,21 +16,22 @@ cp .env.example .env
 필수 `.env`:
 
 ```bash
-AZURE_OPENAI_API_KEY=your-key
-AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1/
+OPENAI_API_KEY=your-openai-api-key
+OPENAI_BASE_URL=https://api.openai.com/v1/
 ```
 
 선택 설정:
 
 ```bash
-# VLM backends
+# VLM backends (Isaac Sim 시각 검증용)
 # ANTHROPIC_API_KEY=...
 # GOOGLE_API_KEY=...
-# OLLAMA_BASE_URL=http://localhost:11434
 
 # Paths
 # ISAACLAB_PATH=/home/you/workspace/IsaacLab
-# ADC_PATH=/home/you/workspace/AutoDataCollector
+
+# 토큰 사용량 추적
+# TOKEN_USAGE_FILE=outputs/token_usage.jsonl
 ```
 
 ## 2. IsaacLab 설치 (주력 경로)
@@ -93,7 +91,6 @@ Data Collection은 IsaacLab 위에서 동작한다.
 ```bash
 pip install -e ".[data-collection]"
 pip install pin
-git submodule update --init external/AutoDataCollector
 ```
 
 확인:
@@ -106,18 +103,23 @@ python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml --he
 
 ## 5. 첫 성공 실행 권장 순서
 
-### IsaacLab
+### Full Pipeline (NL → YAML → IsaacLab → CAP → Video)
+
+```bash
+bash scripts/run_full_test.sh
+```
+
+### IsaacLab 단독 실행
 
 ```bash
 python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml --evaluate
 ```
 
 성공 기준:
-
 - `outputs/isaaclab/<run_dir>/env_cfg.py`
 - `outputs/isaaclab/<run_dir>/eval_report.json`
 
-### Data Collection
+### Data Collection 단독 실행
 
 ```bash
 python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml \
@@ -125,12 +127,10 @@ python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml \
 ```
 
 성공 기준:
-
 - `outputs/data_collection/<run_dir>/collection_results.json`
 - `outputs/data_collection/<run_dir>/raw_dataset/`
-- `outputs/data_collection/<run_dir>/COLLECTION_COMPLETE_MARKER`
 
-### 기본 학습 준비 경로
+### 학습 준비 경로
 
 ```bash
 python3 scripts/export_dataset.py \
@@ -141,27 +141,6 @@ python3 scripts/export_dataset.py \
 python3 scripts/preprocess_dataset.py \
   outputs/exported_datasets/<export_dir> \
   --output-dir outputs/preprocessed_datasets
-```
-
-### 선택: local LeRobot dataset 생성
-
-```bash
-python3 scripts/convert_lerobot_dataset.py \
-  outputs/data_collection/<run_dir>/raw_dataset \
-  --repo-id local/<dataset_name>
-python3 scripts/check_lerobot_dataset.py \
-  outputs/data_collection/<run_dir>/local/<dataset_name> \
-  --repo-id local/<dataset_name>
-```
-
-필요 시 아래처럼 Hub 업로드를 수행한다.
-
-```bash
-python3 scripts/publish_lerobot_dataset.py \
-  outputs/data_collection/<run_dir>/local/<dataset_name> \
-  --repo-id <org>/<dataset_name> \
-  --local-repo-id local/<dataset_name> \
-  --private
 ```
 
 ## 6. 다음에 볼 문서
