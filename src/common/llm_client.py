@@ -16,22 +16,22 @@ class AzureOpenAIClient:
     """Thin wrapper around Azure OpenAI Responses API."""
 
     def __init__(self, model: str | None = None):
-        api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+        api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
             raise EnvironmentError(
-                "AZURE_OPENAI_API_KEY not set. "
+                "OPENAI_API_KEY not set. "
                 "Add it to .env file or set the environment variable.\n"
-                "  echo 'AZURE_OPENAI_API_KEY=your-key-here' >> .env"
+                "  echo 'OPENAI_API_KEY=your-key-here' >> .env"
             )
 
-        base_url = os.environ.get("AZURE_OPENAI_BASE_URL")
+        base_url = os.environ.get("OPENAI_BASE_URL")
         if not base_url:
             raise EnvironmentError(
-                "AZURE_OPENAI_BASE_URL not set. "
+                "OPENAI_BASE_URL not set. "
                 "Add it to .env file or set the environment variable.\n"
-                "  echo 'AZURE_OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1/' >> .env"
+                "  echo 'OPENAI_BASE_URL=https://your-resource.openai.azure.com/openai/v1/' >> .env"
             )
-        self.model = model or os.environ.get("AZURE_OPENAI_MODEL", "gpt-5-mini")
+        self.model = model or os.environ.get("OPENAI_MODEL", "gpt-5-mini")
 
         self.client = OpenAI(api_key=api_key, base_url=base_url)
 

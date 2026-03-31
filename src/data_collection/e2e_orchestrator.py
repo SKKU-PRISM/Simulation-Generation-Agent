@@ -2346,7 +2346,7 @@ def _resolve_batch_root(output_root: str | None) -> Path:
 
 def _ensure_batch_environment(batch_cfg: E2EBatchConfig) -> None:
     missing: list[str] = []
-    for env_var in ("AZURE_OPENAI_API_KEY", "AZURE_OPENAI_BASE_URL"):
+    for env_var in ("OPENAI_API_KEY", "OPENAI_BASE_URL"):
         if not os.environ.get(env_var):
             missing.append(env_var)
 

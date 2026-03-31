@@ -398,7 +398,7 @@ class OllamaVLMEvaluator(BaseVLMEvaluator):
 class AzureVLMEvaluator(BaseVLMEvaluator):
     """Evaluates scenes using Azure OpenAI Vision API (gpt-5-mini).
 
-    Uses the same AZURE_OPENAI_API_KEY and AZURE_OPENAI_BASE_URL
+    Uses the same OPENAI_API_KEY and OPENAI_BASE_URL
     environment variables as the IsaacLab code generation pipeline.
     """
 
@@ -412,15 +412,15 @@ class AzureVLMEvaluator(BaseVLMEvaluator):
         if _OpenAI is None:
             raise ImportError("openai package is required. Install with: pip install openai")
 
-        api_key = os.environ.get("AZURE_OPENAI_API_KEY")
-        base_url = os.environ.get("AZURE_OPENAI_BASE_URL")
+        api_key = os.environ.get("OPENAI_API_KEY")
+        base_url = os.environ.get("OPENAI_BASE_URL")
         if not api_key or not base_url:
             raise ValueError(
-                "AZURE_OPENAI_API_KEY and AZURE_OPENAI_BASE_URL must be set"
+                "OPENAI_API_KEY and OPENAI_BASE_URL must be set"
             )
 
         self.client = _OpenAI(api_key=api_key, base_url=base_url)
-        self.model = model or os.environ.get("AZURE_OPENAI_MODEL", "gpt-5-mini")
+        self.model = model or os.environ.get("OPENAI_MODEL", "gpt-5-mini")
         self.max_tokens = max_tokens
 
     @staticmethod
@@ -428,8 +428,8 @@ class AzureVLMEvaluator(BaseVLMEvaluator):
         """Check if Azure OpenAI API is available."""
         return (
             _OpenAI is not None
-            and os.environ.get("AZURE_OPENAI_API_KEY") is not None
-            and os.environ.get("AZURE_OPENAI_BASE_URL") is not None
+            and os.environ.get("OPENAI_API_KEY") is not None
+            and os.environ.get("OPENAI_BASE_URL") is not None
         )
 
     def evaluate(
@@ -1095,7 +1095,7 @@ def create_evaluator(
     Args:
         backend: "auto", "azure", "claude", "gemini", "ollama", "mock", "gt_comparison", or "gemini_gt"
             - "auto": Try Azure, Gemini, Claude, Ollama, then Mock
-            - "azure": Use Azure OpenAI Vision API (requires AZURE_OPENAI_API_KEY + AZURE_OPENAI_BASE_URL)
+            - "azure": Use Azure OpenAI Vision API (requires OPENAI_API_KEY + OPENAI_BASE_URL)
             - "claude": Use Claude Vision API (requires ANTHROPIC_API_KEY)
             - "gemini": Use Google Gemini Vision API (requires GOOGLE_API_KEY) - FREE
             - "ollama": Use Ollama with LLaVA (requires Ollama running)

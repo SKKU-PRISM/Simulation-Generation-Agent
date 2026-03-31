@@ -3509,8 +3509,8 @@ class DataCollectionPipeline:
             isaaclab_cmd = f"{isaaclab_sh} -p {runner_path}"
             if self.config.env_headless:
                 isaaclab_cmd += " --headless"
-            # Wrap with conda run to ensure correct Python environment
-            cmd = f"conda run -n {CONDA_ENV} --no-capture-output bash -c \"{isaaclab_cmd}\""
+            # Run isaaclab.sh directly (no conda wrapper needed if _isaac_sim/python.sh exists)
+            cmd = isaaclab_cmd
 
         logger.info(f"Executing: {cmd}")
 

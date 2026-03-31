@@ -274,12 +274,12 @@ class SimJudge:
             project_root = Path(__file__).resolve().parents[2]
             load_dotenv(project_root / ".env")
 
-            api_key = os.environ.get("AZURE_OPENAI_API_KEY")
-            base_url = os.environ.get("AZURE_OPENAI_BASE_URL")
+            api_key = os.environ.get("OPENAI_API_KEY")
+            base_url = os.environ.get("OPENAI_BASE_URL")
 
             if not api_key or not base_url:
                 self._availability_reason = (
-                    "AZURE_OPENAI_API_KEY or AZURE_OPENAI_BASE_URL not set"
+                    "OPENAI_API_KEY or OPENAI_BASE_URL not set"
                 )
                 logger.warning("SimJudge: %s", self._availability_reason)
                 return
