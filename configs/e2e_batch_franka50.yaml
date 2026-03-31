@@ -23,7 +23,7 @@ collection:
 
 hf:
   upload: true
-  namespace: vpraise00
+  namespace: your-hf-username
   dataset_name: franka30-production
   private: true
   token_env: HF_TOKEN
