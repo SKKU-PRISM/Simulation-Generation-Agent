@@ -374,6 +374,10 @@ class DataCollectionConfig:
     execution_timeout: int = 1800   # seconds (30 min; first-run shader compilation takes ~10 min)
     ik_debug: bool = False          # emit verbose IK / grasp diagnostics to stdout
 
+    # Factory task support (prebuilt env with object already grasped)
+    prebuilt_env: bool = False      # skip LLM environment code generation
+    initial_grasp: Optional[dict] = None  # if set, initialize episode with object in gripper
+
     @property
     def effective_fps(self) -> int:
         """Effective recording FPS (capped by control rate)."""

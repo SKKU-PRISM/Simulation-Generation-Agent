@@ -2720,3 +2720,113 @@ class SimSkills:
             tcp_robot_xyzrpy=tcp_robot_xyzrpy,
             gripper_state=gripper_state,
         )
+
+    # ------------------------------------------------------------------
+    # Factory task skills (insertion, gear meshing, nut threading)
+    # ------------------------------------------------------------------
+
+    def execute_insert(
+        self,
+        target_name: str,
+        approach_height: float = 0.03,
+        insertion_speed: float = 0.002,
+        max_steps: int = 300,
+    ) -> dict:
+        """Insert already-grasped object into a target (hole/socket).
+
+        The robot must already be holding the object (gripper closed).
+        Moves above the target, then descends slowly for insertion.
+
+        Args:
+            target_name: Name of the target entity (e.g. "hole")
+            approach_height: Height above target to start insertion (m)
+            insertion_speed: Descent per step (m)
+            max_steps: Maximum steps for insertion
+
+        Returns:
+            dict with "success" and "message"
+        """
+        self._set_skill_meta("insert", f"Insert into {target_name}")
+
+        # Get target position
+        target_pos = self.detector.get_object_position(target_name)
+        if target_pos is None:
+            return {"success": False, "message": f"Target {target_name} not found"}
+
+        # Move above target
+        approach_pos = target_pos.copy()
+        approach_pos[2] += approach_height
+        self.move_to_position(approach_pos)
+
+        # Descend slowly for insertion
+        current_z = approach_pos[2]
+        target_z = target_pos[2] - 0.01  # slightly below target surface
+        step_count = 0
+
+        while current_z > target_z and step_count < max_steps:
+            current_z -= insertion_speed
+            insert_pos = approach_pos.copy()
+            insert_pos[2] = current_z
+            self.move_to_position(insert_pos)
+            step_count += 1
+
+        return {
+            "success": True,
+            "message": f"Insertion completed in {step_count} steps",
+            "steps": step_count,
+        }
+
+    def execute_thread(
+        self,
+        target_name: str,
+        rotation_per_step: float = 0.05,
+        descent_per_rotation: float = 0.0005,
+        total_rotations: float = 2.0,
+        max_steps: int = 500,
+    ) -> dict:
+        """Thread already-grasped nut onto a bolt.
+
+        The robot must already be holding the nut (gripper closed).
+        Aligns above the bolt, then rotates while descending.
+
+        Args:
+            target_name: Name of the bolt entity
+            rotation_per_step: Radians to rotate per step
+            descent_per_rotation: Descent per full rotation (m)
+            total_rotations: Number of full rotations to complete
+            max_steps: Maximum steps
+
+        Returns:
+            dict with "success" and "message"
+        """
+        self._set_skill_meta("thread", f"Thread onto {target_name}")
+
+        # Get target position
+        target_pos = self.detector.get_object_position(target_name)
+        if target_pos is None:
+            return {"success": False, "message": f"Target {target_name} not found"}
+
+        # Move above bolt
+        approach_pos = target_pos.copy()
+        approach_pos[2] += 0.02
+        self.move_to_position(approach_pos)
+
+        # Thread: rotate + descend
+        total_angle = total_rotations * 2.0 * 3.14159
+        current_angle = 0.0
+        descent_per_step = descent_per_rotation * rotation_per_step / (2.0 * 3.14159)
+        step_count = 0
+        current_pos = approach_pos.copy()
+
+        while current_angle < total_angle and step_count < max_steps:
+            current_angle += rotation_per_step
+            current_pos[2] -= descent_per_step
+            self.move_to_position(current_pos)
+            step_count += 1
+
+        return {
+            "success": True,
+            "message": f"Threading completed: {current_angle / (2*3.14159):.1f} rotations in {step_count} steps",
+            "steps": step_count,
+            "rotations": current_angle / (2 * 3.14159),
+        }

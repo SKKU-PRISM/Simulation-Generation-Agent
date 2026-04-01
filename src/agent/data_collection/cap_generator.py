@@ -30,6 +30,8 @@ SUPPORTED_RELATIONS = {
     "height_below",
     "upright",
     "in_slot",
+    "insertion_depth",
+    "thread_depth",
 }
 REFUSAL_MARKERS = (
     "i'm sorry",
@@ -644,6 +646,14 @@ def assess_task_capability(task_doc: dict[str, Any]) -> TaskCapability:
         and isinstance(asset.get("container"), dict)
         for asset in task_doc.get("assets", [])
     )
+
+    # Factory tasks: object already grasped, insertion/threading
+    if task_info.get("initial_grasp"):
+        sc = goal.get("success_criteria", {})
+        sc_type = str(sc.get("type", "")).lower() if isinstance(sc, dict) else ""
+        if "thread" in sc_type or "thread" in description_text:
+            return TaskCapability("factory_thread", True, "supported factory nut threading")
+        return TaskCapability("factory_insert", True, "supported factory insertion")
 
     if has_articulated_container and (
         "inside_drawer" in condition_relations
@@ -2252,6 +2262,46 @@ Generate the complete executable Python file now.
             hints.append(
                 "- If an object's affordances say `preferred_grasp=top_down` or `blocked_side_grasp=true`, rely on the standard pick primitive and assume the runtime will execute a vertical top-down grasp."
             )
+
+        # Factory tasks: object already in gripper
+        initial_grasp = task_doc.get("task", {}).get("initial_grasp")
+        if initial_grasp:
+            held_obj = initial_grasp.get("held_object", "object")
+            fixed_obj = initial_grasp.get("fixed_object", "target")
+            hints.clear()
+            hints.append(
+                f"- IMPORTANT: The robot is already grasping `{held_obj}`. Do NOT call execute_pick() or gripper_open()."
+            )
+            hints.append(
+                "- Do NOT call move_to_ready() with open_gripper=True. Always keep the gripper closed."
+            )
+
+            task_name_lower = task_doc.get("task", {}).get("name", "").lower()
+            if "peg" in task_name_lower or "insert" in task_name_lower:
+                hints.append(
+                    f"- Use `execute_insert(target_name=\"{fixed_obj}\")` to insert the held peg into the hole."
+                )
+                hints.append(
+                    "- The insertion requires precise vertical alignment above the hole center, then slow descent."
+                )
+            elif "gear" in task_name_lower or "mesh" in task_name_lower:
+                hints.append(
+                    f"- Use `execute_insert(target_name=\"{fixed_obj}\")` to mesh the gear onto the base shaft."
+                )
+                hints.append(
+                    "- Align the gear above the shaft, then push down while allowing rotational freedom for teeth to mesh."
+                )
+            elif "nut" in task_name_lower or "thread" in task_name_lower:
+                hints.append(
+                    f"- Use `execute_thread(target_name=\"{fixed_obj}\")` to thread the nut onto the bolt."
+                )
+                hints.append(
+                    "- Align the nut above the bolt, then rotate counter-clockwise while descending to engage threads."
+                )
+            else:
+                hints.append(
+                    f"- Move the held object to align with `{fixed_obj}`, then insert/place precisely."
+                )
 
         return "\n".join(hints)
 

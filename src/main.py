@@ -158,26 +158,29 @@ def run_task(
     ]
     ok, _ = _run_step(step3_cmd, f"{task_name}/data_collection", task_dir / "step3_data_collection.log")
 
-    dc_result = {"success": ok, "success_episodes": 0, "total_episodes": 0}
+    dc_result = {"success": False, "success_episodes": 0, "total_episodes": 0}
 
-    # Parse collection results
+    # Parse collection results — find most recent collection_results.json by mtime
     dc_out = PROJECT_ROOT / "outputs" / "data_collection"
     if dc_out.exists():
-        candidates = sorted(
-            [d for d in dc_out.iterdir() if d.is_dir() and task_name in d.name],
+        all_results = sorted(
+            dc_out.glob("*/collection_results.json"),
             key=lambda p: p.stat().st_mtime,
             reverse=True,
         )
-        if candidates:
-            coll_json = candidates[0] / "collection_results.json"
-            if coll_json.exists():
-                try:
-                    cdata = json.loads(coll_json.read_text())
-                    dc_result["success_episodes"] = cdata.get("geometry_successful_episodes", 0)
-                    dc_result["total_episodes"] = cdata.get("total_episodes", 0)
-                    dc_result["success"] = dc_result["success_episodes"] > 0
-                except Exception:
-                    pass
+        if all_results:
+            coll_json = all_results[0]
+            logger.info("Found collection results: %s", coll_json)
+            try:
+                cdata = json.loads(coll_json.read_text())
+                dc_result["success_episodes"] = cdata.get("geometry_successful_episodes", 0)
+                dc_result["total_episodes"] = cdata.get("total_episodes", 0)
+                dc_result["output_dir"] = str(coll_json.parent)
+                dc_result["success"] = cdata.get("pipeline_completed", False)
+            except Exception as e:
+                logger.error("Failed to parse collection results: %s", e)
+        else:
+            logger.warning("No collection_results.json found under %s", dc_out)
 
     result["steps"]["data_collection"] = dc_result
     return result
@@ -198,6 +201,12 @@ def run_pipeline(input_path: Path, output_path: Path) -> dict:
     work_dir = PROJECT_ROOT / "outputs" / f"challenge_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     work_dir.mkdir(parents=True, exist_ok=True)
 
+    # Enable token usage tracking
+    token_file = work_dir / "token_usage.jsonl"
+    os.environ["TOKEN_USAGE_FILE"] = str(token_file)
+    os.environ["TOKEN_USAGE_LOG"] = "1"
+    logger.info("Token tracking enabled: %s", token_file)
+
     task_results = []
     for task_spec in tasks:
         desc = task_spec.get("task_description", "")
@@ -215,13 +224,29 @@ def run_pipeline(input_path: Path, output_path: Path) -> dict:
         for t in task_results
     )
 
-    return {
+    # Token usage summary
+    token_summary = None
+    if token_file.exists():
+        try:
+            from src.agent.common.token_tracker import TokenTracker
+            token_summary = TokenTracker.report_from_file(str(token_file))
+            logger.info("Token usage:\n%s", token_summary)
+        except Exception:
+            pass
+
+    output = {
         "status": "completed" if all_ok else "partial",
         "started_at": started_at,
         "finished_at": finished_at,
         "work_dir": str(work_dir),
         "tasks": task_results,
     }
+    if token_summary:
+        output["token_usage_report"] = token_summary
+    if token_file.exists():
+        output["token_usage_file"] = str(token_file)
+
+    return output
 
 
 def main():

@@ -364,7 +364,43 @@ class DataCollectionPipeline:
         return "franka"
 
     def _generate_environment(self) -> Optional[Path]:
-        """Generate IsaacLab environment using IsaacLabAgent."""
+        """Generate IsaacLab environment using IsaacLabAgent.
+
+        If task YAML has ``prebuilt_env: true``, look for a pre-built env
+        directory under ``outputs/isaaclab/`` matching the task name slug.
+        """
+        # Check for prebuilt_env flag in task YAML
+        task_section = self.task_doc.get("task", {})
+        if task_section.get("prebuilt_env"):
+            task_name = task_section.get("name", "unknown")
+            # Generate slug candidates from CamelCase task name
+            # FrankaPegInsert → franka_peg_insert
+            import re as _re
+            # Split on CamelCase boundaries
+            words = _re.sub(r'(?<=[a-z])(?=[A-Z])', '_', task_name).lower()
+            slug_candidates = [
+                words,                                    # franka_peg_insert
+                task_name.lower(),                        # frankapeginsert
+                task_name.lower().replace(" ", "_"),       # frankapeginsert
+                words.replace(" ", "_"),                   # franka_peg_insert
+            ]
+            # Deduplicate while preserving order
+            seen = set()
+            slug_candidates = [s for s in slug_candidates if not (s in seen or seen.add(s))]
+
+            base_dir = PROJECT_ROOT / "outputs" / "isaaclab"
+            for slug in slug_candidates:
+                candidate = base_dir / slug
+                if (candidate / "env_cfg.py").exists():
+                    logger.info(f"Using prebuilt environment: {candidate}")
+                    return candidate
+
+            logger.error(
+                f"prebuilt_env=true but no env_cfg.py found. Tried slugs: {slug_candidates} "
+                f"under {base_dir}"
+            )
+            return None
+
         try:
             sys.path.insert(0, str(PROJECT_ROOT))
             from src.agent.isaac_lab.agent import IsaacLabAgent
@@ -425,6 +461,13 @@ class DataCollectionPipeline:
             "discard_failed_episodes": bool(self.config.discard_failed_episodes),
             "keep_failed_raw_dataset": bool(self.config.keep_failed_raw_dataset),
             "ik_debug": bool(self.config.ik_debug),
+            "prebuilt_env": bool(self.task_doc.get("task", {}).get("prebuilt_env", False)),
+            "initial_grasp": (
+                {**self.task_doc["task"]["initial_grasp"],
+                 "task_name": self.task_doc["task"].get("name", "")}
+                if self.task_doc.get("task", {}).get("initial_grasp")
+                else None
+            ),
         }
         config_json_path = self.output_dir / "pipeline_config.json"
         with open(config_json_path, "w") as f:
@@ -969,7 +1012,7 @@ class DataCollectionPipeline:
                     _disable_debug_visualization(attr_value, f"{{path}}.{{attr_name}}", seen, patched)
                 return patched
 
-            def _sanitize_generated_env_cfg(env_cfg, task_doc=None):
+            def _sanitize_generated_env_cfg(env_cfg, task_doc=None, pipeline_cfg=None):
                 \"\"\"Patch common schema mismatches from generated env_cfg files.
 
                 Some generated observation terms still pass `body_name=...` directly
@@ -1279,12 +1322,17 @@ class DataCollectionPipeline:
                                     f"{{asset_name}}: disabled articulation root on insertion subject"
                                 )
 
-                        proxy_spec = unstable_factory_proxy_assets.get(asset_name)
-                        if proxy_spec is None:
-                            for asset_token, token_proxy_spec in unstable_factory_asset_tokens.items():
-                                if asset_token in asset_path_lower:
-                                    proxy_spec = token_proxy_spec
-                                    break
+                        # Skip factory proxy substitution for prebuilt_env tasks
+                        # (prebuilt envs define their own assets precisely)
+                        _skip_proxy = (pipeline_cfg or {{}}).get("prebuilt_env", False)
+                        proxy_spec = None
+                        if not _skip_proxy:
+                            proxy_spec = unstable_factory_proxy_assets.get(asset_name)
+                            if proxy_spec is None:
+                                for asset_token, token_proxy_spec in unstable_factory_asset_tokens.items():
+                                    if asset_token in asset_path_lower:
+                                        proxy_spec = token_proxy_spec
+                                        break
                         if proxy_spec is not None:
                             proxy_rigid_props = sim_utils.RigidBodyPropertiesCfg(
                                 solver_position_iteration_count=16,
@@ -1823,7 +1871,7 @@ class DataCollectionPipeline:
                 ordered.sort()
                 return [name for _, name in ordered]
 
-            def _compile_goal_conditions(goal, task_description="", translated_positions=None):
+            def _compile_goal_conditions(goal, task_description="", translated_positions=None, task_doc_ref=None):
                 sc = goal.get("success_criteria", {{}})
                 conditions = []
                 if "conditions" in sc:
@@ -1838,6 +1886,20 @@ class DataCollectionPipeline:
                         }})
                 elif "conditions" in goal:
                     conditions.extend(goal["conditions"])
+
+                # Factory tasks: insertion_depth / thread_depth success criteria
+                sc_type = str(sc.get("type", "")).lower() if isinstance(sc, dict) else ""
+                if sc_type in ("insertion_depth", "thread_depth"):
+                    _tdoc = task_doc_ref or {{}}
+                    held_obj = _tdoc.get("task", {{}}).get("initial_grasp", {{}}).get("held_object", "held_asset")
+                    fixed_obj = _tdoc.get("task", {{}}).get("initial_grasp", {{}}).get("fixed_object", "fixed_asset")
+                    conditions.append({{
+                        "type": sc_type,
+                        "object": held_obj,
+                        "target": fixed_obj,
+                        "success_criteria": dict(sc),
+                    }})
+                    return conditions
 
                 if conditions:
                     return conditions
@@ -1964,6 +2026,7 @@ class DataCollectionPipeline:
                         goal,
                         task_description=task_description,
                         translated_positions=translated_positions,
+                        task_doc_ref=task_doc,
                     )
 
                     # Infer stacking from goal description if no explicit conditions
@@ -2462,6 +2525,59 @@ class DataCollectionPipeline:
                                     f"yaw_err={{yaw_err_deg:.1f}}deg {{'OK' if ok else 'FAIL'}}"
                                 )
 
+                        elif cond_type in ("insertion_depth", "thread_depth"):
+                            total += 1
+                            held_obj = cond.get("object", "")
+                            fixed_obj = cond.get("target", "")
+                            sc_params = cond.get("success_criteria", {{}})
+                            if not held_obj or not fixed_obj:
+                                details.append(f"skip: missing {{cond_type}} object names")
+                                continue
+                            try:
+                                held_pos = _resolve_object_position(
+                                    detector, held_obj,
+                                    translated_positions=translated_positions,
+                                )
+                            except Exception as e:
+                                details.append(f"{{held_obj}} {{cond_type}}: held detection failed ({{e}})")
+                                continue
+                            try:
+                                fixed_pos = _resolve_object_position(
+                                    detector, fixed_obj,
+                                    translated_positions=translated_positions,
+                                )
+                            except Exception as e:
+                                fixed_pos = _resolve_target_position(
+                                    detector, fixed_obj,
+                                    translated_positions=translated_positions,
+                                    task_doc=task_doc,
+                                )
+                                if fixed_pos is None:
+                                    details.append(f"{{fixed_obj}} {{cond_type}}: target missing ({{e}})")
+                                    continue
+                            xy_err = np.linalg.norm(held_pos[:2] - fixed_pos[:2])
+                            z_diff = abs(held_pos[2] - fixed_pos[2])
+                            # Check XY alignment
+                            sc_xy_tol = sc_params.get("xy_threshold", 0.005)
+                            xy_ok = xy_err < sc_xy_tol
+                            # Check insertion depth: held Z should be close to fixed Z
+                            if cond_type == "insertion_depth":
+                                fixed_height = sc_params.get("fixed_asset_height", 0.025)
+                                depth_frac = sc_params.get("insertion_depth_fraction", 0.96)
+                                target_z_diff = fixed_height * (1.0 - depth_frac)
+                                z_ok = z_diff < fixed_height * 0.5  # generous: within half height
+                            else:
+                                # thread_depth: nut should be close to bolt top
+                                thread_pitch = sc_params.get("thread_pitch", 0.002)
+                                success_frac = sc_params.get("success_fraction", 0.375)
+                                z_ok = z_diff < thread_pitch * 5  # generous threshold
+                            ok = xy_ok and z_ok
+                            if ok:
+                                passed += 1
+                            details.append(
+                                f"{{held_obj}} {{cond_type}} {{fixed_obj}}: xy_err={{xy_err:.4f}}m z_diff={{z_diff:.4f}}m {{'OK' if ok else 'FAIL'}}"
+                            )
+
                     if total == 0:
                         return False, "no checkable conditions"
                     success = passed == total
@@ -2557,7 +2673,7 @@ class DataCollectionPipeline:
                     env_cfg = env_cfg_class()
                     _record_phase("env_cfg_instantiated", "ok", class_name=env_cfg_class.__name__)
                     env_cfg.scene.num_envs = cfg["num_envs"]
-                    _sanitize_generated_env_cfg(env_cfg, task_doc)
+                    _sanitize_generated_env_cfg(env_cfg, task_doc, pipeline_cfg=cfg)
                     _record_phase("env_cfg_sanitized", "ok")
                 except Exception as exc:
                     payload = _write_exception_artifacts(exc, "env_cfg_prepare", _classify_pipeline_failure(exc))
@@ -2926,6 +3042,20 @@ class DataCollectionPipeline:
                         robot_interface.reset_termination_flags()
                         _record_phase("episode_reset", "ok", episode=episode_idx)
 
+                        # Factory task: initialize with object already in gripper
+                        _initial_grasp_cfg = cfg.get("initial_grasp")
+                        if _initial_grasp_cfg:
+                            _record_phase("factory_grasp_init", "start", episode=episode_idx)
+                            try:
+                                from src.agent.data_collection.factory_init import initialize_grasped_state
+                                _grasp_ok = initialize_grasped_state(env, _initial_grasp_cfg)
+                                _record_phase("factory_grasp_init", "ok" if _grasp_ok else "fail", episode=episode_idx)
+                                if _grasp_ok and skills is not None:
+                                    skills._gripper_is_closed = True
+                            except Exception as _grasp_err:
+                                print(f"Factory grasp init error: {{_grasp_err}}")
+                                _record_phase("factory_grasp_init", "fail", episode=episode_idx, error=str(_grasp_err))
+
                         # Render warmup: hold initial position for a few steps so camera
                         # buffers are populated (first frames after reset can be black).
                         # CRITICAL: Must send initial joint positions as action, NOT zeros!
@@ -2939,7 +3069,11 @@ class DataCollectionPipeline:
                         )
                         _warmup_action[0, :_num_arm_joints] = env.scene["robot"].data.joint_pos[0, :_num_arm_joints].clone()
                         if env.action_space.shape[-1] > _num_arm_joints:
-                            _warmup_action[0, _num_arm_joints] = 1.0  # gripper open
+                            # Factory tasks: keep gripper closed if already grasping
+                            if _initial_grasp_cfg:
+                                _warmup_action[0, _num_arm_joints] = 0.0  # gripper closed
+                            else:
+                                _warmup_action[0, _num_arm_joints] = 1.0  # gripper open
                         for _ in range(10):
                             env.step(_warmup_action)
                         _record_phase("episode_warmup", "ok", episode=episode_idx)
@@ -3190,6 +3324,7 @@ class DataCollectionPipeline:
                                 goal,
                                 task_description=task_desc,
                                 translated_positions=translated_positions,
+                                task_doc_ref=task_doc,
                             )
                             vlm_relevant_objects = _select_vlm_relevant_objects(
                                 vlm_goal_conditions,
