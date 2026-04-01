@@ -1,0 +1,58 @@
+# Docker release profile for headless IsaacLab data collection.
+
+simulation:
+  dt: 0.01
+  decimation: 5
+  control_hz: 20.0
+
+recording:
+  fps: 20
+  front_video_fps: 20
+  resolution: [640, 480]
+
+episodes:
+  max: 50
+  max_steps: 600
+
+dataset:
+  repo_id: "local/sim_dataset"
+  output_dir: "/workspace/artifacts/data_collection"
+  discard_failed_episodes: true
+  keep_failed_raw_dataset: false
+
+isaaclab:
+  path: "/workspace/IsaacLab"
+  conda_env: ""
+  launch_mode: "direct"
+  use_launcher: false
+
+llm:
+  model: "gpt-5-mini"
+
+vlm:
+  enabled: true
+  model: "gpt-5"
+  backend: "auto"
+  success_threshold: 0.8
+
+skill:
+  retry_max: 3
+
+goal_verification:
+  xy_threshold: 0.05
+  height_diff: 0.05
+  z_threshold: 0.01
+
+ik:
+  num_random_samples: 30
+  orientation_tolerance: 0.15
+  debug: false
+
+cameras:
+  dataset_cameras: ["top", "wrist", "front"]
+  judge_cameras: ["wrist", "front"]
+
+environment:
+  headless: true
+  num_envs: 1
+  timeout: 5400

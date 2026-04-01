@@ -19,6 +19,11 @@ dependencies = [
     "python-dotenv>=1.0",
     "google-generativeai>=0.8.0",
     "openai>=1.0",
+    "langchain-openai>=0.1.0",
+    "langchain-core>=0.2.0",
+    "langchain-community>=0.2.0",
+    "faiss-cpu>=1.7.0,<1.10.0",  # 1.10+ requires numpy 2.x
+    "sentence-transformers>=2.2.0",
 ]
 
 [project.optional-dependencies]
@@ -26,7 +31,7 @@ data-collection = [
     "pin>=2.6.0",           # Pinocchio IK (ADC KinematicsEngine)
     "scipy>=1.11.0",        # Trajectory interpolation (ADC)
     "opencv-python>=4.8.0", # VLM judge image encoding
-    "lerobot>=0.5.0",       # LeRobot dataset format
+    "lerobot>=0.4.0,<0.5.0",  # LeRobot dataset format (0.5+ requires Python 3.12)
 ]
 
 [tool.setuptools.packages.find]

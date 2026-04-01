@@ -91,7 +91,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(ENV_DIR))
 
 from env_cfg import *  # noqa: F403
-from src.data_collection.ur10e_patches import (
+from src.agent.data_collection.ur10e_patches import (
     apply_local_ur10e_asset_override,
     ensure_ur10e_pad_collisions,
     summarize_ur10e_pad_alignment,
@@ -482,8 +482,8 @@ def test_4_ik_to_ee(env):
     # Try to create Pinocchio IK solver
     try:
         sys.path.insert(0, str(PROJECT_ROOT))
-        from src.data_collection.sim_skills import create_ik_solver
-        from src.data_collection.config import load_robot_config
+        from src.agent.data_collection.sim_skills import create_ik_solver
+        from src.agent.data_collection.config import load_robot_config
 
         robot_cfg = load_robot_config("ur10e")
         ik_solver = create_ik_solver(robot_cfg)
@@ -554,10 +554,10 @@ def test_5_pick_diagnostic(env):
     print_header(5, f"Single Pick Diagnostic ({args.pick_object})")
 
     try:
-        from src.data_collection.config import load_robot_config
-        from src.data_collection.sim_detector import SimDetector
-        from src.data_collection.sim_robot_interface import SimRobotInterface
-        from src.data_collection.sim_skills import SimSkills, create_ik_solver
+        from src.agent.data_collection.config import load_robot_config
+        from src.agent.data_collection.sim_detector import SimDetector
+        from src.agent.data_collection.sim_robot_interface import SimRobotInterface
+        from src.agent.data_collection.sim_skills import SimSkills, create_ik_solver
 
         with open(args.task_yaml) as f:
             task_doc = yaml.safe_load(f)

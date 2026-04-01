@@ -12,9 +12,9 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-from src.common.task_docs import load_task_document, resolve_task_document
-from src.data_collection.config import load_pipeline_config, load_robot_config
-from src.data_collection.dataset_export import (
+from src.agent.common.task_docs import load_task_document, resolve_task_document
+from src.agent.data_collection.config import load_pipeline_config, load_robot_config
+from src.agent.data_collection.dataset_export import (
     ADC_COMPATIBLE_SCHEMA,
     CANONICAL_TRAINING_SCHEMA,
     _resolve_adc_local_path,
@@ -25,26 +25,26 @@ from src.data_collection.dataset_export import (
     normalize_gripper_array,
     normalize_joint_matrix,
 )
-from src.data_collection.dataset_preprocess import preprocess_exported_dataset
-from src.data_collection.lerobot_tools import (
+from src.agent.data_collection.dataset_preprocess import preprocess_exported_dataset
+from src.agent.data_collection.lerobot_tools import (
     check_lerobot_dataset,
     convert_raw_dataset_to_lerobot,
     publish_lerobot_dataset,
 )
-from src.data_collection.multiview_grounding import MultiViewTargetGrounder
-from src.data_collection.cap_generator import translate_scene_state
-from src.data_collection.sim_recorder import SimRecorder, _coerce_goal_joint
-from src.data_collection.sim_detector import SimDetector
-from src.data_collection.sim_judge import build_task_aware_judge_prompt
-from src.data_collection.sim_robot_interface import SimRobotInterface
-from src.data_collection.sim_skills import SimSkills, create_ik_solver
-from src.isaac_lab.assembling_kits_template import build_assembling_kits_template
-from src.isaac_lab.agent import IsaacLabAgent
-from src.isaac_lab.evaluator.mdp_correctness import MDPCorrectnessChecker
-from src.isaac_lab.evaluator.parser import EnvCfgParser
-from src.isaac_lab.evaluator.runtime_validity import RuntimeValidityChecker
-from src.isaac_lab.evaluator.scene_fidelity import SceneFidelityChecker
-from src.isaac_sim.scene_builder import SceneBuilder
+from src.agent.data_collection.multiview_grounding import MultiViewTargetGrounder
+from src.agent.data_collection.cap_generator import translate_scene_state
+from src.agent.data_collection.sim_recorder import SimRecorder, _coerce_goal_joint
+from src.agent.data_collection.sim_detector import SimDetector
+from src.agent.data_collection.sim_judge import build_task_aware_judge_prompt
+from src.agent.data_collection.sim_robot_interface import SimRobotInterface
+from src.agent.data_collection.sim_skills import SimSkills, create_ik_solver
+from src.agent.isaac_lab.assembling_kits_template import build_assembling_kits_template
+from src.agent.isaac_lab.agent import IsaacLabAgent
+from src.agent.isaac_lab.evaluator.mdp_correctness import MDPCorrectnessChecker
+from src.agent.isaac_lab.evaluator.parser import EnvCfgParser
+from src.agent.isaac_lab.evaluator.runtime_validity import RuntimeValidityChecker
+from src.agent.isaac_lab.evaluator.scene_fidelity import SceneFidelityChecker
+from src.agent.isaac_sim.scene_builder import SceneBuilder
 
 
 class _DummyParser:

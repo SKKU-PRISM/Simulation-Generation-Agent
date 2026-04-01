@@ -1,0 +1,35 @@
+run:
+  output_root: /workspace/artifacts/e2e_batches/smoke
+  continue_on_failure: false
+  export_schema: adc_compatible
+  build_export_artifacts: false
+  build_preprocessed_artifacts: false
+  preprocess_success_only: true
+  generate_report: true
+  require_all_targets_for_robot_dataset: false
+
+collection:
+  config_path: configs/docker/data_collection_release.yaml
+  llm_model: gpt-5-mini
+  vlm_model: gpt-5
+  use_vlm_judge: true
+  discard_failed_episodes: true
+  keep_failed_raw_dataset: false
+  gui: false
+  execution_timeout: 1800
+  default_max_attempts_multiplier: 2
+  task_retry_limit: 0
+  require_target: true
+
+hf:
+  upload: false
+  namespace: ""
+  dataset_name: franka-smoke
+  private: true
+  token_env: HF_TOKEN
+
+tasks:
+  - yaml: tasks/franka/lift/franka_lift.yaml
+    demos: 2
+    max_attempts: 4
+    baseline_tag: smoke

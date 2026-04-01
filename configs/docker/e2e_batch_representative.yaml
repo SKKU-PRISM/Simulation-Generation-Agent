@@ -1,0 +1,53 @@
+run:
+  output_root: /workspace/artifacts/e2e_batches/representative
+  continue_on_failure: true
+  export_schema: adc_compatible
+  build_export_artifacts: false
+  build_preprocessed_artifacts: false
+  preprocess_success_only: true
+  generate_report: true
+  require_all_targets_for_robot_dataset: true
+
+collection:
+  config_path: configs/docker/data_collection_release.yaml
+  llm_model: gpt-5
+  vlm_model: gpt-5
+  use_vlm_judge: true
+  discard_failed_episodes: true
+  keep_failed_raw_dataset: false
+  gui: false
+  execution_timeout: 5400
+  default_max_attempts_multiplier: 5
+  task_retry_limit: 2
+  require_target: true
+
+hf:
+  upload: false
+  namespace: ""
+  dataset_name: franka-representative
+  private: true
+  token_env: HF_TOKEN
+
+tasks:
+  - yaml: tasks/franka/lift/franka_lift.yaml
+    demos: 5
+    max_attempts: 10
+    baseline_tag: representative
+  - yaml: tasks/franka/pick_place/franka_pick_place_drawer.yaml
+    demos: 5
+    max_attempts: 15
+    baseline_tag: representative
+  - yaml: tasks/franka/stack/franka_stack.yaml
+    demos: 5
+    max_attempts: 15
+    baseline_tag: representative
+  - yaml: tasks/franka/sort/franka_color_sort.yaml
+    demos: 5
+    max_attempts: 20
+    baseline_tag: representative
+    task_retry_limit: 3
+  - yaml: tasks/franka/stack/franka_stack_tray.yaml
+    demos: 5
+    max_attempts: 15
+    baseline_tag: representative
+    task_retry_limit: 3

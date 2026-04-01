@@ -1,0 +1,12 @@
+{
+  "tasks": [
+    {
+      "task_description": "Stack the blocks inside the tray on the table",
+      "robot": "franka"
+    }
+  ],
+  "config": {
+    "target_success": 1,
+    "max_attempts": 3
+  }
+}

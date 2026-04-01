@@ -13,15 +13,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.common.llm_client import AzureOpenAIClient
-from src.common.task_docs import load_task_document
-from src.data_collection.cap_generator import (
+from src.agent.common.llm_client import AzureOpenAIClient
+from src.agent.common.task_docs import load_task_document
+from src.agent.data_collection.cap_generator import (
     SimCaPGenerator,
     build_task_skill_preflight,
     extract_skill_calls_from_code,
     translate_scene_state,
 )
-from src.data_collection.config import load_robot_config
+from src.agent.data_collection.config import load_robot_config
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

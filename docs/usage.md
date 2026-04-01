@@ -5,6 +5,49 @@
 설치와 환경 연결: `docs/getting_started.md`
 
 이 문서는 **실행 방법과 결과 해석의 source-of-truth**다. 내부 구현 상세나 schema 배경 설명은 다른 문서로 분리한다.
+파이프라인 아키텍처: `docs/architecture.md`
+
+## 0. Task Spec Agent (NL → YAML)
+
+자연어 태스크 설명을 구조화된 YAML 태스크 명세로 변환합니다 (파이프라인 Stage 1).
+
+### 대표 명령어
+
+```bash
+# 기본 사용
+python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube and place it on the target" \
+  --robot franka --output task.yaml
+
+# RAG 없이 템플릿 기반 생성
+python3 scripts/task_spec_agent/task_spec_agent.py "Stack blocks" --no-rag
+
+# 다른 LLM 프로바이더 사용
+python3 scripts/task_spec_agent/task_spec_agent.py "Open the drawer" --provider huggingface
+
+# 상세 로그
+python3 scripts/task_spec_agent/task_spec_agent.py "Reach the goal" --verbose
+```
+
+### 주요 옵션
+
+| 옵션 | 설명 |
+| --- | --- |
+| `--robot {franka,openarm,ur10,so101}` | 대상 로봇 (기본: franka) |
+| `--output <path>` | YAML 저장 경로 (미지정 시 stdout 출력) |
+| `--provider {azure,huggingface,bedrock}` | LLM 프로바이더 (기본: config에서 결정) |
+| `--no-rag` | RAG 대신 템플릿 기반 YAML 생성 |
+| `--verbose` | DEBUG 레벨 로깅 |
+
+### 내부 처리 단계
+
+```
+자연어 입력
+  → NL Parser (actions, objects, locations 추출)
+  → Task Decomposer (원자적 동작 시퀀스 분해)
+  → Feasibility Validator (로봇 물리적 실현 가능성 검증)
+  → RAG YAML Generator (FAISS 유사 검색 → LLM few-shot 생성)
+  → task.yaml
+```
 
 ## 1. IsaacLab Pipeline (권장 경로)
 
@@ -196,7 +239,7 @@ python3 scripts/preprocess_dataset.py \
 
 기본 `adc_compatible` 경로에서는 `observation.gripper_state`, `observation.tcp.robot_xyzrpy`, `skill.goal_position.robot_xyzrpy`가 학습 입력 manifest에 포함된다.
 
-dataset field 의미와 schema 차이는 `docs/dataset_alignment_and_export.md`를 본다.
+기본 `adc_compatible` schema로 export되며, `canonical_training`은 확장 분석용이다.
 
 ### Optional: Local LeRobot conversion
 
@@ -225,6 +268,29 @@ python3 scripts/publish_lerobot_dataset.py \
 
 ## 5. 추천 운영 순서
 
+### NL → 데이터셋 (Full Pipeline)
+
+```bash
+# 1. NL → YAML
+python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube and stack it" \
+  --robot franka --output outputs/generated_task.yaml
+
+# 2. YAML → IsaacLab 환경 코드
+python3 scripts/run_isaac_lab.py outputs/generated_task.yaml --evaluate
+
+# 3. 데이터 수집
+python3 scripts/run_data_collection.py outputs/generated_task.yaml \
+  --env-dir outputs/isaaclab/<run_dir> --target-success 10
+
+# 4. Export / Preprocess
+python3 scripts/export_dataset.py outputs/data_collection/<run_dir>/raw_dataset \
+  --source-type sim_raw --output-dir outputs/exported_datasets
+python3 scripts/preprocess_dataset.py outputs/exported_datasets/<export_dir> \
+  --output-dir outputs/preprocessed_datasets
+```
+
+### 기존 YAML → 데이터셋
+
 ```bash
 python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml --evaluate
 python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml --env-dir outputs/isaaclab/<run_dir>
@@ -234,9 +300,107 @@ python3 scripts/preprocess_dataset.py outputs/exported_datasets/<export_dir> --o
 
 시각 검증이 필요할 때만 `scripts/run_isaac_sim.py`를 추가한다.
 
+## 6. Full Pipeline (NL → Video)
+
+`run_full_test.sh`는 13개 Franka 태스크에 대해 Stage 1→2→3을 순차적으로 실행하는 통합 스크립트다.
+
+```bash
+bash scripts/run_full_test.sh
+```
+
+내부적으로 각 태스크마다:
+1. `task_spec_agent.py` — 자연어 → YAML 생성
+2. `run_isaac_lab.py` — YAML → IsaacLab 환경 코드 생성/검증
+3. `run_data_collection.py` — CaP 코드 생성 → 실행 → 성공 판정 → 데이터 수집
+
+### 출력 구조
+
+```text
+outputs/test_run_<timestamp>/
+├── summary.txt                  # 전체 태스크 결과 요약
+├── token_usage.jsonl            # API 토큰 사용량 (TOKEN_USAGE_FILE 설정 시)
+├── FrankaLift/
+│   ├── step1_nl_to_yaml.log
+│   ├── step2_isaaclab.log
+│   ├── step3_cap_execution.log
+│   └── task.yaml
+├── FrankaStack/
+│   └── ...
+└── ...
+```
+
+### 토큰 사용량 추적
+
+```bash
+export TOKEN_USAGE_FILE=outputs/token_usage.jsonl
+export TOKEN_USAGE_LOG=1  # 실시간 콘솔 로그
+bash scripts/run_full_test.sh
+```
+
+## 7. E2E Batch Pipeline
+
+config 기반으로 다수 태스크의 환경 생성 + 데이터 수집 + export + LeRobot 변환을 일괄 처리한다.
+
+### 대표 명령어
+
+```bash
+# Batch 실행
+python3 scripts/run_e2e_batch.py configs/e2e_batch_franka50.yaml
+
+# 중단 후 재개
+python3 scripts/run_e2e_batch.py configs/e2e_batch_franka50.yaml --resume
+
+# 조용한 로그
+python3 scripts/run_e2e_batch.py configs/e2e_batch_franka50.yaml -q
+```
+
+### Docker / run_agent.sh
+
+```bash
+# Docker 내부 (기본 모드: e2e-batch)
+run_agent.sh --mode e2e-batch --resume
+
+# 단일 태스크
+run_agent.sh --mode isaac-lab --task tasks/franka/lift/franka_lift.yaml
+
+# 데이터 수집
+run_agent.sh --mode data-collection --task tasks/franka/lift/franka_lift.yaml -- --episodes 10
+```
+
+### Config 구조
+
+E2E batch config YAML은 4개 섹션으로 구성된다:
+
+| 섹션 | 역할 |
+| --- | --- |
+| `run` | output_root, resume, cleanup, export 설정 |
+| `collection` | LLM/VLM 모델, max_attempts, timeout, VLM judge 사용 여부 |
+| `hf` | HuggingFace Hub 업로드 설정 (선택) |
+| `tasks` | 태스크 목록 (YAML 경로, 목표 demos 수, 활성화 여부) |
+
+### 주요 옵션
+
+| 옵션 | 설명 |
+| --- | --- |
+| `--resume` | 이전 실행의 성공 태스크를 건너뛰고 실패/미완료 태스크만 재실행 |
+| `-q`, `--quiet` | INFO 레벨 로깅 (기본: DEBUG) |
+
+### 출력 구조
+
+```text
+<output_root>/
+├── config_snapshot.yaml         # 실행에 사용된 config 사본
+├── task_runs/                   # 태스크별 수집 결과
+├── task_reports/                # 태스크별 JSON 리포트
+├── successful_raw/              # 성공 에피소드만 모은 raw dataset
+├── exported/                    # export 결과
+├── preprocessed/                # preprocess 결과
+├── lerobot/                     # LeRobot 변환 결과
+├── batch_report.md              # Markdown 요약 리포트
+└── batch_report.json            # JSON 리포트
+```
+
 ## 관련 문서
 
-- `docs/getting_started.md`
-- `docs/evaluation.md`
-- `docs/dataset_alignment_and_export.md`
-- `docs/troubleshooting.md`
+- 파이프라인 아키텍처: `docs/architecture.md`
+- 설치: `docs/getting_started.md`

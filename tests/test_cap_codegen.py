@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 
-from src.data_collection.cap_generator import (
+from src.agent.data_collection.cap_generator import (
     SimCaPGenerator,
     assess_task_capability,
     build_task_skill_preflight,
@@ -16,13 +16,13 @@ from src.data_collection.cap_generator import (
     select_cap_profile,
     translate_scene_state,
 )
-from src.data_collection.cap_runtime import CaPRuntimeContext
-from src.data_collection.cap_runtime.skills.base import PolicyFallbackBlockedError
-from src.data_collection.cap_runtime.skills.skills_franka import FrankaSkills
-from src.data_collection.cap_runtime.skills.skills_openarm import OpenArmSkills
-from src.data_collection.config import DataCollectionConfig, load_robot_config
-from src.data_collection.pipeline import DataCollectionPipeline
-from src.data_collection.pipeline import (
+from src.agent.data_collection.cap_runtime import CaPRuntimeContext
+from src.agent.data_collection.cap_runtime.skills.base import PolicyFallbackBlockedError
+from src.agent.data_collection.cap_runtime.skills.skills_franka import FrankaSkills
+from src.agent.data_collection.cap_runtime.skills.skills_openarm import OpenArmSkills
+from src.agent.data_collection.config import DataCollectionConfig, load_robot_config
+from src.agent.data_collection.pipeline import DataCollectionPipeline
+from src.agent.data_collection.pipeline import (
     apply_task_top_camera_override,
     build_task_texture_audit,
     classify_texture_asset_path,

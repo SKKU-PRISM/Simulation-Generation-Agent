@@ -54,8 +54,8 @@ from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR, ISAAC_NUCLEUS_DIR
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.common.task_docs import load_task_document
-from src.data_collection.pipeline import build_task_texture_audit
+from src.agent.common.task_docs import load_task_document
+from src.agent.data_collection.pipeline import build_task_texture_audit
 
 
 def _resolve_asset_path(asset_path: str) -> str:

@@ -3,14 +3,12 @@
 # Usage: bash scripts/run_full_test.sh
 
 set -a; source .env; set +a
-export DISPLAY=localhost:10
 export PYTHONPATH=.
-
-cd /home/sykim/Simulation-Generation-Agent-Lab
 
 OUTPUT_ROOT="outputs/test_run_$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$OUTPUT_ROOT"
 export TOKEN_USAGE_FILE="$OUTPUT_ROOT/token_usage.jsonl"
+export TOKEN_USAGE_LOG=1
 
 SUMMARY_FILE="$OUTPUT_ROOT/summary.txt"
 echo "=== E2E Full Pipeline Test ===" > "$SUMMARY_FILE"
@@ -137,7 +135,7 @@ echo "  TOKEN USAGE REPORT"
 echo "============================================================"
 if [ -f "$TOKEN_USAGE_FILE" ]; then
   python3 -c "
-from src.common.token_tracker import TokenTracker
+from src.agent.common.token_tracker import TokenTracker
 print(TokenTracker.report_from_file('$TOKEN_USAGE_FILE'))
 "
 else

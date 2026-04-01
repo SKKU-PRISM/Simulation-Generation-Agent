@@ -191,7 +191,7 @@ class AzureLLMClient(BaseLLMClient):
             try:
                 usage = getattr(response, "usage_metadata", None)
                 if usage:
-                    from src.common.token_tracker import tracker
+                    from src.agent.common.token_tracker import tracker
                     tracker.record(
                         step="task_spec_agent",
                         model=getattr(self, "model_name", "azure"),
@@ -710,6 +710,120 @@ class BedrockLLMClient(BaseLLMClient):
             raise LLMConnectionError(error_msg)
 
 
+class OpenAILLMClient(BaseLLMClient):
+    """
+    OpenAI Platform LLM client implementation.
+
+    Uses LangChain's ChatOpenAI to interact with the OpenAI platform API directly
+    (not Azure). Requires OPENAI_API_KEY environment variable.
+    """
+
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+        self.max_retries = 3
+        self.retry_delay = 1
+
+        self.api_key = os.getenv("OPENAI_API_KEY")
+        if not self.api_key:
+            raise LLMConnectionError("OPENAI_API_KEY environment variable is not set")
+
+        self.model_name = config.get("model", "gpt-5-mini")
+
+        try:
+            from langchain_openai import ChatOpenAI
+
+            kwargs = {
+                "model": self.model_name,
+                "api_key": self.api_key,
+                "max_tokens": config.get("max_tokens", 2000),
+            }
+            # gpt-5 family may not support temperature
+            temperature = config.get("temperature")
+            if temperature is not None:
+                kwargs["temperature"] = temperature
+
+            self.client = ChatOpenAI(**kwargs)
+            logger.info(f"OpenAI LLM client initialized with model: {self.model_name}")
+        except Exception as e:
+            raise LLMConnectionError(f"Failed to initialize OpenAI LLM client: {str(e)}")
+
+    def test_connection(self) -> bool:
+        try:
+            logger.info("Testing OpenAI connection...")
+            test_prompt = "Hello, this is a connection test. Please respond with 'OK'."
+            response = self.client.invoke([HumanMessage(content=test_prompt)])
+            logger.info(f"Connection test successful. Response: {response.content[:50]}...")
+            return True
+        except Exception as e:
+            logger.error(f"Connection test failed: {str(e)}")
+            return False
+
+    def _invoke_with_retry(self, messages: list, retry_count: int = 0) -> str:
+        try:
+            response = self.client.invoke(messages)
+            try:
+                usage = getattr(response, "usage_metadata", None)
+                if usage:
+                    from src.agent.common.token_tracker import tracker
+                    tracker.record(
+                        step="task_spec_agent",
+                        model=self.model_name,
+                        input_tokens=usage.get("input_tokens", 0),
+                        output_tokens=usage.get("output_tokens", 0),
+                    )
+            except Exception:
+                pass
+            return response.content
+        except Exception as e:
+            if retry_count < self.max_retries:
+                logger.warning(
+                    f"LLM invocation failed (attempt {retry_count + 1}/{self.max_retries}): {str(e)}"
+                )
+                time.sleep(self.retry_delay * (retry_count + 1))
+                return self._invoke_with_retry(messages, retry_count + 1)
+            else:
+                error_msg = f"LLM invocation failed after {self.max_retries} attempts: {str(e)}"
+                logger.error(error_msg)
+                raise LLMConnectionError(error_msg)
+
+    def invoke(self, prompt: str) -> str:
+        messages = [HumanMessage(content=prompt)]
+        return self._invoke_with_retry(messages)
+
+    def invoke_with_schema(self, prompt: str, output_schema: dict) -> dict:
+        try:
+            schema_instruction = f"\n\nPlease provide your response as a JSON object matching this schema:\n{yaml.dump(output_schema, default_flow_style=False)}"
+            schema_instruction += "\n\nIMPORTANT: Return ONLY the JSON object, without any additional text or markdown formatting."
+            full_prompt = prompt + schema_instruction
+
+            messages = [HumanMessage(content=full_prompt)]
+            response_text = self._invoke_with_retry(messages)
+
+            cleaned_response = response_text.strip()
+            if cleaned_response.startswith("```json"):
+                cleaned_response = cleaned_response[7:]
+            elif cleaned_response.startswith("```"):
+                cleaned_response = cleaned_response[3:]
+            if cleaned_response.endswith("```"):
+                cleaned_response = cleaned_response[:-3]
+            cleaned_response = cleaned_response.strip()
+
+            # Try to find JSON boundaries if the model added extra text
+            start_idx = cleaned_response.find('{')
+            end_idx = cleaned_response.rfind('}')
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                cleaned_response = cleaned_response[start_idx:end_idx + 1]
+
+            result = json.loads(cleaned_response)
+            return result
+        except json.JSONDecodeError as e:
+            raise LLMConnectionError(f"Failed to parse LLM response as JSON: {str(e)}")
+        except LLMConnectionError:
+            raise
+        except Exception as e:
+            raise LLMConnectionError(f"Failed to invoke LLM with schema: {str(e)}")
+
+
 class LLMClientFactory:
     """
     Factory class for creating LLM clients.
@@ -791,6 +905,13 @@ class LLMClientFactory:
                 raise ValueError("HuggingFace configuration not found in llm_config.yaml")
             return HuggingFaceLLMClient(hf_config)
 
+        elif provider == "openai":
+            openai_config = config.get("openai", {})
+            if not openai_config:
+                # Fallback to azure_openai config model if openai section missing
+                openai_config = {"model": "gpt-5-mini", "temperature": 1.0, "max_tokens": 2000}
+            return OpenAILLMClient(openai_config)
+
         elif provider == "bedrock":
             bedrock_config = config.get("bedrock")
             if not bedrock_config:
@@ -800,7 +921,7 @@ class LLMClientFactory:
         else:
             raise ValueError(
                 f"Unsupported LLM provider: {provider}. "
-                "Supported providers: 'azure', 'huggingface', 'bedrock'"
+                "Supported providers: 'azure', 'openai', 'huggingface', 'bedrock'"
             )
 
 

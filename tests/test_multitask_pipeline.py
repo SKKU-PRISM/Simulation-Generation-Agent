@@ -10,11 +10,11 @@ from unittest.mock import patch
 
 import numpy as np
 
-from src.data_collection.config import DataCollectionConfig, load_robot_config
-from src.data_collection.multitask_orchestrator import run_multitask_to_hf
-from src.data_collection.pipeline import DataCollectionPipeline
-from src.data_collection.raw_dataset_merge import merge_raw_datasets
-from src.data_collection.sim_recorder import SimRecorder
+from src.agent.data_collection.config import DataCollectionConfig, load_robot_config
+from src.agent.data_collection.multitask_orchestrator import run_multitask_to_hf
+from src.agent.data_collection.pipeline import DataCollectionPipeline
+from src.agent.data_collection.raw_dataset_merge import merge_raw_datasets
+from src.agent.data_collection.sim_recorder import SimRecorder
 
 
 def _create_raw_dataset(base_dir: str, robot_name: str, dataset_name: str) -> Path:

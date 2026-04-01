@@ -12,10 +12,10 @@ from unittest.mock import patch
 import numpy as np
 import yaml
 
-from src.data_collection.config import load_robot_config
-from src.data_collection.e2e_orchestrator import load_e2e_batch_config, run_e2e_batch
-from src.data_collection.raw_dataset_merge import filter_raw_dataset_episodes, load_raw_dataset_metadata
-from src.data_collection.sim_recorder import SimRecorder
+from src.agent.data_collection.config import load_robot_config
+from src.agent.data_collection.e2e_orchestrator import load_e2e_batch_config, run_e2e_batch
+from src.agent.data_collection.raw_dataset_merge import filter_raw_dataset_episodes, load_raw_dataset_metadata
+from src.agent.data_collection.sim_recorder import SimRecorder
 
 
 def _record_episode(recorder: SimRecorder, robot_name: str, *, success: bool) -> None:

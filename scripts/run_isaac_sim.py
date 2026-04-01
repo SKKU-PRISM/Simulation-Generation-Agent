@@ -6,7 +6,7 @@ Usage:
     python scripts/run_isaac_sim.py tasks/franka/stack/franka_stack.yaml --skip-vlm
 """
 
-from src.isaac_sim.runner import main
+from src.agent.isaac_sim.runner import main
 
 
 if __name__ == "__main__":

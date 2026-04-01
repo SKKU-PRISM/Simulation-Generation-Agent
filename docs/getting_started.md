@@ -96,18 +96,47 @@ pip install pin
 확인:
 
 ```bash
-python3 -c "from src.data_collection.adc_imports import is_adc_available; print(is_adc_available())"
+python3 -c "from src.agent.data_collection.adc_imports import is_adc_available; print(is_adc_available())"
 python3 -c "import pinocchio; print('Pinocchio OK')"
 python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml --help
 ```
 
-## 5. 첫 성공 실행 권장 순서
+## 5. Task Spec Agent 설치 (NL → YAML)
 
-### Full Pipeline (NL → YAML → IsaacLab → CAP → Video)
+Task Spec Agent는 자연어 입력을 YAML 태스크 명세로 변환하는 Stage 1 파이프라인입니다.
+
+```bash
+pip install langchain langchain-openai langchain-community faiss-cpu sentence-transformers
+```
+
+벡터 스토어는 첫 실행 시 `data/vector_store/`에 자동 생성됩니다 (tasks/ 디렉토리의 기존 YAML을 인덱싱).
+
+확인:
+
+```bash
+cd scripts/task_spec_agent
+python3 -c "from rag_yaml_generator import RAGYAMLGenerator; print('RAG OK')"
+cd ../..
+```
+
+단독 실행:
+
+```bash
+python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube" --robot franka --output outputs/test_task.yaml
+```
+
+## 6. 첫 성공 실행 권장 순서
+
+### Full Pipeline (NL → YAML → IsaacLab → CaP → Video)
 
 ```bash
 bash scripts/run_full_test.sh
 ```
+
+13개 Franka 태스크에 대해 3단계를 순차 실행합니다:
+1. **NL → YAML**: `task_spec_agent`가 자연어를 YAML로 변환
+2. **YAML → IsaacLab**: LLM이 환경 Python 코드를 생성하고 실행 검증
+3. **CaP → Data**: LLM이 스킬 코드를 생성하고, IK로 실행하고, 성공 판정 후 데이터 수집
 
 ### IsaacLab 단독 실행
 
@@ -143,9 +172,7 @@ python3 scripts/preprocess_dataset.py \
   --output-dir outputs/preprocessed_datasets
 ```
 
-## 6. 다음에 볼 문서
+## 7. 다음에 볼 문서
 
+- 파이프라인 아키텍처 상세: `docs/architecture.md`
 - 실제 옵션/출력 구조/결과 해석: `docs/usage.md`
-- 평가 점수 해석: `docs/evaluation.md`
-- dataset/export/preprocess 기준: `docs/dataset_alignment_and_export.md`
-- 오류 대응: `docs/troubleshooting.md`

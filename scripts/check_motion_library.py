@@ -64,13 +64,13 @@ sys.path.insert(0, str(ENV_DIR))
 
 generated_env_cfg = importlib.import_module("env_cfg")
 
-from src.common.robot_names import normalize_robot_name
-from src.common.task_docs import load_task_document
-from src.data_collection.config import load_robot_config
-from src.data_collection.sim_camera import SceneCameraManager, inject_cameras_into_scene
-from src.data_collection.sim_detector import SimDetector
-from src.data_collection.sim_robot_interface import SimRobotInterface
-from src.data_collection.sim_skills import SimSkills, create_ik_solver
+from src.agent.common.robot_names import normalize_robot_name
+from src.agent.common.task_docs import load_task_document
+from src.agent.data_collection.config import load_robot_config
+from src.agent.data_collection.sim_camera import SceneCameraManager, inject_cameras_into_scene
+from src.agent.data_collection.sim_detector import SimDetector
+from src.agent.data_collection.sim_robot_interface import SimRobotInterface
+from src.agent.data_collection.sim_skills import SimSkills, create_ik_solver
 
 
 SO101_DEPTH_SWEEP = [0.032, 0.036, 0.040, 0.044]
@@ -566,7 +566,7 @@ def main():
         camera_manager = SceneCameraManager(env, camera_attr_names) if camera_attr_names else None
 
         if robot_cfg.name == "so101":
-            from src.data_collection.so101_patches import ensure_so101_claw_collisions
+            from src.agent.data_collection.so101_patches import ensure_so101_claw_collisions
 
             added_paths = ensure_so101_claw_collisions(env.sim.stage, env_idx=0, verbose=True)
             print(f"Ensured {len(added_paths)} SO-101 claw collision proxies")

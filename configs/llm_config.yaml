@@ -1,7 +1,14 @@
 # LLM Configuration for Task Specification Agent
 
-# Default provider: 'azure' for Azure OpenAI or 'huggingface' for local models
-default_provider: azure
+# Default provider: 'openai', 'azure', 'huggingface', or 'bedrock'
+# Set to 'openai' to use OpenAI platform API directly
+default_provider: openai
+
+# OpenAI Platform Configuration (api.openai.com)
+openai:
+  model: "gpt-5-mini"
+  temperature: 1.0  # gpt-5-mini only supports temperature=1.0
+  max_tokens: 16000  # gpt-5-mini uses reasoning tokens; needs headroom for output
 
 # Azure OpenAI Configuration
 azure_openai:

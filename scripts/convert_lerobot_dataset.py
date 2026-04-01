@@ -11,7 +11,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.data_collection.lerobot_tools import (
+from src.agent.data_collection.lerobot_tools import (
     convert_raw_dataset_to_lerobot,
     write_json_report,
 )

@@ -6,7 +6,7 @@ Usage:
     python scripts/evaluate.py --skip-runtime outputs/isaaclab/FrankaStack tasks/franka/stack/franka_stack.yaml
 """
 
-from src.isaac_lab.evaluator import main
+from src.agent.isaac_lab.evaluator import main
 
 if __name__ == "__main__":
     main()

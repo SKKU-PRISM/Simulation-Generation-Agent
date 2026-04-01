@@ -13,7 +13,7 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.data_collection.pipeline import build_task_texture_audit
+from src.agent.data_collection.pipeline import build_task_texture_audit
 
 
 def _load_yaml(path: Path) -> dict:

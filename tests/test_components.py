@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 def test_mcp_connection(host: str = "localhost", port: int = 8766) -> bool:
     """Test MCP connection to Isaac Sim."""
-    from src.common.mcp_client import MCPClient
+    from src.agent.common.mcp_client import MCPClient
 
     logger.info(f"Testing MCP connection to {host}:{port}...")
     client = MCPClient(host=host, port=port)
@@ -43,8 +43,8 @@ def test_mcp_connection(host: str = "localhost", port: int = 8766) -> bool:
 
 def test_scene_builder(document_path: str, host: str = "localhost", port: int = 8766) -> bool:
     """Test scene builder with a document."""
-    from src.common.mcp_client import MCPClient
-    from src.isaac_sim.scene_builder import SceneBuilder
+    from src.agent.common.mcp_client import MCPClient
+    from src.agent.isaac_sim.scene_builder import SceneBuilder
 
     logger.info(f"Testing scene builder with {document_path}...")
 
@@ -68,8 +68,8 @@ def test_scene_builder(document_path: str, host: str = "localhost", port: int = 
 
 def test_screenshot_capture(output_path: str, host: str = "localhost", port: int = 8766) -> bool:
     """Test screenshot capture."""
-    from src.common.mcp_client import MCPClient
-    from src.isaac_sim.screenshot import ScreenshotCapture
+    from src.agent.common.mcp_client import MCPClient
+    from src.agent.isaac_sim.screenshot import ScreenshotCapture
 
     logger.info(f"Testing screenshot capture to {output_path}...")
 
@@ -89,7 +89,7 @@ def test_screenshot_capture(output_path: str, host: str = "localhost", port: int
 
 def test_vlm_evaluator(screenshot_path: str, document_path: str) -> bool:
     """Test VLM evaluator."""
-    from src.isaac_sim.vlm_evaluator import create_evaluator, load_task_document, MockVLMEvaluator
+    from src.agent.isaac_sim.vlm_evaluator import create_evaluator, load_task_document, MockVLMEvaluator
 
     logger.info(f"Testing VLM evaluator...")
 

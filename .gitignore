@@ -34,3 +34,15 @@ AGENTS.md
 .reference
 .local_docs/
 CLAUDE.md
+
+# Internal development docs (not for public release)
+docs/evaluation.md
+docs/release/
+docs/dataset_alignment_and_export.md
+docs/franka30_batch_report.md
+docs/isaaclab_env_config_guide.md
+docs/task_descriptions_ko.md
+docs/task_taxonomy.md
+docs/task_yaml_spec.md
+docs/tasks_overview.md
+docs/troubleshooting.md

@@ -9,7 +9,7 @@ Usage:
     python scripts/run_isaac_lab.py --eval-only outputs/isaaclab/FrankaStack tasks/franka/stack/franka_stack.yaml
 """
 
-from src.isaac_lab.agent import main
+from src.agent.isaac_lab.agent import main
 
 if __name__ == "__main__":
     main()

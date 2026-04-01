@@ -1,0 +1,24 @@
+# Docker release profile for IsaacLab code generation and validation.
+
+isaaclab:
+  path: "/workspace/IsaacLab"
+  conda_env: ""
+  launch_mode: "direct"
+  use_launcher: false
+
+agent:
+  max_retries: 5
+  max_tokens: 8000
+  temperature: 0.1
+  output_dir: "/workspace/artifacts/isaaclab"
+  execution_timeout: 300
+  validation_num_envs: 2
+  headless: true
+  save_intermediate: true
+
+reference_base: "source/isaaclab_tasks/isaaclab_tasks/manager_based/manipulation"
+
+evaluation:
+  config_path: "configs/isaaclab_eval_config.yaml"
+  skip_runtime: false
+  min_score: 0

@@ -218,13 +218,29 @@ Here are similar task examples for reference:
 Output ONLY the YAML content, no explanations or markdown."""),
         ])
 
-        chain = prompt | self.llm | StrOutputParser()
-
-        result = chain.invoke({
+        # Invoke LLM directly (not via StrOutputParser) to capture usage metadata
+        llm_chain = prompt | self.llm
+        response = llm_chain.invoke({
             "robot_type": self.robot_type,
             "examples": examples_text,
             "task_description": task_description,
         })
+
+        # Track token usage
+        try:
+            usage = getattr(response, "usage_metadata", None)
+            if usage:
+                from src.agent.common.token_tracker import tracker
+                tracker.record(
+                    step="rag_yaml_gen",
+                    model=os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME", "azure"),
+                    input_tokens=usage.get("input_tokens", 0),
+                    output_tokens=usage.get("output_tokens", 0),
+                )
+        except Exception:
+            pass
+
+        result = response.content if hasattr(response, "content") else str(response)
 
         # Clean up result
         result = result.strip()

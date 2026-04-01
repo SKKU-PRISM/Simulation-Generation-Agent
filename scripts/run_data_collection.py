@@ -30,8 +30,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.data_collection.config import load_pipeline_config
-from src.data_collection.pipeline import DataCollectionPipeline, run_batch
+from src.agent.data_collection.config import load_pipeline_config
+from src.agent.data_collection.pipeline import DataCollectionPipeline, run_batch
 
 
 def main():

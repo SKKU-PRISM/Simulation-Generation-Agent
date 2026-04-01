@@ -6,7 +6,7 @@ Usage:
     python scripts/build_scene.py tasks/franka/stack/franka_stack.yaml --host localhost --port 8766
 """
 
-from src.isaac_sim.scene_builder import main
+from src.agent.isaac_sim.scene_builder import main
 
 if __name__ == "__main__":
     main()
