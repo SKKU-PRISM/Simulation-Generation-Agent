@@ -25,7 +25,7 @@ from src.agent.data_collection.config import load_robot_config
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_OUTPUT_ROOT = REPO_ROOT / ".local_docs" / "adc"
+DEFAULT_OUTPUT_ROOT = REPO_ROOT / ".internal" / "local_docs" / "adc"
 FRANKA_TASK_ROOT = REPO_ROOT / "tasks" / "franka"
 ISAACLAB_OUTPUT_ROOT = REPO_ROOT / "outputs" / "isaaclab"
 DATA_COLLECTION_OUTPUT_ROOT = REPO_ROOT / "outputs" / "data_collection"

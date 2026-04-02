@@ -1,4 +1,4 @@
-"""Deterministic task taxonomy helpers mirrored from docs/task_taxonomy.md."""
+"""Deterministic task taxonomy helpers mirrored from .internal/docs/task_taxonomy.md."""
 
 from __future__ import annotations
 

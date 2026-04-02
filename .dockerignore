@@ -1,11 +1,9 @@
 .git
 .gitmodules
 .github
+.internal
 .claude
-.reference
-.local_docs
-CLAUDE.md
-Documents
+.mcp.json
 .DS_Store
 .pytest_cache
 .mypy_cache

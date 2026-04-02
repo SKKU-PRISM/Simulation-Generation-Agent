@@ -111,7 +111,7 @@ def main() -> int:
     parser.add_argument(
         "--output-dir",
         type=str,
-        default=".local_docs/adc",
+        default=".internal/local_docs/adc",
         help="Directory for audit artifacts.",
     )
     args = parser.parse_args()

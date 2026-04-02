@@ -187,7 +187,7 @@ def main() -> int:
     output_dir = (
         Path(_ARGS.output_dir).resolve()
         if _ARGS.output_dir
-        else (PROJECT_ROOT / ".local_docs" / "adc" / f"texture_scene_smoke_{timestamp}").resolve()
+        else (PROJECT_ROOT / ".internal" / "local_docs" / "adc" / f"texture_scene_smoke_{timestamp}").resolve()
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
