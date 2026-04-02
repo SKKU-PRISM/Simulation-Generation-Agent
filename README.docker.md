@@ -216,7 +216,7 @@ docker run --rm --gpus all \
 
 ### Choosing a Model
 
-The default model is `gpt-5-mini`. To override, pass the `OPENAI_MODEL` environment variable:
+The default model is `gpt-5`. To override, pass the `OPENAI_MODEL` environment variable:
 
 ```bash
 docker run --rm --gpus all \
@@ -349,7 +349,7 @@ docker run ... -e OPENAI_API_KEY ...
 | `AZURE_OPENAI_BASE_URL` | With Azure | Azure endpoint URL |
 | `OPENAI_BASE_URL` | No | Custom OpenAI-compatible endpoint |
 | `HF_TOKEN` | No | HuggingFace token (for dataset upload) |
-| `OPENAI_MODEL` | No | Override default model (default: gpt-5-mini) |
+| `OPENAI_MODEL` | No | Override default model (default: gpt-5) |
 
 ### `run_agent.sh` Modes
 

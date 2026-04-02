@@ -216,7 +216,7 @@ docker run --rm --gpus all \
 
 ### Modellauswahl
 
-Das Standardmodell ist `gpt-5-mini`. Sie können es mit der Umgebungsvariable `OPENAI_MODEL` überschreiben:
+Das Standardmodell ist `gpt-5`. Sie können es mit der Umgebungsvariable `OPENAI_MODEL` überschreiben:
 
 ```bash
 docker run --rm --gpus all \
@@ -349,7 +349,7 @@ docker run ... -e OPENAI_API_KEY ...
 | `AZURE_OPENAI_BASE_URL` | Bei Azure | Azure-Endpunkt-URL |
 | `OPENAI_BASE_URL` | Nein | Benutzerdefinierter OpenAI-kompatibler Endpunkt |
 | `HF_TOKEN` | Nein | HuggingFace-Token (fuer Dataset-Upload) |
-| `OPENAI_MODEL` | Nein | Standardmodell ueberschreiben (Standard: gpt-5-mini) |
+| `OPENAI_MODEL` | Nein | Standardmodell ueberschreiben (Standard: gpt-5) |
 
 ### `run_agent.sh`-Modi
 

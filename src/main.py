@@ -112,10 +112,10 @@ def _estimate_cost(token_file: Path) -> str:
             if not line.strip():
                 continue
             entry = json.loads(line)
-            model = entry.get("model", "gpt-5-mini")
+            model = entry.get("model", "gpt-5")
             inp = entry.get("input_tokens", 0)
             out = entry.get("output_tokens", 0)
-            rates = COST_PER_1K.get(model, COST_PER_1K["gpt-5-mini"])
+            rates = COST_PER_1K.get(model, COST_PER_1K["gpt-5"])
             total_cost += (inp / 1000) * rates["input"] + (out / 1000) * rates["output"]
     except Exception:
         pass

@@ -216,7 +216,7 @@ docker run --rm --gpus all \
 
 ### モデルの選択
 
-デフォルトモデルは `gpt-5-mini` です。`OPENAI_MODEL` 環境変数で変更できます：
+デフォルトモデルは `gpt-5` です。`OPENAI_MODEL` 環境変数で変更できます：
 
 ```bash
 docker run --rm --gpus all \
@@ -349,7 +349,7 @@ docker run ... -e OPENAI_API_KEY ...
 | `AZURE_OPENAI_BASE_URL` | Azure 使用時 | Azure エンドポイント URL |
 | `OPENAI_BASE_URL` | いいえ | カスタム OpenAI 互換エンドポイント |
 | `HF_TOKEN` | いいえ | HuggingFace トークン（データセットアップロード用） |
-| `OPENAI_MODEL` | いいえ | デフォルトモデルの上書き（デフォルト：gpt-5-mini） |
+| `OPENAI_MODEL` | いいえ | デフォルトモデルの上書き（デフォルト：gpt-5） |
 
 ### `run_agent.sh` モード
 

@@ -22,7 +22,7 @@ dataset:
   keep_failed_raw_dataset: false
 
 llm:
-  model: "gpt-5-mini"         # Azure OpenAI model for CaP code generation
+  model: "gpt-5"         # Azure OpenAI model for CaP code generation
 
 vlm:
   enabled: true               # use VLM for success judging

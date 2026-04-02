@@ -25,7 +25,7 @@ class AzureOpenAIClient:
             )
 
         base_url = os.environ.get("OPENAI_BASE_URL")
-        self.model = model or os.environ.get("OPENAI_MODEL", "gpt-5-mini")
+        self.model = model or os.environ.get("OPENAI_MODEL", "gpt-5")
 
         client_kwargs = {"api_key": api_key}
         if base_url:

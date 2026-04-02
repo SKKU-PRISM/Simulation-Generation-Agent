@@ -216,7 +216,7 @@ docker run --rm --gpus all \
 
 ### 选择模型
 
-默认模型为 `gpt-5-mini`。可通过 `OPENAI_MODEL` 环境变量覆盖：
+默认模型为 `gpt-5`。可通过 `OPENAI_MODEL` 环境变量覆盖：
 
 ```bash
 docker run --rm --gpus all \
@@ -349,7 +349,7 @@ docker run ... -e OPENAI_API_KEY ...
 | `AZURE_OPENAI_BASE_URL` | 使用 Azure 时 | Azure 端点 URL |
 | `OPENAI_BASE_URL` | 否 | 自定义 OpenAI 兼容端点 |
 | `HF_TOKEN` | 否 | HuggingFace 令牌（用于数据集上传） |
-| `OPENAI_MODEL` | 否 | 覆盖默认模型（默认：gpt-5-mini） |
+| `OPENAI_MODEL` | 否 | 覆盖默认模型（默认：gpt-5） |
 
 ### `run_agent.sh` 模式
 

@@ -10,7 +10,7 @@ run:
 
 collection:
   config_path: configs/docker/data_collection_release.yaml
-  llm_model: gpt-5-mini
+  llm_model: gpt-5
   vlm_model: gpt-5
   use_vlm_judge: true
   discard_failed_episodes: true

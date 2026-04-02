@@ -6,17 +6,17 @@ default_provider: openai
 
 # OpenAI Platform Configuration (api.openai.com)
 openai:
-  model: "gpt-5-mini"
-  temperature: 1.0  # gpt-5-mini only supports temperature=1.0
-  max_tokens: 16000  # gpt-5-mini uses reasoning tokens; needs headroom for output
+  model: "gpt-5"
+  temperature: 1.0  # gpt-5 default
+  max_tokens: 16000  # gpt-5 needs headroom for reasoning + output tokens
 
 # Azure OpenAI Configuration
 azure_openai:
   endpoint: ${AZURE_OPENAI_ENDPOINT}  # Set via environment variable
   deployment_name: ${AZURE_OPENAI_DEPLOYMENT_NAME}  # Set via environment variable
   api_version: "2024-02-15-preview"
-  model: "gpt-5-mini"
-  temperature: 1.0  # gpt-5-mini only supports temperature=1.0
+  model: "gpt-5"
+  temperature: 1.0  # gpt-5 default
   max_tokens: 2000
 
 # AWS Bedrock Configuration

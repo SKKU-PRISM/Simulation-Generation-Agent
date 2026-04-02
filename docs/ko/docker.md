@@ -216,7 +216,7 @@ docker run --rm --gpus all \
 
 ### 모델 선택
 
-기본 모델은 `gpt-5-mini`입니다. `OPENAI_MODEL` 환경변수로 변경할 수 있습니다:
+기본 모델은 `gpt-5`입니다. `OPENAI_MODEL` 환경변수로 변경할 수 있습니다:
 
 ```bash
 docker run --rm --gpus all \
@@ -349,7 +349,7 @@ docker run ... -e OPENAI_API_KEY ...
 | `AZURE_OPENAI_BASE_URL` | Azure 사용 시 | Azure 엔드포인트 URL |
 | `OPENAI_BASE_URL` | 아니오 | 커스텀 OpenAI 호환 엔드포인트 |
 | `HF_TOKEN` | 아니오 | HuggingFace 토큰 (데이터셋 업로드용) |
-| `OPENAI_MODEL` | 아니오 | 기본 모델 오버라이드 (기본값: gpt-5-mini) |
+| `OPENAI_MODEL` | 아니오 | 기본 모델 오버라이드 (기본값: gpt-5) |
 
 ### `run_agent.sh` 모드
 

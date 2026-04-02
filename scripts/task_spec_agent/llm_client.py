@@ -727,7 +727,7 @@ class OpenAILLMClient(BaseLLMClient):
         if not self.api_key:
             raise LLMConnectionError("OPENAI_API_KEY environment variable is not set")
 
-        self.model_name = config.get("model", "gpt-5-mini")
+        self.model_name = config.get("model", "gpt-5")
 
         try:
             from langchain_openai import ChatOpenAI
@@ -909,7 +909,7 @@ class LLMClientFactory:
             openai_config = config.get("openai", {})
             if not openai_config:
                 # Fallback to azure_openai config model if openai section missing
-                openai_config = {"model": "gpt-5-mini", "temperature": 1.0, "max_tokens": 2000}
+                openai_config = {"model": "gpt-5", "temperature": 1.0, "max_tokens": 2000}
             return OpenAILLMClient(openai_config)
 
         elif provider == "bedrock":
