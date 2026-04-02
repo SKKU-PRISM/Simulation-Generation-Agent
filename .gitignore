@@ -57,3 +57,6 @@ Joint_recording.md
 server_inference_template.md
 PRISM_Track2_*.md
 RAPIDS_Agent3_5_*.md
+
+# RAG vector store (auto-generated on first run)
+data/vector_store/
