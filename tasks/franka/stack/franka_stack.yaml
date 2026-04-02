@@ -76,6 +76,10 @@ assets:
       solver_velocity_iterations: 0
       max_depenetration_velocity: 5.0
     randomize:
+      mass:
+        distribution: uniform
+        operation: scale
+        range: [0.8, 1.2]            # ±20% mass randomization
       joint_position:
         distribution: gaussian
         mean: 0.0

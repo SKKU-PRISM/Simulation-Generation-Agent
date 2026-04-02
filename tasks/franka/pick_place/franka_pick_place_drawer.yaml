@@ -138,6 +138,10 @@ assets:
         y: [-0.25, -0.05]
         z: 0.055                      # fixed on table surface
 
+      mass:
+        distribution: uniform
+        operation: scale
+        range: [0.8, 1.2]            # ±20% mass randomization
   # Target marker on top of cabinet (green pad)
   - name: target_marker
     type: rigid

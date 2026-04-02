@@ -360,6 +360,8 @@ AVAILABLE event functions:
 - `mdp.reset_root_state_uniform` — randomize root state within range (for objects)
 - `mdp.reset_joints_by_offset` — randomize joint positions by offset (for robot)
 - `mdp.push_by_setting_velocity` — apply random velocity push
+- `mdp.randomize_rigid_body_mass` — randomize rigid body mass (startup only)
+- `mdp.randomize_rigid_body_material` — randomize friction/restitution (startup only)
 
 **DO NOT USE** functions like `mdp.set_default_joint_pose`, `mdp.randomize_joint_by_gaussian_offset`, `mdp.randomize_object_pose` — these DO NOT EXIST.
 
@@ -395,7 +397,36 @@ class EventCfg:
             "asset_cfg": SceneEntityCfg("object_name"),
         },
     )
+
+    # Mass randomization (from asset.randomize.mass):
+    # mode="startup" — applied once at environment creation, NOT every reset
+    randomize_object_mass = EventTerm(
+        func=mdp.randomize_rigid_body_mass,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("object_name"),
+            "mass_distribution_params": (0.8, 1.2),  # from randomize.mass.range (scale factor)
+            "operation": "scale",                      # from randomize.mass.operation
+        },
+    )
+
+    # Physics material randomization (from asset.randomize.physics_material):
+    # mode="startup" — friction/restitution buckets created once
+    randomize_object_material = EventTerm(
+        func=mdp.randomize_rigid_body_material,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("object_name", body_names=".*"),  # from physics_material.body_names
+            "static_friction_range": (0.8, 1.25),     # from physics_material.static_friction
+            "dynamic_friction_range": (0.8, 1.25),    # from physics_material.dynamic_friction
+            "restitution_range": (0.0, 0.0),          # from physics_material.restitution
+            "num_buckets": 16,                         # from physics_material.num_buckets
+        },
+    )
 ```
+
+**Important**: Mass and material randomization use `mode="startup"` (applied once), NOT `mode="reset"`.
+Only generate mass/material events if the YAML asset explicitly has `randomize.mass` or `randomize.physics_material`.
 
 ### 8. Rewards
 

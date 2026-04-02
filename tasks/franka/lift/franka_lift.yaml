@@ -112,6 +112,10 @@ assets:
         y: [-0.25, 0.25]
         z: 0.0                        # fixed on table
 
+      mass:
+        distribution: uniform
+        operation: scale
+        range: [0.8, 1.2]            # ±20% mass randomization
 goal:
   description: "Lift the cube to the commanded target pose above the table"
   conditions:

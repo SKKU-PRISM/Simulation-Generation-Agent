@@ -112,6 +112,10 @@ assets:
         y: [-0.25, -0.05]
         z: 0.015                      # fixed on table surface (0.9x scaled)
 
+      mass:
+        distribution: uniform
+        operation: scale
+        range: [0.8, 1.2]            # ±20% mass randomization
   # Target placement marker (flat green pad on table)
   - name: target_marker
     type: rigid
