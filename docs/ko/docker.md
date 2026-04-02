@@ -1,6 +1,6 @@
 # Docker 가이드
 
-[<img src="https://flagcdn.com/24x18/us.png" width="20" alt="English"> English](README.docker.md) | [<img src="https://flagcdn.com/24x18/kr.png" width="20" alt="한국어"> 한국어](README.docker.ko.md) | [<img src="https://flagcdn.com/24x18/cn.png" width="20" alt="中文"> 中文](README.docker.zh.md) | [<img src="https://flagcdn.com/24x18/jp.png" width="20" alt="日本語"> 日本語](README.docker.ja.md) | [<img src="https://flagcdn.com/24x18/de.png" width="20" alt="Deutsch"> Deutsch](README.docker.de.md)
+[<img src="https://flagcdn.com/24x18/us.png" width="20" alt="English"> English](../../README.docker.md) | [<img src="https://flagcdn.com/24x18/kr.png" width="20" alt="한국어"> 한국어](docker.md) | [<img src="https://flagcdn.com/24x18/cn.png" width="20" alt="中文"> 中文](../zh/docker.md) | [<img src="https://flagcdn.com/24x18/jp.png" width="20" alt="日本語"> 日本語](../ja/docker.md) | [<img src="https://flagcdn.com/24x18/de.png" width="20" alt="Deutsch"> Deutsch](../de/docker.md)
 
 이 가이드는 Simulation-Generation-Agent를 Docker 컨테이너 내에서 빌드하고 실행하는 방법을 단계별로 안내합니다. 로컬에 IsaacLab을 설치할 필요가 없습니다.
 

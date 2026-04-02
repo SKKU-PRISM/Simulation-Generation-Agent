@@ -1,6 +1,6 @@
 # Simulation-Generation-Agent (RAPIDS)
 
-[<img src="https://flagcdn.com/24x18/us.png" width="20" alt="English"> English](README.md) | [<img src="https://flagcdn.com/24x18/kr.png" width="20" alt="한국어"> 한국어](README.ko.md) | [<img src="https://flagcdn.com/24x18/cn.png" width="20" alt="中文"> 中文](README.zh.md) | [<img src="https://flagcdn.com/24x18/jp.png" width="20" alt="日本語"> 日本語](README.ja.md) | [<img src="https://flagcdn.com/24x18/de.png" width="20" alt="Deutsch"> Deutsch](README.de.md)
+[<img src="https://flagcdn.com/24x18/us.png" width="20" alt="English"> English](README.md) | [<img src="https://flagcdn.com/24x18/kr.png" width="20" alt="한국어"> 한국어](docs/ko/README.md) | [<img src="https://flagcdn.com/24x18/cn.png" width="20" alt="中文"> 中文](docs/zh/README.md) | [<img src="https://flagcdn.com/24x18/jp.png" width="20" alt="日本語"> 日本語](docs/ja/README.md) | [<img src="https://flagcdn.com/24x18/de.png" width="20" alt="Deutsch"> Deutsch](docs/de/README.md)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
