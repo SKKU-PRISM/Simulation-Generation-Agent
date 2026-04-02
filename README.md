@@ -232,7 +232,7 @@ docker run --rm --gpus all \
 ```bash
 # 자연어 입력 → 전체 파이프라인 (Stage 1→2→3)
 ./run_agent.sh "Stack the blocks inside the tray on the table"
-./run_agent.sh "Open the drawer" --robot franka --episodes 5
+./run_agent.sh "Sort the colored blocks into matching colored bins" --robot franka --episodes 5
 
 # JSON 입력 (심사 제출용)
 ./run_agent.sh data/input_sample.json results/output.json

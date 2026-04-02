@@ -73,7 +73,7 @@ python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube and place i
 python3 scripts/task_spec_agent/task_spec_agent.py "Stack blocks" --no-rag
 
 # 다른 LLM 프로바이더 사용
-python3 scripts/task_spec_agent/task_spec_agent.py "Open the drawer" --provider huggingface
+python3 scripts/task_spec_agent/task_spec_agent.py "Sort the colored blocks into matching colored bins" --provider huggingface
 
 # 상세 로그
 python3 scripts/task_spec_agent/task_spec_agent.py "Reach the goal" --verbose
