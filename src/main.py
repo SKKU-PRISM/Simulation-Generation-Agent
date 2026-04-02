@@ -158,10 +158,20 @@ def run_task(
         task_dir / "step1_nl_to_yaml.log",
         est_seconds=STAGE_EST["Stage 1: NL → YAML"],
     )
-    result["steps"]["nl_to_yaml"] = {
+    step1_info = {
         "success": ok and yaml_path.exists(),
         "yaml_path": str(yaml_path) if yaml_path.exists() else None,
     }
+    # Extract RAG match info from log
+    step1_log = task_dir / "step1_nl_to_yaml.log"
+    if step1_log.exists():
+        log_text = step1_log.read_text(errors="replace")
+        import re as _re
+        match = _re.search(r"Best match: (.+?) \(from (.+?)\)", log_text)
+        if match:
+            step1_info["rag_matched_task"] = match.group(1)
+            step1_info["rag_source_yaml"] = match.group(2)
+    result["steps"]["nl_to_yaml"] = step1_info
     if not ok or not yaml_path.exists():
         return result
 
@@ -175,16 +185,51 @@ def run_task(
 
     env_dir = None
     lab_success = False
+    lab_detail = {}
     latest_result = _find_latest_result_json()
     if latest_result:
         try:
             rdata = json.loads(latest_result.read_text())
             env_dir = rdata.get("output_dir")
             lab_success = rdata.get("success", False)
+            lab_detail = {
+                "attempts": rdata.get("attempts"),
+                "eval_score": rdata.get("eval_score"),
+                "evaluation": rdata.get("evaluation"),
+                "error": rdata.get("error"),
+            }
         except Exception:
             pass
 
-    result["steps"]["yaml_to_isaaclab"] = {"success": bool(lab_success), "env_dir": env_dir}
+    step2_info = {"success": bool(lab_success), "env_dir": env_dir}
+    step2_info.update({k: v for k, v in lab_detail.items() if v is not None})
+    # Extract verification scores from log
+    step2_log = task_dir / "step2_isaaclab.log"
+    if step2_log.exists():
+        import re as _re
+        log_text = step2_log.read_text(errors="replace")
+        scores = _re.findall(
+            r"Code evaluation: (\d+)/100.*?"
+            r"scene_fidelity: (\d+)/30.*?"
+            r"mdp_correctness: (\d+)/25.*?"
+            r"task_alignment: (\d+)/25.*?"
+            r"runtime_validity: (\d+)/20",
+            log_text, _re.DOTALL,
+        )
+        if scores:
+            last = scores[-1]
+            step2_info["last_code_score"] = {
+                "total": int(last[0]),
+                "scene_fidelity": int(last[1]),
+                "mdp_correctness": int(last[2]),
+                "task_alignment": int(last[3]),
+                "runtime_validity": int(last[4]),
+            }
+        img_scores = _re.findall(r"Image evaluation: front=(\d+)/100, top=(\d+)/100", log_text)
+        if img_scores:
+            last_img = img_scores[-1]
+            step2_info["last_image_score"] = {"front": int(last_img[0]), "top": int(last_img[1])}
+    result["steps"]["yaml_to_isaaclab"] = step2_info
     if not lab_success:
         return result
 
