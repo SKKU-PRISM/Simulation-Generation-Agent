@@ -1619,10 +1619,10 @@ Use this structure/pattern, but fill in values from the YAML above.
         # Build feedback from 4-category scores
         feedback_lines = ["=== SceneVerifier Code Evaluation Feedback ==="]
         categories = {
-            "scene_fidelity": ("Scene Fidelity", 30),
-            "mdp_correctness": ("MDP Correctness", 25),
-            "task_alignment": ("Task Alignment", 25),
-            "runtime_validity": ("Runtime Validity", 20),
+            "scene_fidelity": ("Scene Fidelity", 40),
+            "mdp_correctness": ("MDP Correctness", 20),
+            "task_alignment": ("Task Alignment", 15),
+            "runtime_validity": ("Runtime Validity", 25),
         }
         for key, (label, max_score) in categories.items():
             entry = code_eval.get(key, {})
@@ -1862,7 +1862,7 @@ Only include files that need modifications."""
                             ):
                                 self._verify_refine_count = getattr(self, "_verify_refine_count", 0) + 1
                                 console.print(
-                                    f"  [yellow]Score {static_score}/80 < {verify_threshold}.[/yellow] "
+                                    f"  [yellow]Score {static_score}/75 < {verify_threshold}.[/yellow] "
                                     f"Refinement round {self._verify_refine_count}/{verify_max_refine}..."
                                 )
                                 yaml_text_for_refine = Path(yaml_path).read_text()
