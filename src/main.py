@@ -1,84 +1,125 @@
 #!/usr/bin/env python3
-"""Challenge submission entry point.
+"""Simulation Generation Agent — Main Entry Point.
 
-Runs the full NL -> YAML -> IsaacLab -> DataCollection pipeline
+Runs the full NL → YAML → IsaacLab → DataCollection pipeline
 using a JSON input file and writes structured results to a JSON output file.
 
 Usage:
     python src/main.py --input data/input_sample.json --output results/output.json
-
-Input JSON format:
-    {
-      "tasks": [
-        {"task_description": "Stack the blocks inside the tray", "robot": "franka"}
-      ],
-      "config": {"target_success": 1, "max_attempts": 3}
-    }
 """
 
 import argparse
 import json
-import logging
 import os
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
-logger = logging.getLogger("main")
+from rich.console import Console
+
+console = Console()
 
 PYTHON_BIN = os.environ.get("PYTHON_BIN", sys.executable)
 
+# Cost per 1K tokens (USD)
+COST_PER_1K = {
+    "gpt-5-mini": {"input": 0.00015, "output": 0.0006},
+    "gpt-5": {"input": 0.003, "output": 0.015},
+}
 
-def _run_step(cmd: list[str], label: str, log_path: Path | None = None) -> tuple[bool, str]:
-    """Run a subprocess step. Returns (success, stdout_text)."""
-    logger.info("Step [%s]: %s", label, " ".join(cmd))
+# Estimated stage durations (seconds) for progress hints
+STAGE_EST = {
+    "Stage 1: NL → YAML": 90,
+    "Stage 2: YAML → IsaacLab": 600,
+    "Stage 3: Data Collection": 420,
+}
+
+
+def _fmt_time(seconds: float) -> str:
+    m, s = divmod(int(seconds), 60)
+    return f"{m}m {s}s" if m else f"{s}s"
+
+
+def _run_step(
+    cmd: list[str], label: str, log_path: Path | None = None, est_seconds: int = 0
+) -> tuple[bool, str, float]:
+    """Run a subprocess step with spinner. Returns (success, output, elapsed)."""
+    start = time.time()
+    est_hint = f", est. ~{_fmt_time(est_seconds)}" if est_seconds else ""
+
     try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=7200,
-            cwd=str(PROJECT_ROOT),
-            env={**os.environ, "PYTHONPATH": str(PROJECT_ROOT), "PYTHONUNBUFFERED": "1"},
-        )
+        with console.status(
+            f"  [cyan]⏳ {label}[/] ... (elapsed: 0s{est_hint})",
+            spinner="dots",
+        ):
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=7200,
+                cwd=str(PROJECT_ROOT),
+                env={**os.environ, "PYTHONPATH": str(PROJECT_ROOT), "PYTHONUNBUFFERED": "1"},
+            )
+        elapsed = time.time() - start
         combined = result.stdout + "\n" + result.stderr
+
         if log_path:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             log_path.write_text(combined, encoding="utf-8")
+
         if result.returncode != 0:
-            logger.error("Step [%s] failed (rc=%d):\n%s", label, result.returncode, combined[-2000:])
-            return False, combined
-        return True, combined
+            console.print(f"  [red]❌ {label}[/]  {_fmt_time(elapsed)}")
+            return False, combined, elapsed
+        console.print(f"  [green]✅ {label}[/]  {_fmt_time(elapsed)}")
+        return True, combined, elapsed
+
     except subprocess.TimeoutExpired:
-        logger.error("Step [%s] timed out", label)
-        return False, "TIMEOUT"
+        elapsed = time.time() - start
+        console.print(f"  [red]⏰ {label} (timeout)[/]  {_fmt_time(elapsed)}")
+        return False, "TIMEOUT", elapsed
     except Exception as e:
-        logger.error("Step [%s] exception: %s", label, e)
-        return False, str(e)
+        elapsed = time.time() - start
+        console.print(f"  [red]💥 {label} ({e})[/]  {_fmt_time(elapsed)}")
+        return False, str(e), elapsed
 
 
 def _sanitize_task_name(description: str) -> str:
-    """Derive a CamelCase task name from NL description."""
     words = re.sub(r"[^a-zA-Z0-9\s]", "", description).split()
     return "".join(w.capitalize() for w in words[:8]) or "Task"
 
 
 def _find_latest_result_json() -> Path | None:
-    """Find the most recently created result.json under outputs/isaaclab/."""
     isaaclab_out = PROJECT_ROOT / "outputs" / "isaaclab"
     if not isaaclab_out.exists():
         return None
     results = sorted(isaaclab_out.glob("*/result.json"), key=lambda p: p.stat().st_mtime, reverse=True)
     return results[0] if results else None
+
+
+def _estimate_cost(token_file: Path) -> str:
+    """Estimate API cost from token usage JSONL."""
+    if not token_file.exists():
+        return "$0.00"
+    total_cost = 0.0
+    try:
+        for line in token_file.read_text().strip().split("\n"):
+            if not line.strip():
+                continue
+            entry = json.loads(line)
+            model = entry.get("model", "gpt-5-mini")
+            inp = entry.get("input_tokens", 0)
+            out = entry.get("output_tokens", 0)
+            rates = COST_PER_1K.get(model, COST_PER_1K["gpt-5-mini"])
+            total_cost += (inp / 1000) * rates["input"] + (out / 1000) * rates["output"]
+    except Exception:
+        pass
+    return f"${total_cost:.2f}"
 
 
 def run_task(
@@ -94,14 +135,9 @@ def run_task(
     task_dir.mkdir(parents=True, exist_ok=True)
     yaml_path = task_dir / "task.yaml"
 
-    result = {
-        "name": task_name,
-        "description": task_desc,
-        "steps": {},
-    }
+    result = {"name": task_name, "description": task_desc, "steps": {}}
 
-    # Step 1: NL -> YAML
-    logger.info("=== Step 1: NL -> YAML for %s ===", task_name)
+    # Stage 1: NL → YAML
     step1_cmd = [
         PYTHON_BIN,
         "scripts/task_spec_agent/task_spec_agent.py",
@@ -109,23 +145,25 @@ def run_task(
         "--robot", robot,
         "--output", str(yaml_path),
     ]
-    ok, _ = _run_step(step1_cmd, f"{task_name}/nl_to_yaml", task_dir / "step1_nl_to_yaml.log")
+    ok, _, _ = _run_step(
+        step1_cmd, "Stage 1: NL → YAML",
+        task_dir / "step1_nl_to_yaml.log",
+        est_seconds=STAGE_EST["Stage 1: NL → YAML"],
+    )
     result["steps"]["nl_to_yaml"] = {
         "success": ok and yaml_path.exists(),
         "yaml_path": str(yaml_path) if yaml_path.exists() else None,
     }
     if not ok or not yaml_path.exists():
-        logger.error("Step 1 failed for %s", task_name)
         return result
 
-    # Step 2: YAML -> IsaacLab environment
-    logger.info("=== Step 2: YAML -> IsaacLab for %s ===", task_name)
-    step2_cmd = [
-        PYTHON_BIN,
-        "scripts/run_isaac_lab.py",
-        str(yaml_path),
-    ]
-    ok, _ = _run_step(step2_cmd, f"{task_name}/yaml_to_isaaclab", task_dir / "step2_isaaclab.log")
+    # Stage 2: YAML → IsaacLab
+    step2_cmd = [PYTHON_BIN, "scripts/run_isaac_lab.py", str(yaml_path)]
+    ok, _, _ = _run_step(
+        step2_cmd, "Stage 2: YAML → IsaacLab",
+        task_dir / "step2_isaaclab.log",
+        est_seconds=STAGE_EST["Stage 2: YAML → IsaacLab"],
+    )
 
     env_dir = None
     lab_success = False
@@ -138,16 +176,11 @@ def run_task(
         except Exception:
             pass
 
-    result["steps"]["yaml_to_isaaclab"] = {
-        "success": bool(lab_success),
-        "env_dir": env_dir,
-    }
+    result["steps"]["yaml_to_isaaclab"] = {"success": bool(lab_success), "env_dir": env_dir}
     if not lab_success:
-        logger.error("Step 2 failed for %s", task_name)
         return result
 
-    # Step 3: Data Collection
-    logger.info("=== Step 3: Data Collection for %s ===", task_name)
+    # Stage 3: Data Collection
     step3_cmd = [
         PYTHON_BIN,
         "scripts/run_data_collection.py",
@@ -156,31 +189,29 @@ def run_task(
         "--target-success", str(target_success),
         "--max-attempts", str(max_attempts),
     ]
-    ok, _ = _run_step(step3_cmd, f"{task_name}/data_collection", task_dir / "step3_data_collection.log")
+    ok, _, _ = _run_step(
+        step3_cmd, f"Stage 3: Data Collection (target: {target_success} episodes)",
+        task_dir / "step3_data_collection.log",
+        est_seconds=STAGE_EST["Stage 3: Data Collection"],
+    )
 
     dc_result = {"success": False, "success_episodes": 0, "total_episodes": 0}
-
-    # Parse collection results — find most recent collection_results.json by mtime
     dc_out = PROJECT_ROOT / "outputs" / "data_collection"
     if dc_out.exists():
         all_results = sorted(
             dc_out.glob("*/collection_results.json"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
+            key=lambda p: p.stat().st_mtime, reverse=True,
         )
         if all_results:
             coll_json = all_results[0]
-            logger.info("Found collection results: %s", coll_json)
             try:
                 cdata = json.loads(coll_json.read_text())
                 dc_result["success_episodes"] = cdata.get("geometry_successful_episodes", 0)
                 dc_result["total_episodes"] = cdata.get("total_episodes", 0)
                 dc_result["output_dir"] = str(coll_json.parent)
                 dc_result["success"] = cdata.get("pipeline_completed", False)
-            except Exception as e:
-                logger.error("Failed to parse collection results: %s", e)
-        else:
-            logger.warning("No collection_results.json found under %s", dc_out)
+            except Exception:
+                pass
 
     result["steps"]["data_collection"] = dc_result
     return result
@@ -197,15 +228,15 @@ def run_pipeline(input_path: Path, output_path: Path) -> dict:
     if not tasks:
         return {"status": "error", "message": "No tasks specified in input file"}
 
+    pipeline_start = time.time()
     started_at = datetime.now(timezone.utc).isoformat()
     work_dir = PROJECT_ROOT / "outputs" / f"challenge_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     work_dir.mkdir(parents=True, exist_ok=True)
 
-    # Enable token usage tracking
+    # Token tracking
     token_file = work_dir / "token_usage.jsonl"
     os.environ["TOKEN_USAGE_FILE"] = str(token_file)
     os.environ["TOKEN_USAGE_LOG"] = "1"
-    logger.info("Token tracking enabled: %s", token_file)
 
     task_results = []
     for task_spec in tasks:
@@ -214,28 +245,54 @@ def run_pipeline(input_path: Path, output_path: Path) -> dict:
         if not desc:
             task_results.append({"name": "unknown", "steps": {}, "error": "empty task_description"})
             continue
+
+        console.print(f"\n[bold]🚀 RAPIDS Pipeline[/] — \"{desc}\"")
+        console.print(f"   Robot: {robot} | Target: {target_success} episodes\n")
+
         tr = run_task(desc, robot, target_success, max_attempts, work_dir)
         task_results.append(tr)
 
     finished_at = datetime.now(timezone.utc).isoformat()
+    total_elapsed = time.time() - pipeline_start
 
     all_ok = all(
         t.get("steps", {}).get("data_collection", {}).get("success", False)
         for t in task_results
     )
 
-    # Token usage summary
+    # Token summary
     token_summary = None
+    token_count = 0
+    api_calls = 0
     if token_file.exists():
         try:
             from src.agent.common.token_tracker import TokenTracker
             token_summary = TokenTracker.report_from_file(str(token_file))
-            logger.info("Token usage:\n%s", token_summary)
+            for line in token_file.read_text().strip().split("\n"):
+                if line.strip():
+                    e = json.loads(line)
+                    token_count += e.get("input_tokens", 0) + e.get("output_tokens", 0)
+                    api_calls += 1
         except Exception:
             pass
 
+    cost_str = _estimate_cost(token_file)
+
+    # Final summary
+    status_icon = "✅" if all_ok else "⚠️"
+    status_text = "completed" if all_ok else "partial"
+    console.print(f"\n{'─' * 54}")
+    console.print(f"  📊 Result: {status_icon} {status_text}")
+    console.print(f"  ⏱️  Total: {_fmt_time(total_elapsed)}")
+    if token_count:
+        console.print(f"  🔤 Tokens: {token_count:,} ({api_calls} API calls)")
+        console.print(f"  💰 Cost: ~{cost_str}")
+    console.print(f"  📄 Output: {output_path}")
+    console.print(f"  📁 Logs: {work_dir}/")
+    console.print(f"{'─' * 54}\n")
+
     output = {
-        "status": "completed" if all_ok else "partial",
+        "status": status_text,
         "started_at": started_at,
         "finished_at": finished_at,
         "work_dir": str(work_dir),
@@ -245,6 +302,8 @@ def run_pipeline(input_path: Path, output_path: Path) -> dict:
         output["token_usage_report"] = token_summary
     if token_file.exists():
         output["token_usage_file"] = str(token_file)
+    if cost_str:
+        output["estimated_cost"] = cost_str
 
     return output
 
@@ -261,15 +320,13 @@ def main():
     output_path = Path(args.output)
 
     if not input_path.exists():
-        logger.error("Input file not found: %s", input_path)
+        console.print(f"[red]Error:[/] Input file not found: {input_path}")
         sys.exit(1)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    logger.info("Pipeline start — input: %s, output: %s", input_path, output_path)
     result = run_pipeline(input_path, output_path)
     output_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
-    logger.info("Pipeline done — status: %s, output: %s", result["status"], output_path)
 
 
 if __name__ == "__main__":
