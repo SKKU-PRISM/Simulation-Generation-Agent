@@ -188,6 +188,12 @@ assets:
     physics:
       rigid_body: false
       collision: false
+    randomize:
+      position:
+        type: absolute
+        x: [0.55, 0.65]
+        y: [-0.20, -0.10]
+        z: 0.002
 
   # Red target zone (flat marker)
   - name: red_zone
@@ -201,6 +207,12 @@ assets:
     physics:
       rigid_body: false
       collision: false
+    randomize:
+      position:
+        type: absolute
+        x: [0.55, 0.65]
+        y: [-0.05, 0.05]
+        z: 0.002
 
   # Green target zone (flat marker)
   - name: green_zone
@@ -214,6 +226,12 @@ assets:
     physics:
       rigid_body: false
       collision: false
+    randomize:
+      position:
+        type: absolute
+        x: [0.55, 0.65]
+        y: [0.10, 0.20]
+        z: 0.002
 
 goal:
   description: "Sort each colored block onto its matching colored zone: blue block -> blue zone, red block -> red zone, green block -> green zone"

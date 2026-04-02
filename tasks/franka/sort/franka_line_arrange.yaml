@@ -188,6 +188,12 @@ assets:
     physics:
       rigid_body: false
       collision: false
+    randomize:
+      position:
+        type: absolute
+        x: [0.50, 0.60]
+        y: [-0.11, -0.01]
+        z: 0.002
 
   # Position marker 2 - red target (center)
   - name: pos_marker_2
@@ -201,6 +207,12 @@ assets:
     physics:
       rigid_body: false
       collision: false
+    randomize:
+      position:
+        type: absolute
+        x: [0.50, 0.60]
+        y: [-0.05, 0.05]
+        z: 0.002
 
   # Position marker 3 - green target (right)
   - name: pos_marker_3
@@ -214,6 +226,12 @@ assets:
     physics:
       rigid_body: false
       collision: false
+    randomize:
+      position:
+        type: absolute
+        x: [0.50, 0.60]
+        y: [0.01, 0.11]
+        z: 0.002
 
 goal:
   description: "Arrange blocks in a line at x=0.55: blue (y=-0.06), red (y=0.0), green (y=0.06)"

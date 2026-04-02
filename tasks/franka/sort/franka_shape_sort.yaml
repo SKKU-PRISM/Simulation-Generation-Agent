@@ -212,6 +212,12 @@ assets:
     physics:
       rigid_body: false
       collision: false
+    randomize:
+      position:
+        type: absolute
+        x: [0.55, 0.65]
+        y: [-0.15, -0.05]
+        z: 0.002
 
   # Sphere bin (rose target zone)
   - name: sphere_bin
@@ -225,6 +231,12 @@ assets:
     physics:
       rigid_body: false
       collision: false
+    randomize:
+      position:
+        type: absolute
+        x: [0.55, 0.65]
+        y: [0.05, 0.15]
+        z: 0.002
 
 goal:
   description: "Sort objects by shape: place cubes on the purple bin, spheres on the rose bin"
