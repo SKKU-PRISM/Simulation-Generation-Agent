@@ -24,17 +24,28 @@ RESUME=0
 POSITIONAL=()
 PASSTHROUGH=()
 
+ROBOT=""
+EPISODES=""
+MAX_ATTEMPTS_NL=""
+
 print_help() {
   cat <<'EOF'
 Usage:
-  run_agent.sh <input_file> [output_file]        Challenge submission mode
-  run_agent.sh [--mode <mode>] [options] [-- extra args]   Advanced pipeline mode
+  run_agent.sh "자연어 태스크 설명" [options]                  자연어 → 전체 파이프라인 (Stage 1→2→3)
+  run_agent.sh <input_file.json> [output_file]               JSON 입력 → 전체 파이프라인
+  run_agent.sh --mode <mode> [options] [-- extra args]       개별 Stage 실행
 
-Challenge submission mode:
+자연어 입력 (메인 기능):
+  첫 번째 인자로 자연어 태스크 설명을 넣으면 NL→YAML→IsaacLab→DataCollection 전체 파이프라인이 실행됩니다.
+  --robot <type>         로봇 종류: franka, ur10e, openarm, so101 (기본: franka)
+  --episodes <n>         목표 성공 에피소드 수 (기본: 1)
+  --max-attempts <n>     최대 시도 횟수 (기본: 3)
+
+JSON 입력 (심사 제출):
   input_file               JSON task spec (default: ./data/input_sample.json)
   output_file              Result JSON path (default: ./results/output.json)
 
-Advanced pipeline options:
+개별 Stage (고급):
   --mode <mode>            e2e-batch | isaac-lab | data-collection (default: e2e-batch)
   --config <path>          Config file override
   --task <yaml>            Task YAML path for isaac-lab or data-collection mode
@@ -43,11 +54,14 @@ Advanced pipeline options:
   -h, --help               Show this help
 
 Examples:
-  # Challenge submission (reviewer)
+  # 자연어 입력 → 전체 파이프라인 (가장 간단한 사용법)
+  run_agent.sh "Stack the blocks inside the tray on the table"
+  run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
+
+  # JSON 입력 (심사 제출용)
   run_agent.sh data/input_sample.json results/output.json
 
-  # Advanced modes
-  run_agent.sh --mode e2e-batch --resume
+  # 개별 Stage 실행
   run_agent.sh --mode isaac-lab --task tasks/franka/lift/franka_lift.yaml -- --dry-run
   run_agent.sh --mode data-collection --task tasks/franka/lift/franka_lift.yaml -- --episodes 2
 
@@ -80,6 +94,18 @@ while [[ $# -gt 0 ]]; do
       RESUME=1
       shift
       ;;
+    --robot)
+      ROBOT="${2:-franka}"
+      shift 2
+      ;;
+    --episodes)
+      EPISODES="${2:-1}"
+      shift 2
+      ;;
+    --max-attempts)
+      MAX_ATTEMPTS_NL="${2:-3}"
+      shift 2
+      ;;
     -h|--help)
       print_help
       exit 0
@@ -96,10 +122,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# --- Challenge submission mode: positional args without --mode ---
+# --- Positional args without --mode: NL string or JSON file ---
 if [[ ${#POSITIONAL[@]} -gt 0 && ${MODE_EXPLICIT} -eq 0 ]]; then
-  INPUT_FILE="${POSITIONAL[0]:-./data/input_sample.json}"
-  OUTPUT_FILE="${POSITIONAL[1]:-./results/output.json}"
+  FIRST_ARG="${POSITIONAL[0]}"
 
   # API key check (dual)
   if [[ -z "${OPENAI_API_KEY:-}" && -z "${AZURE_OPENAI_API_KEY:-}" ]]; then
@@ -107,11 +132,39 @@ if [[ ${#POSITIONAL[@]} -gt 0 && ${MODE_EXPLICIT} -eq 0 ]]; then
     exit 2
   fi
 
-  mkdir -p "$(dirname "${OUTPUT_FILE}")"
   export PYTHONPATH="${REPO_ROOT}"
 
-  echo "Challenge mode: input=${INPUT_FILE} output=${OUTPUT_FILE}"
-  exec "${PYTHON_BIN}" src/main.py --input "${INPUT_FILE}" --output "${OUTPUT_FILE}"
+  # Detect: .json → challenge mode, otherwise → NL full-pipeline mode
+  if [[ "${FIRST_ARG}" == *.json ]]; then
+    # --- JSON file input (challenge submission) ---
+    INPUT_FILE="${FIRST_ARG}"
+    OUTPUT_FILE="${POSITIONAL[1]:-./results/output.json}"
+    mkdir -p "$(dirname "${OUTPUT_FILE}")"
+
+    echo "Challenge mode: input=${INPUT_FILE} output=${OUTPUT_FILE}"
+    exec "${PYTHON_BIN}" src/main.py --input "${INPUT_FILE}" --output "${OUTPUT_FILE}"
+  else
+    # --- Natural language input → full pipeline (Stage 1→2→3) ---
+    TASK_DESC="${FIRST_ARG}"
+    ROBOT="${ROBOT:-franka}"
+    EPISODES="${EPISODES:-1}"
+    MAX_ATTEMPTS_NL="${MAX_ATTEMPTS_NL:-3}"
+    OUTPUT_FILE="${POSITIONAL[1]:-./results/output.json}"
+
+    INPUT_JSON=$(mktemp /tmp/simgen_input_XXXXXX.json)
+    cat > "${INPUT_JSON}" <<JSONEOF
+{
+  "tasks": [{"task_description": "${TASK_DESC}", "robot": "${ROBOT}"}],
+  "config": {"target_success": ${EPISODES}, "max_attempts": ${MAX_ATTEMPTS_NL}}
+}
+JSONEOF
+
+    mkdir -p "$(dirname "${OUTPUT_FILE}")"
+    echo "Full pipeline mode: task=\"${TASK_DESC}\" robot=${ROBOT} episodes=${EPISODES}"
+    echo "  Input JSON: ${INPUT_JSON}"
+    echo "  Output: ${OUTPUT_FILE}"
+    exec "${PYTHON_BIN}" src/main.py --input "${INPUT_JSON}" --output "${OUTPUT_FILE}"
+  fi
 fi
 
 if [[ ${#POSITIONAL[@]} -gt 0 ]]; then

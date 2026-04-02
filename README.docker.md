@@ -65,6 +65,20 @@ docker info
 docker run --rm --gpus all nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04 nvidia-smi
 ```
 
+## 실행 (가장 간단한 방법)
+
+자연어로 태스크를 설명하면 전체 파이프라인이 자동 실행된다.
+
+```bash
+docker run --rm --gpus all \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -e OPENAI_API_KEY="sk-..." \
+  simgen-agent \
+  "Stack the blocks inside the tray on the table" --robot franka --episodes 5
+```
+
+결과는 `results/output.json`에 기록된다.
+
 ## Challenge Submission (심사위원 실행)
 
 심사위원은 아래 명령어로 이미지를 빌드하고 실행할 수 있다.

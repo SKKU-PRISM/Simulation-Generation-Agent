@@ -24,6 +24,25 @@
 
 상세 아키텍처: [docs/architecture.md](docs/architecture.md)
 
+## 실행 (가장 간단한 방법)
+
+자연어로 태스크를 설명하면 전체 파이프라인 (NL→YAML→IsaacLab→DataCollection)이 자동 실행됩니다.
+
+```bash
+./run_agent.sh "Stack the blocks inside the tray on the table"
+```
+
+옵션:
+```bash
+./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
+```
+
+Docker:
+```bash
+docker run --rm --gpus all -e OPENAI_API_KEY="sk-..." \
+  simgen-agent "Stack the blocks inside the tray on the table" --episodes 5
+```
+
 ## Quick Start
 
 ### 1. 설치
@@ -208,17 +227,22 @@ docker run --rm --gpus all \
 
 ### run_agent.sh 사용법
 
-`run_agent.sh`는 Docker 컨테이너의 엔트리포인트이자 릴리스용 단일 실행 진입점입니다.
+`run_agent.sh`는 RAPIDS의 핵심 실행 진입점입니다.
 
 ```bash
-# 심사 제출 모드 (기본)
-./run_agent.sh <input_file.json> [output_file.json]
+# 자연어 입력 → 전체 파이프라인 (Stage 1→2→3)
+./run_agent.sh "Stack the blocks inside the tray on the table"
+./run_agent.sh "Open the drawer" --robot franka --episodes 5
 
-# 고급 모드
-./run_agent.sh --mode e2e-batch                    # 대규모 배치 수집
-./run_agent.sh --mode isaac-lab --task <yaml>      # 단일 태스크 환경 생성
-./run_agent.sh --mode data-collection --task <yaml> # 단일 태스크 데이터 수집
-./run_agent.sh --help                               # 전체 옵션 확인
+# JSON 입력 (심사 제출용)
+./run_agent.sh data/input_sample.json results/output.json
+
+# 개별 Stage 실행 (고급)
+./run_agent.sh --mode isaac-lab --task <yaml>       # Stage 2만
+./run_agent.sh --mode data-collection --task <yaml> # Stage 3만
+./run_agent.sh --mode e2e-batch --resume            # 대규모 배치
+
+./run_agent.sh --help                                # 전체 옵션
 ```
 
 ## 참고

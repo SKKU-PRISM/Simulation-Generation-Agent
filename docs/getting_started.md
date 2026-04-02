@@ -138,7 +138,20 @@ python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube" --robot fr
 
 ## 6. 첫 성공 실행 권장 순서
 
-### Full Pipeline (NL → YAML → IsaacLab → CaP → Video)
+### 가장 간단한 실행 — 자연어 한 줄
+
+```bash
+./run_agent.sh "Stack the blocks inside the tray on the table"
+```
+
+자연어 태스크 설명 하나만 입력하면 NL→YAML→IsaacLab→DataCollection 전체 파이프라인이 자동 실행됩니다.
+
+옵션:
+```bash
+./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
+```
+
+### Full Pipeline (13개 태스크 일괄)
 
 ```bash
 bash scripts/run_full_test.sh
@@ -194,7 +207,14 @@ python3 scripts/preprocess_dataset.py \
 git submodule update --init --recursive
 docker build -t simgen-agent .
 
-# 실행 (심사 제출 모드)
+# 자연어 입력으로 전체 파이프라인 실행
+docker run --rm --gpus all \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -e OPENAI_API_KEY="your-key" \
+  simgen-agent \
+  "Stack the blocks inside the tray on the table" --robot franka --episodes 5
+
+# JSON 입력 (심사 제출용)
 docker run --rm --gpus all \
   -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
   -e OPENAI_API_KEY="your-key" \

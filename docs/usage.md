@@ -5,7 +5,58 @@
 설치와 환경 연결: `docs/getting_started.md`
 
 이 문서는 **실행 방법과 결과 해석의 source-of-truth**다. 내부 구현 상세나 schema 배경 설명은 다른 문서로 분리한다.
-파이프라인 아키텍처: `docs/architecture.md`
+파이프라인 아키텍처: [docs/architecture.md](architecture.md)
+
+## run_agent.sh — 전체 파이프라인 실행 (메인 기능)
+
+자연어 태스크 설명 하나만 넣으면 NL→YAML→IsaacLab→DataCollection 전체 파이프라인이 자동 실행됩니다.
+
+```bash
+# 자연어 입력
+./run_agent.sh "Stack the blocks inside the tray on the table"
+./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
+
+# JSON 입력 (심사 제출용)
+./run_agent.sh data/input_sample.json results/output.json
+```
+
+### 옵션
+
+| 옵션 | 설명 |
+| --- | --- |
+| `--robot <type>` | 로봇 종류: franka, ur10e, openarm, so101 (기본: franka) |
+| `--episodes <n>` | 목표 성공 에피소드 수 (기본: 1) |
+| `--max-attempts <n>` | 최대 시도 횟수 (기본: 3) |
+
+### Docker에서 실행
+
+```bash
+docker run --rm --gpus all \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -e OPENAI_API_KEY="your-key" \
+  simgen-agent \
+  "Stack the blocks inside the tray on the table" --episodes 5
+```
+
+### 결과
+
+`results/output.json`에 구조화된 JSON으로 기록됩니다:
+
+```json
+{
+  "status": "completed",
+  "tasks": [{
+    "name": "StackTheBlocksInsideTheTrayOnThe",
+    "steps": {
+      "nl_to_yaml": {"success": true},
+      "yaml_to_isaaclab": {"success": true},
+      "data_collection": {"success": true, "success_episodes": 5}
+    }
+  }]
+}
+```
+
+---
 
 ## 0. Task Spec Agent (NL → YAML)
 
