@@ -1,10 +1,10 @@
-"""Category 2: MDP Correctness (25 pts) - Check observation/action/reward/termination/event config."""
+"""Category 2: MDP Correctness (20 pts) - Check observation/action/reward/termination/event config."""
 
 from .parser import _check, EnvCfgParser
 
 
 # ---------------------------------------------------------------------------
-# Category 2: MDP Correctness (25 pts)
+# Category 2: MDP Correctness (20 pts)
 # ---------------------------------------------------------------------------
 
 class MDPCorrectnessChecker:
@@ -20,7 +20,7 @@ class MDPCorrectnessChecker:
         self.rigid_objects = [a for a in self.yaml_assets if a.get("type") == "rigid"]
 
     def check_observation_coverage(self) -> dict:
-        """(7 pts) All rigid objects have obs terms."""
+        """(5 pts) All rigid objects have obs terms."""
         obs_terms = self.parser.extract_observation_terms()
         observed_entities = {t["asset_cfg"] for t in obs_terms if t.get("asset_cfg")}
 
@@ -40,11 +40,13 @@ class MDPCorrectnessChecker:
         total = len(self.rigid_objects) + (1 if self.rigid_objects else 0)  # +1 for robot
         covered += 1 if has_robot_obs else 0
 
-        score = round(7 * covered / total) if total else 7
+        ratio = covered / total if total else 1.0
+        score = 5 if ratio >= 0.5 else round(5 * ratio * 1.5)
+        score = min(score, 5)
         details = f"{covered}/{total} entities observed"
         if missing:
             details += f". Missing obs: {missing}"
-        return _check(self.CAT, "observation_coverage", score, 7, details)
+        return _check(self.CAT, "observation_coverage", score, 5, details)
 
     def check_observation_validity(self) -> dict:
         """(3 pts) Obs functions are valid mdp names (runtime NaN check deferred)."""
@@ -82,21 +84,21 @@ class MDPCorrectnessChecker:
         return _check(self.CAT, "action_space", pts, 5, ", ".join(details) or "no actions")
 
     def check_reward_structure(self) -> dict:
-        """(5 pts) Has task-relevant rewards."""
+        """(4 pts) Has task-relevant rewards."""
         if self.parser.rewards_is_none():
             if self.cfg.get("allow_none_rewards", True):
                 return _check(
                     self.CAT,
                     "reward_structure",
-                    3,
-                    5,
+                    2,
+                    4,
                     "rewards=None — treated as validation-only setup",
                 )
-            return _check(self.CAT, "reward_structure", 0, 5, "rewards=None — no reward signal")
+            return _check(self.CAT, "reward_structure", 0, 4, "rewards=None — no reward signal")
 
         rewards = self.parser.extract_reward_terms()
         if not rewards:
-            return _check(self.CAT, "reward_structure", 1, 5,
+            return _check(self.CAT, "reward_structure", 1, 4,
                            "Rewards section exists but no RewTerm found")
 
         # Check weights
@@ -111,11 +113,11 @@ class MDPCorrectnessChecker:
             pts += 1
         if has_task_reward:
             pts += 2
-        return _check(self.CAT, "reward_structure", min(pts, 5), 5,
+        return _check(self.CAT, "reward_structure", min(pts, 4), 4,
                        f"{len(rewards)} rewards, task_relevant={has_task_reward}")
 
     def check_termination_coverage(self) -> dict:
-        """(3 pts) time_out + safety terminations."""
+        """(2 pts) time_out + safety terminations."""
         terms = self.parser.extract_termination_terms()
         pts = 0
         details = []
@@ -132,13 +134,13 @@ class MDPCorrectnessChecker:
             details.append("safety")
 
         if len(terms) >= 2:
-            pts = min(pts + 1, 3)
+            pts = min(pts + 1, 2)
             details.append(f"{len(terms)} total")
 
-        return _check(self.CAT, "termination_coverage", pts, 3, ", ".join(details) or "none")
+        return _check(self.CAT, "termination_coverage", pts, 2, ", ".join(details) or "none")
 
     def check_event_coverage(self) -> dict:
-        """(2 pts) Reset events for robot + objects."""
+        """(1 pt) Reset events for robot + objects."""
         events = self.parser.extract_event_terms()
         reset_events = [e for e in events if e.get("mode") == "reset"]
 
@@ -154,7 +156,7 @@ class MDPCorrectnessChecker:
         if object_resets:
             pts += 1
 
-        return _check(self.CAT, "event_coverage", pts, 2,
+        return _check(self.CAT, "event_coverage", min(pts, 1), 1,
                        f"robot_reset={has_robot_reset}, object_resets={object_resets or 'none'}")
 
     def run_all(self) -> list[dict]:

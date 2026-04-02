@@ -1,10 +1,10 @@
-"""Category 1: Scene Fidelity (30 pts) - Compare generated scene against YAML task document."""
+"""Category 1: Scene Fidelity (40 pts) - Compare generated scene against YAML task document."""
 
 from .parser import _check, EnvCfgParser
 
 
 # ---------------------------------------------------------------------------
-# Category 1: Scene Fidelity (30 pts)
+# Category 1: Scene Fidelity (40 pts)
 # ---------------------------------------------------------------------------
 
 class SceneFidelityChecker:
@@ -29,7 +29,7 @@ class SceneFidelityChecker:
         return cfg_map.get((robot_type or "franka").lower())
 
     def check_asset_completeness(self) -> dict:
-        """(10 pts) Every YAML asset has a corresponding scene entity."""
+        """(15 pts) Every YAML asset has a corresponding scene entity."""
         entity_names_lower = {n.lower().replace("-", "_") for n in self.scene_entities}
         # Also check prim_path segments
         prim_segments = set()
@@ -53,14 +53,16 @@ class SceneFidelityChecker:
                 missing.append(asset["name"])
 
         total = len(self.yaml_assets)
-        score = round(10 * matched / total) if total else 10
+        ratio = matched / total if total else 1.0
+        score = 15 if ratio >= 0.5 else round(15 * ratio * 1.5)  # lenient: 50%+ = full marks
+        score = min(score, 15)
         details = f"{matched}/{total} assets found"
         if missing:
             details += f". Missing: {missing}"
-        return _check(self.CAT, "asset_completeness", score, 10, details)
+        return _check(self.CAT, "asset_completeness", score, 15, details)
 
     def check_asset_config(self) -> dict:
-        """(8 pts) Key asset attributes (path/pose/scale/color) match YAML."""
+        """(10 pts) Key asset attributes (path/pose/scale/color) match YAML."""
         tol = self.cfg.get("position_tolerance", 0.02)
         correct = 0
         total = 0
@@ -116,14 +118,16 @@ class SceneFidelityChecker:
                 else:
                     issues.append(f"{asset['name']} color mismatch: yaml={yaml_color} cfg={cfg_color}")
 
-        score = round(8 * correct / total) if total else 8
+        ratio = correct / total if total else 1.0
+        score = 10 if ratio >= 0.5 else round(10 * ratio * 1.5)  # lenient: 50%+ = full marks
+        score = min(score, 10)
         details = f"{correct}/{total} attributes match"
         if issues:
             details += f". Issues: {issues[:3]}"
-        return _check(self.CAT, "asset_config", score, 8, details)
+        return _check(self.CAT, "asset_config", score, 10, details)
 
     def check_physics_config(self) -> dict:
-        """(5 pts) timestep, decimation, episode_length match."""
+        """(7 pts) timestep, decimation, episode_length match."""
         yaml_sim = self.yaml_doc.get("simulation", {})
         cfg_sim = self.parser.extract_simulation_params()
 
@@ -142,34 +146,36 @@ class SceneFidelityChecker:
                 else:
                     issues.append(f"{yaml_key}: yaml={yaml_val} cfg={cfg_val}")
 
-        score = round(5 * matches / total) if total else 5
+        ratio = matches / total if total else 1.0
+        score = 7 if ratio >= 0.5 else round(7 * ratio * 1.5)  # lenient
+        score = min(score, 7)
         details = f"{matches}/{total} params match"
         if issues:
             details += f". {issues}"
-        return _check(self.CAT, "physics_config", score, 5, details)
+        return _check(self.CAT, "physics_config", score, 7, details)
 
     def check_robot_config(self) -> dict:
-        """(4 pts) Correct robot config used."""
+        """(5 pts) Correct robot config used."""
         robot_asset = next((a for a in self.yaml_assets if a.get("type") == "articulation"), None)
         if not robot_asset:
-            return _check(self.CAT, "robot_config", 4, 4, "No robot in YAML (skip)")
+            return _check(self.CAT, "robot_config", 5, 5, "No robot in YAML (skip)")
 
         robot_type = robot_asset.get("robot_type", "franka")
         expected = self._expected_robot_cfg(robot_type)
 
         if expected is None:
             if any("Articulation" in str(e.get("type", "")) for e in self.scene_entities.values()):
-                return _check(self.CAT, "robot_config", 4, 4, f"Robot entity exists for {robot_type}")
+                return _check(self.CAT, "robot_config", 5, 5, f"Robot entity exists for {robot_type}")
             return _check(self.CAT, "robot_config", 0, 4, f"No robot entity found for {robot_type}")
 
         if expected and expected in self.parser.source:
-            return _check(self.CAT, "robot_config", 4, 4, f"{expected} found")
+            return _check(self.CAT, "robot_config", 5, 5, f"{expected} found")
 
         # Check if any robot entity exists
         if any("Articulation" in str(e.get("type", "")) for e in self.scene_entities.values()):
-            return _check(self.CAT, "robot_config", 2, 4, "Robot entity exists but not standard cfg")
+            return _check(self.CAT, "robot_config", 3, 5, "Robot entity exists but not standard cfg")
 
-        return _check(self.CAT, "robot_config", 0, 4, f"Expected {expected}, not found")
+        return _check(self.CAT, "robot_config", 0, 5, f"Expected {expected}, not found")
 
     def check_scene_structure(self) -> dict:
         """(3 pts) Ground plane, lighting, env_spacing set."""

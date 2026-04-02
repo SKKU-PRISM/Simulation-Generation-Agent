@@ -1,4 +1,4 @@
-"""Category 4: Runtime Validity (20 pts) - Generate and execute eval_runner.py, parse results."""
+"""Category 4: Runtime Validity (25 pts) - Generate and execute eval_runner.py, parse results."""
 
 import json
 import os
@@ -14,7 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[4]
 
 
 # ---------------------------------------------------------------------------
-# Category 4: Runtime Validity (20 pts)
+# Category 4: Runtime Validity (25 pts)
 # ---------------------------------------------------------------------------
 
 class RuntimeValidityChecker:
@@ -222,29 +222,29 @@ if __name__ == "__main__":
         return False
 
     def score_env_creation(self) -> dict:
-        """(5 pts) Env created successfully."""
+        """(8 pts) Env created successfully."""
         if not self.results:
-            return _check(self.CAT, "env_creation", 0, 5, "No runtime results")
+            return _check(self.CAT, "env_creation", 0, 8, "No runtime results")
         if self.results.get("env_created"):
-            return _check(self.CAT, "env_creation", 5, 5, "Environment created")
+            return _check(self.CAT, "env_creation", 8, 8, "Environment created")
         errors = self.results.get("errors", [])
         msg = errors[0]["message"][:100] if errors else "unknown error"
-        return _check(self.CAT, "env_creation", 0, 5, f"Failed: {msg}")
+        return _check(self.CAT, "env_creation", 0, 8, f"Failed: {msg}")
 
     def score_reset_step(self) -> dict:
-        """(5 pts) N+ steps completed."""
+        """(7 pts) N+ steps completed."""
         if not self.results:
-            return _check(self.CAT, "reset_step_cycle", 0, 5, "No runtime results")
+            return _check(self.CAT, "reset_step_cycle", 0, 7, "No runtime results")
         steps = self.results.get("steps_completed", 0)
         target = self.cfg.get("eval_steps", 20)
         if steps >= target:
-            return _check(self.CAT, "reset_step_cycle", 5, 5,
+            return _check(self.CAT, "reset_step_cycle", 7, 7,
                            f"{steps} steps completed")
         if steps > 0:
-            score = round(5 * steps / target)
-            return _check(self.CAT, "reset_step_cycle", max(score, 1), 5,
+            score = round(7 * steps / target)
+            return _check(self.CAT, "reset_step_cycle", max(score, 1), 7,
                            f"Only {steps}/{target} steps")
-        return _check(self.CAT, "reset_step_cycle", 0, 5, "No steps completed")
+        return _check(self.CAT, "reset_step_cycle", 0, 7, "No steps completed")
 
     def score_reward_computation(self) -> dict:
         """(5 pts) Finite reward values, detect non-zero signal."""

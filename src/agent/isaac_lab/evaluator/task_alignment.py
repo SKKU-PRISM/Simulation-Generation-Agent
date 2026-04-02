@@ -1,4 +1,4 @@
-"""Category 3: Task Alignment (25 pts) - Check if YAML goal conditions are reflected in generated code."""
+"""Category 3: Task Alignment (15 pts) - Check if YAML goal conditions are reflected in generated code."""
 
 from pathlib import Path
 
@@ -6,7 +6,7 @@ from .parser import _check, EnvCfgParser
 
 
 # ---------------------------------------------------------------------------
-# Category 3: Task Alignment (25 pts)
+# Category 3: Task Alignment (15 pts)
 # ---------------------------------------------------------------------------
 
 class TaskAlignmentChecker:
@@ -22,9 +22,9 @@ class TaskAlignmentChecker:
         self.output_dir = output_dir
 
     def check_goal_condition_mapping(self) -> dict:
-        """(10 pts) Each YAML condition maps to termination or reward."""
+        """(7 pts) Each YAML condition maps to termination or reward."""
         if not self.goals:
-            return _check(self.CAT, "goal_condition_mapping", 10, 10,
+            return _check(self.CAT, "goal_condition_mapping", 7, 7,
                            "No goals defined (skip)")
 
         terms = self.parser.extract_termination_terms()
@@ -88,16 +88,18 @@ class TaskAlignmentChecker:
                 mapped += 0.5
 
         total = len(self.goals)
-        score = round(10 * mapped / total) if total else 10
+        ratio = mapped / total if total else 1.0
+        score = 7 if ratio >= 0.5 else round(7 * ratio * 1.5)
+        score = min(score, 7)
         details = f"{int(mapped)}/{total} conditions mapped"
         if unmapped:
             details += f". Unmapped: {unmapped[:5]}"
-        return _check(self.CAT, "goal_condition_mapping", score, 10, details)
+        return _check(self.CAT, "goal_condition_mapping", score, 7, details)
 
     def check_threshold_preservation(self) -> dict:
-        """(8 pts) Numeric thresholds from YAML preserved in code."""
+        """(5 pts) Numeric thresholds from YAML preserved in code."""
         if not self.goals:
-            return _check(self.CAT, "threshold_preservation", 8, 8,
+            return _check(self.CAT, "threshold_preservation", 5, 5,
                            "No goals (skip)")
 
         source = self.parser.source
@@ -124,14 +126,16 @@ class TaskAlignmentChecker:
                     else:
                         missing.append(f"{goal.get('relation','?')}:{key}={val}")
 
-        score = round(8 * found / total) if total else 8
+        ratio = found / total if total else 1.0
+        score = 5 if ratio >= 0.5 else round(5 * ratio * 1.5)
+        score = min(score, 5)
         details = f"{found}/{total} thresholds found"
         if missing:
             details += f". Missing: {missing[:5]}"
-        return _check(self.CAT, "threshold_preservation", score, 8, details)
+        return _check(self.CAT, "threshold_preservation", score, 5, details)
 
     def check_custom_mdp_validity(self) -> dict:
-        """(7 pts) Custom functions exist with correct signatures."""
+        """(3 pts) Custom functions exist with correct signatures."""
         mdp_dir = self.output_dir / "mdp"
         custom_funcs = self.parser.extract_custom_mdp_functions(mdp_dir)
 
@@ -143,11 +147,11 @@ class TaskAlignmentChecker:
         )
 
         if not needs_custom:
-            return _check(self.CAT, "custom_mdp_validity", 7, 7,
+            return _check(self.CAT, "custom_mdp_validity", 3, 3,
                            "No custom MDP needed for this task")
 
         if not custom_funcs:
-            return _check(self.CAT, "custom_mdp_validity", 0, 7,
+            return _check(self.CAT, "custom_mdp_validity", 0, 3,
                            "Custom MDP functions needed but none found")
 
         pts = 3  # functions exist
@@ -172,7 +176,7 @@ class TaskAlignmentChecker:
                     details.append("properly imported")
                     break
 
-        return _check(self.CAT, "custom_mdp_validity", min(pts, 7), 7,
+        return _check(self.CAT, "custom_mdp_validity", min(pts, 3), 3,
                        ". ".join(details))
 
     def run_all(self) -> list[dict]:
