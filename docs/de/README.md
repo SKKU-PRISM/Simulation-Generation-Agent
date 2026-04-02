@@ -7,7 +7,7 @@
 [![NVIDIA IsaacLab](https://img.shields.io/badge/IsaacLab-v2.3.2-76B900.svg?logo=nvidia)](https://github.com/isaac-sim/IsaacLab)
 [![IsaacSim](https://img.shields.io/badge/IsaacSim-5.1.0-76B900.svg?logo=nvidia)](https://docs.omniverse.nvidia.com/isaacsim/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker)](docker.md)
-[![OpenAI](https://img.shields.io/badge/LLM-GPT--5--mini-412991.svg?logo=openai)](https://openai.com/)
+[![OpenAI](https://img.shields.io/badge/LLM-GPT--5-412991.svg?logo=openai)](https://openai.com/)
 [![LeRobot](https://img.shields.io/badge/Dataset-LeRobot%20v3.0-FF6F00.svg)](https://github.com/huggingface/lerobot)
 
 Ein End-to-End-Automatisierungsframework fuer Robotersimulation, das natuerlichsprachliche Aufgabenbeschreibungen in strukturierte YAML-Spezifikationen umwandelt, automatisch IsaacLab-Simulationsumgebungen generiert, Code-as-Policies (CaP) Robotermanipulation ausfuehrt und trainingsbereite Demonstrationsdatensaetze sammelt.
@@ -36,7 +36,7 @@ flowchart LR
 
     S2 -.-> EV["Evaluator\n4 Kategorien\n100 Pkt."]
     S2 -.-> VLM["SceneVerifier\nCode + VLM"]
-    VLM -- "Score < 60/80\nSelbstverfeinerung" --> S2
+    VLM -- "Score < 40/75\nSelbstverfeinerung" --> S2
     S2 -- "Ausfuehrungsfehler\nSelbstverfeinerung" --> S2
     S3 -.-> JG["Episoden-Bewertung\nGeometrie + VLM"]
 ```

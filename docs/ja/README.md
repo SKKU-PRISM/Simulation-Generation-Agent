@@ -7,7 +7,7 @@
 [![NVIDIA IsaacLab](https://img.shields.io/badge/IsaacLab-v2.3.2-76B900.svg?logo=nvidia)](https://github.com/isaac-sim/IsaacLab)
 [![IsaacSim](https://img.shields.io/badge/IsaacSim-5.1.0-76B900.svg?logo=nvidia)](https://docs.omniverse.nvidia.com/isaacsim/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker)](docker.md)
-[![OpenAI](https://img.shields.io/badge/LLM-GPT--5--mini-412991.svg?logo=openai)](https://openai.com/)
+[![OpenAI](https://img.shields.io/badge/LLM-GPT--5-412991.svg?logo=openai)](https://openai.com/)
 [![LeRobot](https://img.shields.io/badge/Dataset-LeRobot%20v3.0-FF6F00.svg)](https://github.com/huggingface/lerobot)
 
 自然言語のタスク記述を構造化YAMLスペックに変換し、IsaacLabシミュレーション環境を自動生成し、Code-as-Policies（CaP）によるロボットマニピュレーションを実行し、学習用デモンストレーションデータセットを収集する、エンドツーエンドのロボティクスシミュレーション自動化フレームワークです。
@@ -36,7 +36,7 @@ flowchart LR
 
     S2 -.-> EV["エバリュエータ\n4カテゴリ\n100点満点"]
     S2 -.-> VLM["SceneVerifier\nコード + VLM"]
-    VLM -- "スコア < 60/80\nセルフリファインメント" --> S2
+    VLM -- "スコア < 40/75\nセルフリファインメント" --> S2
     S2 -- "実行エラー\nセルフリファインメント" --> S2
     S3 -.-> JG["エピソードジャッジ\n幾何学 + VLM"]
 ```

@@ -21,7 +21,7 @@ flowchart LR
 
     S2 -.-> EV["评估器\n4 类别 100 分"]
     S2 -.-> SV["场景验证器\n代码 + VLM"]
-    SV -- "分数 < 60/80\n自我优化" --> S2
+    SV -- "分数 < 40/75\n自我优化" --> S2
     S2 -- "执行错误\n自我优化" --> S2
     S3 -.-> JG["回合评判\n几何 + VLM"]
 ```
@@ -81,7 +81,7 @@ flowchart TD
     YAML["📄 任务 YAML"] --> PARSE["1. YAML 解析"]
     PARSE --> REF["2. 参考代码选择\n按任务类别"]
     REF --> PROMPT["3. 提示词构建\nisaaclab_generation.md"]
-    PROMPT --> GEN["4. LLM 代码生成\ngpt-5-mini"]
+    PROMPT --> GEN["4. LLM 代码生成\ngpt-5"]
     GEN --> WRITE["5. 保存代码\nenv_cfg.py + run_env.py + mdp/"]
     WRITE --> EXEC["6. IsaacLab 执行\nisaaclab.sh → conda"]
 
@@ -92,7 +92,7 @@ flowchart TD
     EVAL --> CAP["9. 截图捕获\n前方 / 顶部 / 腕部"]
     CAP --> VER["10. 场景验证器\n① 代码：SF/30+MDP/25+TA/25+RV/20\n② VLM：前方·顶部各 0-100"]
 
-    VER -- "代码 < 60/80" --> REFINE["11. 自我优化\n反馈给 LLM → 重新生成（最多 5 次）"]
+    VER -- "代码 < 40/75" --> REFINE["11. 自我优化\n反馈给 LLM → 重新生成（最多 5 次）"]
     REFINE --> EXEC
     VER -- "通过 ✅" --> DONE["完成 → result.json"]
 ```
@@ -102,10 +102,10 @@ flowchart TD
 ```json
 {
   "code_evaluation": {
-    "scene_fidelity": {"score": 28, "max": 30, "details": "..."},
-    "mdp_correctness": {"score": 22, "max": 25, "details": "..."},
-    "task_alignment": {"score": 24, "max": 25, "details": "..."},
-    "runtime_validity": {"score": 18, "max": 20, "details": "..."},
+    "scene_fidelity": {"score": 36, "max": 40, "details": "..."},
+    "mdp_correctness": {"score": 17, "max": 20, "details": "..."},
+    "task_alignment": {"score": 13, "max": 15, "details": "..."},
+    "runtime_validity": {"score": 22, "max": 25, "details": "..."},
     "total_score": 92, "max_score": 100
   },
   "image_evaluation": {
@@ -284,7 +284,7 @@ LeRobot Hub (HuggingFace)
 
 | 模块 | 位置 | 职责 |
 |------|------|------|
-| **LLM 客户端** | `src/agent/common/llm_client.py` | OpenAI Responses API 封装。自动处理 gpt-5-mini 不支持 temperature 的情况 |
+| **LLM 客户端** | `src/agent/common/llm_client.py` | OpenAI Responses API 封装。自动处理 gpt-5 不支持 temperature 的情况 |
 | **Token 追踪器** | `src/agent/common/token_tracker.py` | API token 用量追踪（JSONL 跨进程）。实时日志 + 表格报告 |
 | **MCP 客户端** | `src/agent/common/mcp_client.py` | 与 Isaac Sim MCP 扩展的 TCP 通信（localhost:8766） |
 | **IsaacLab 运行时** | `src/agent/common/isaaclab_runtime.py` | IsaacLab 路径解析、conda 命令构建、GPU 环境变量设置 |

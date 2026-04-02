@@ -21,7 +21,7 @@ flowchart LR
 
     S2 -.-> EV["Evaluator\n4-Category 100pt"]
     S2 -.-> SV["SceneVerifier\nCode + VLM"]
-    SV -- "score < 60/80\nself-refinement" --> S2
+    SV -- "score < 40/75\nself-refinement" --> S2
     S2 -- "exec error\nself-refinement" --> S2
     S3 -.-> JG["Episode Judge\nGeometry + VLM"]
 ```
@@ -81,7 +81,7 @@ flowchart TD
     YAML["📄 태스크 YAML"] --> PARSE["1. YAML 파싱"]
     PARSE --> REF["2. 레퍼런스 코드 선택\n태스크 카테고리별"]
     REF --> PROMPT["3. 프롬프트 구성\nisaaclab_generation.md"]
-    PROMPT --> GEN["4. LLM 코드 생성\ngpt-5-mini"]
+    PROMPT --> GEN["4. LLM 코드 생성\ngpt-5"]
     GEN --> WRITE["5. 코드 저장\nenv_cfg.py + run_env.py + mdp/"]
     WRITE --> EXEC["6. IsaacLab 실행\nisaaclab.sh → conda"]
 
@@ -92,7 +92,7 @@ flowchart TD
     EVAL --> CAP["9. 스크린샷 캡처\nfront / top / wrist"]
     CAP --> VER["10. SceneVerifier\n① 코드: SF/30+MDP/25+TA/25+RV/20\n② VLM: front·top 각 0-100"]
 
-    VER -- "코드 < 60/80" --> REFINE["11. Self-Refinement\nLLM에 피드백 → 재생성 (최대 5회)"]
+    VER -- "코드 < 40/75" --> REFINE["11. Self-Refinement\nLLM에 피드백 → 재생성 (최대 5회)"]
     REFINE --> EXEC
     VER -- "통과 ✅" --> DONE["완료 → result.json"]
 ```
@@ -102,10 +102,10 @@ flowchart TD
 ```json
 {
   "code_evaluation": {
-    "scene_fidelity": {"score": 28, "max": 30, "details": "..."},
-    "mdp_correctness": {"score": 22, "max": 25, "details": "..."},
-    "task_alignment": {"score": 24, "max": 25, "details": "..."},
-    "runtime_validity": {"score": 18, "max": 20, "details": "..."},
+    "scene_fidelity": {"score": 36, "max": 40, "details": "..."},
+    "mdp_correctness": {"score": 17, "max": 20, "details": "..."},
+    "task_alignment": {"score": 13, "max": 15, "details": "..."},
+    "runtime_validity": {"score": 22, "max": 25, "details": "..."},
     "total_score": 92, "max_score": 100
   },
   "image_evaluation": {
@@ -282,7 +282,7 @@ Stage 1, 2, 3이 공유하는 기반 모듈들입니다.
 
 | 모듈 | 위치 | 역할 |
 |------|------|------|
-| **LLM Client** | `src/agent/common/llm_client.py` | OpenAI Responses API 래퍼. gpt-5-mini temperature 미지원 자동 처리 |
+| **LLM Client** | `src/agent/common/llm_client.py` | OpenAI Responses API 래퍼. gpt-5 temperature 미지원 자동 처리 |
 | **Token Tracker** | `src/agent/common/token_tracker.py` | API 토큰 사용량 추적 (JSONL 크로스 프로세스). 실시간 로그 + 테이블 리포트 |
 | **MCP Client** | `src/agent/common/mcp_client.py` | Isaac Sim MCP 확장과 TCP 통신 (localhost:8766) |
 | **IsaacLab Runtime** | `src/agent/common/isaaclab_runtime.py` | IsaacLab 경로 해석, conda 명령 구성, GPU 환경 변수 설정 |

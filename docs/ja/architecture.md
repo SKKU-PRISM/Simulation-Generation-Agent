@@ -21,7 +21,7 @@ flowchart LR
 
     S2 -.-> EV["エバリュエータ\n4カテゴリ 100点満点"]
     S2 -.-> SV["SceneVerifier\nコード + VLM"]
-    SV -- "スコア < 60/80\nセルフリファインメント" --> S2
+    SV -- "スコア < 40/75\nセルフリファインメント" --> S2
     S2 -- "実行エラー\nセルフリファインメント" --> S2
     S3 -.-> JG["エピソードジャッジ\n幾何学 + VLM"]
 ```
@@ -81,7 +81,7 @@ flowchart TD
     YAML["📄 タスクYAML"] --> PARSE["1. YAML解析"]
     PARSE --> REF["2. リファレンスコード選択\nタスクカテゴリ別"]
     REF --> PROMPT["3. プロンプト構築\nisaaclab_generation.md"]
-    PROMPT --> GEN["4. LLMコード生成\ngpt-5-mini"]
+    PROMPT --> GEN["4. LLMコード生成\ngpt-5"]
     GEN --> WRITE["5. コード保存\nenv_cfg.py + run_env.py + mdp/"]
     WRITE --> EXEC["6. IsaacLab実行\nisaaclab.sh → conda"]
 
@@ -92,7 +92,7 @@ flowchart TD
     EVAL --> CAP["9. スクリーンショット撮影\nfront / top / wrist"]
     CAP --> VER["10. SceneVerifier\n① コード: SF/30+MDP/25+TA/25+RV/20\n② VLM: front・top 各0-100"]
 
-    VER -- "コード < 60/80" --> REFINE["11. セルフリファインメント\nフィードバックをLLMへ → 再生成（最大5回）"]
+    VER -- "コード < 40/75" --> REFINE["11. セルフリファインメント\nフィードバックをLLMへ → 再生成（最大5回）"]
     REFINE --> EXEC
     VER -- "合格 ✅" --> DONE["完了 → result.json"]
 ```
@@ -102,10 +102,10 @@ flowchart TD
 ```json
 {
   "code_evaluation": {
-    "scene_fidelity": {"score": 28, "max": 30, "details": "..."},
-    "mdp_correctness": {"score": 22, "max": 25, "details": "..."},
-    "task_alignment": {"score": 24, "max": 25, "details": "..."},
-    "runtime_validity": {"score": 18, "max": 20, "details": "..."},
+    "scene_fidelity": {"score": 36, "max": 40, "details": "..."},
+    "mdp_correctness": {"score": 17, "max": 20, "details": "..."},
+    "task_alignment": {"score": 13, "max": 15, "details": "..."},
+    "runtime_validity": {"score": 22, "max": 25, "details": "..."},
     "total_score": 92, "max_score": 100
   },
   "image_evaluation": {
@@ -284,7 +284,7 @@ LeRobot Hub (HuggingFace)
 
 | モジュール | 場所 | 役割 |
 |--------|----------|------|
-| **LLMクライアント** | `src/agent/common/llm_client.py` | OpenAI Responses APIラッパー。gpt-5-miniのtemperature未対応を自動処理 |
+| **LLMクライアント** | `src/agent/common/llm_client.py` | OpenAI Responses APIラッパー。gpt-5のtemperature未対応を自動処理 |
 | **トークントラッカー** | `src/agent/common/token_tracker.py` | APIトークン使用量追跡（JSONLクロスプロセス）。リアルタイムログ + テーブルレポート |
 | **MCPクライアント** | `src/agent/common/mcp_client.py` | Isaac Sim MCP拡張とのTCP通信（localhost:8766） |
 | **IsaacLabランタイム** | `src/agent/common/isaaclab_runtime.py` | IsaacLabパス解決、condaコマンド構築、GPU環境変数設定 |

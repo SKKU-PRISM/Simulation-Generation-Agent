@@ -36,7 +36,7 @@ flowchart LR
 
     S2 -.-> EV["Evaluator\n4-Category\n100pt"]
     S2 -.-> VLM["SceneVerifier\nCode + VLM"]
-    VLM -- "score < 60/80\nself-refinement" --> S2
+    VLM -- "score < 40/75\nself-refinement" --> S2
     S2 -- "exec error\nself-refinement" --> S2
     S3 -.-> JG["Episode Judge\nGeometry + VLM"]
 ```

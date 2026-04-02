@@ -7,7 +7,7 @@
 [![NVIDIA IsaacLab](https://img.shields.io/badge/IsaacLab-v2.3.2-76B900.svg?logo=nvidia)](https://github.com/isaac-sim/IsaacLab)
 [![IsaacSim](https://img.shields.io/badge/IsaacSim-5.1.0-76B900.svg?logo=nvidia)](https://docs.omniverse.nvidia.com/isaacsim/)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker)](docker.md)
-[![OpenAI](https://img.shields.io/badge/LLM-GPT--5--mini-412991.svg?logo=openai)](https://openai.com/)
+[![OpenAI](https://img.shields.io/badge/LLM-GPT--5-412991.svg?logo=openai)](https://openai.com/)
 [![LeRobot](https://img.shields.io/badge/Dataset-LeRobot%20v3.0-FF6F00.svg)](https://github.com/huggingface/lerobot)
 
 一个端到端的机器人仿真自动化框架，将自然语言任务描述转换为结构化 YAML 规范，自动生成 IsaacLab 仿真环境，执行代码即策略（CaP）机器人操作，并收集可用于训练的演示数据集。
@@ -36,7 +36,7 @@ flowchart LR
 
     S2 -.-> EV["评估器\n4 类别\n100 分"]
     S2 -.-> VLM["场景验证器\n代码 + VLM"]
-    VLM -- "分数 < 60/80\n自我优化" --> S2
+    VLM -- "分数 < 40/75\n自我优化" --> S2
     S2 -- "执行错误\n自我优化" --> S2
     S3 -.-> JG["回合评判\n几何 + VLM"]
 ```

@@ -21,7 +21,7 @@ flowchart LR
 
     S2 -.-> EV["Evaluator\n4 Kategorien 100 Pkt."]
     S2 -.-> SV["SceneVerifier\nCode + VLM"]
-    SV -- "Score < 60/80\nSelbstverfeinerung" --> S2
+    SV -- "Score < 40/75\nSelbstverfeinerung" --> S2
     S2 -- "Ausfuehrungsfehler\nSelbstverfeinerung" --> S2
     S3 -.-> JG["Episoden-Bewertung\nGeometrie + VLM"]
 ```
@@ -81,7 +81,7 @@ flowchart TD
     YAML["📄 Aufgaben-YAML"] --> PARSE["1. YAML-Parsing"]
     PARSE --> REF["2. Referenzcode-Auswahl\nnach Aufgabenkategorie"]
     REF --> PROMPT["3. Prompt-Konstruktion\nisaaclab_generation.md"]
-    PROMPT --> GEN["4. LLM-Codegenerierung\ngpt-5-mini"]
+    PROMPT --> GEN["4. LLM-Codegenerierung\ngpt-5"]
     GEN --> WRITE["5. Code speichern\nenv_cfg.py + run_env.py + mdp/"]
     WRITE --> EXEC["6. IsaacLab-Ausfuehrung\nisaaclab.sh → conda"]
 
@@ -92,7 +92,7 @@ flowchart TD
     EVAL --> CAP["9. Screenshot-Aufnahme\nfront / top / wrist"]
     CAP --> VER["10. SceneVerifier\n① Code: SF/30+MDP/25+TA/25+RV/20\n② VLM: front·top je 0-100"]
 
-    VER -- "Code < 60/80" --> REFINE["11. Selbstverfeinerung\nFeedback an LLM → Neugenerierung (bis zu 5 Mal)"]
+    VER -- "Code < 40/75" --> REFINE["11. Selbstverfeinerung\nFeedback an LLM → Neugenerierung (bis zu 5 Mal)"]
     REFINE --> EXEC
     VER -- "Bestanden ✅" --> DONE["Abgeschlossen → result.json"]
 ```
@@ -102,10 +102,10 @@ flowchart TD
 ```json
 {
   "code_evaluation": {
-    "scene_fidelity": {"score": 28, "max": 30, "details": "..."},
-    "mdp_correctness": {"score": 22, "max": 25, "details": "..."},
-    "task_alignment": {"score": 24, "max": 25, "details": "..."},
-    "runtime_validity": {"score": 18, "max": 20, "details": "..."},
+    "scene_fidelity": {"score": 36, "max": 40, "details": "..."},
+    "mdp_correctness": {"score": 17, "max": 20, "details": "..."},
+    "task_alignment": {"score": 13, "max": 15, "details": "..."},
+    "runtime_validity": {"score": 22, "max": 25, "details": "..."},
     "total_score": 92, "max_score": 100
   },
   "image_evaluation": {
@@ -285,7 +285,7 @@ Dies sind die Basismodule, die von Stufe 1, 2 und 3 gemeinsam genutzt werden.
 
 | Modul | Ort | Rolle |
 |-------|-----|-------|
-| **LLM Client** | `src/agent/common/llm_client.py` | OpenAI Responses API Wrapper. Behandelt automatisch fehlende gpt-5-mini-Temperature-Unterstuetzung |
+| **LLM Client** | `src/agent/common/llm_client.py` | OpenAI Responses API Wrapper. Behandelt automatisch fehlende gpt-5-Temperature-Unterstuetzung |
 | **Token Tracker** | `src/agent/common/token_tracker.py` | API-Token-Verbrauchsverfolgung (JSONL prozessuebergreifend). Echtzeit-Protokollierung + Tabellenberichte |
 | **MCP Client** | `src/agent/common/mcp_client.py` | TCP-Kommunikation mit Isaac Sim MCP-Erweiterung (localhost:8766) |
 | **IsaacLab Runtime** | `src/agent/common/isaaclab_runtime.py` | IsaacLab-Pfadaufloesung, Conda-Befehlskonstruktion, GPU-Umgebungsvariablen-Setup |

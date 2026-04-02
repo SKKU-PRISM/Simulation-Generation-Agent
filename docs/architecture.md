@@ -21,7 +21,7 @@ flowchart LR
 
     S2 -.-> EV["Evaluator\n4-Category 100pt"]
     S2 -.-> SV["SceneVerifier\nCode + VLM"]
-    SV -- "score < 60/80\nself-refinement" --> S2
+    SV -- "score < 40/75\nself-refinement" --> S2
     S2 -- "exec error\nself-refinement" --> S2
     S3 -.-> JG["Episode Judge\nGeometry + VLM"]
 ```
@@ -81,7 +81,7 @@ flowchart TD
     YAML["📄 Task YAML"] --> PARSE["1. YAML Parsing"]
     PARSE --> REF["2. Reference Code Selection\nby task category"]
     REF --> PROMPT["3. Prompt Construction\nisaaclab_generation.md"]
-    PROMPT --> GEN["4. LLM Code Generation\ngpt-5-mini"]
+    PROMPT --> GEN["4. LLM Code Generation\ngpt-5"]
     GEN --> WRITE["5. Save Code\nenv_cfg.py + run_env.py + mdp/"]
     WRITE --> EXEC["6. IsaacLab Execution\nisaaclab.sh → conda"]
 
@@ -92,7 +92,7 @@ flowchart TD
     EVAL --> CAP["9. Screenshot Capture\nfront / top / wrist"]
     CAP --> VER["10. SceneVerifier\n① Code: SF/30+MDP/25+TA/25+RV/20\n② VLM: front·top 0-100 each"]
 
-    VER -- "Code < 60/80" --> REFINE["11. Self-Refinement\nFeedback to LLM → regenerate (up to 5 times)"]
+    VER -- "Code < 40/75" --> REFINE["11. Self-Refinement\nFeedback to LLM → regenerate (up to 5 times)"]
     REFINE --> EXEC
     VER -- "Pass ✅" --> DONE["Complete → result.json"]
 ```
@@ -102,10 +102,10 @@ flowchart TD
 ```json
 {
   "code_evaluation": {
-    "scene_fidelity": {"score": 28, "max": 30, "details": "..."},
-    "mdp_correctness": {"score": 22, "max": 25, "details": "..."},
-    "task_alignment": {"score": 24, "max": 25, "details": "..."},
-    "runtime_validity": {"score": 18, "max": 20, "details": "..."},
+    "scene_fidelity": {"score": 36, "max": 40, "details": "..."},
+    "mdp_correctness": {"score": 17, "max": 20, "details": "..."},
+    "task_alignment": {"score": 13, "max": 15, "details": "..."},
+    "runtime_validity": {"score": 22, "max": 25, "details": "..."},
     "total_score": 92, "max_score": 100
   },
   "image_evaluation": {
@@ -284,7 +284,7 @@ These are the base modules shared across Stages 1, 2, and 3.
 
 | Module | Location | Role |
 |--------|----------|------|
-| **LLM Client** | `src/agent/common/llm_client.py` | OpenAI Responses API wrapper. Automatically handles gpt-5-mini temperature unsupported |
+| **LLM Client** | `src/agent/common/llm_client.py` | OpenAI Responses API wrapper. Automatically handles gpt-5 temperature unsupported |
 | **Token Tracker** | `src/agent/common/token_tracker.py` | API token usage tracking (JSONL cross-process). Real-time logging + table reports |
 | **MCP Client** | `src/agent/common/mcp_client.py` | TCP communication with Isaac Sim MCP extension (localhost:8766) |
 | **IsaacLab Runtime** | `src/agent/common/isaaclab_runtime.py` | IsaacLab path resolution, conda command construction, GPU environment variable setup |
