@@ -153,10 +153,14 @@ outputs/isaaclab/<task_slug>_<timestamp>/
 ├── mdp/
 ├── .success_marker
 ├── error_attempt_*.txt
+├── debug/                    # 환경 스크린샷 (front/top/wrist)
+├── result.json               # 실행 결과 + scene_verification 포함
 └── eval_report.json          # --evaluate 사용 시
 ```
 
-## 2. Isaac Sim Pipeline
+## 2. Isaac Sim Pipeline (로컬 개발 환경 전용)
+
+> **참고**: Isaac Sim MCP 시각 검증은 로컬에서 Isaac Sim Desktop이 실행 중일 때만 사용 가능합니다. Docker 환경에서는 지원되지 않습니다.
 
 ### 대표 명령어
 

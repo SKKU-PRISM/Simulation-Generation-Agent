@@ -126,6 +126,10 @@ YAML 태스크 명세를 IsaacLab `ManagerBasedRLEnv` Python 코드로 자동 �
 │                      │    SF/30 + MDP/25 + TA/25 + RV/20
 │                      │  ② VLM 이미지 (front/top 각 0-100)
 │                      │    둘 중 하나 ≥ 70 → VLM 통과
+│          ▼           │
+│  11. Self-Refinement  │  코드 평가 < 60/80 → LLM에 피드백
+│      (조건부)         │  → 코드 재생성 → Step 6 재실행
+│                      │  (최대 5회)
 └──────────────────────┘
 ```
 
@@ -252,7 +256,7 @@ Stage 2에서 생성한 시뮬레이션 환경 위에서 로봇이 태스크를 
 | **SimDetector** (`sim_detector.py`) | IsaacLab scene graph에서 물체 위치/자세 감지 |
 | **SkillPlanner** (`skill_planner.py`) | LLM 기반 스킬 시퀀스 계획 (태스크 설명 + 감지 결과 → 스킬 목록) |
 | **SimSkills** (`sim_skills.py`) | 6-DOF IK (Pinocchio) 기반 로봇 제어. pick, place, stack, move_to_ready 등 |
-| **SimCamera** (`sim_camera.py`) | 멀티카메라 시스템 (top: 조감도, wrist: 손 장착, front: VLM 판정용) |
+| **SimCamera** (`sim_camera.py`) | 멀티카메라 시스템 (top: 조감도, wrist: 손 장착, front: VLM 판정 + 데이터셋) |
 | **SimJudge** (`sim_judge.py`) | 3-tier 성공 검증: (1) Geometry, (2) VLM, (3) env 플래그 |
 | **SimRecorder** (`sim_recorder.py`) | 스텝별 관측/액션/이미지/스킬 메타데이터 저장. 실패 에피소드 폐기 |
 
@@ -352,5 +356,5 @@ Stage 1, 2, 3이 공유하는 기반 모듈들입니다.
 
 ## 관련 문서
 
-- CLI 사용법: `docs/usage.md`
-- 설치: `docs/getting_started.md`
+- CLI 사용법: [docs/usage.md](usage.md)
+- 설치: [docs/getting_started.md](getting_started.md)

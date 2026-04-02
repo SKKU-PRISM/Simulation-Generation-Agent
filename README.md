@@ -27,16 +27,18 @@ See [docs/getting_started.md](docs/getting_started.md) for full setup and [docs/
 
 ```mermaid
 flowchart LR
-    NL["🗣️ Natural Language Input"]
+    NL["🗣️ Natural Language\nInput"]
     S1["Stage 1\nTask Definition\nNL → YAML"]
     S2["Stage 2\nSim Generation\nYAML → IsaacLab"]
     S3["Stage 3\nData Collection\nCaP → Episodes"]
-    DS["📦 Dataset Export\nLeRobot Format"]
+    DS["📦 Dataset\nLeRobot Format"]
 
     NL --> S1 --> S2 --> S3 --> DS
 
-    S2 -.-> EV["Evaluator\n4-Category 100pt"]
+    S2 -.-> EV["Evaluator\n4-Category\n100pt"]
     S2 -.-> VLM["SceneVerifier\nCode + VLM"]
+    VLM -- "score < 60/80\nself-refinement" --> S2
+    S2 -- "exec error\nself-refinement" --> S2
     S3 -.-> JG["Episode Judge\nGeometry + VLM"]
 ```
 
@@ -47,25 +49,6 @@ flowchart LR
 | **3. Data Collection** | 환경 위에서 로봇 조작 + 성공 데이터 수집 | CaP 스킬 코드 생성 + Pinocchio IK + Geometry/VLM 이중 평가 |
 
 상세 아키텍처: [docs/architecture.md](docs/architecture.md)
-
-## 실행 (가장 간단한 방법)
-
-자연어로 태스크를 설명하면 전체 파이프라인 (NL→YAML→IsaacLab→DataCollection)이 자동 실행됩니다.
-
-```bash
-./run_agent.sh "Stack the blocks inside the tray on the table"
-```
-
-옵션:
-```bash
-./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
-```
-
-Docker:
-```bash
-docker run --rm --gpus all -e OPENAI_API_KEY="sk-..." \
-  simgen-agent "Stack the blocks inside the tray on the table" --episodes 5
-```
 
 ## Quick Start
 
@@ -216,61 +199,11 @@ Simulation-Generation-Agent/
 | [docs/README.md](docs/README.md) | 문서 네비게이션, 권장 읽기 순서 |
 | [LICENSE](LICENSE) | MIT 라이선스 |
 
-## Docker 빌드 및 실행
+## Docker / run_agent.sh 상세
 
-### 빌드
+상세 Docker 빌드·실행 가이드: [README.docker.md](README.docker.md)
 
-```bash
-# submodule 초기화 (최초 1회)
-git submodule update --init --recursive
-
-docker build -t simgen-agent .
-```
-
-### 실행
-
-```bash
-# 자연어 입력 → 전체 파이프라인
-docker run --rm --gpus all \
-  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
-  -e OPENAI_API_KEY="sk-..." \
-  simgen-agent \
-  "Stack the blocks inside the tray on the table" --episodes 5
-
-# JSON 입력 (심사 제출용)
-docker run --rm --gpus all \
-  -v $(pwd)/input_data:/workspace/Simulation-Generation-Agent/data \
-  -v $(pwd)/output_data:/workspace/Simulation-Generation-Agent/results \
-  -e OPENAI_API_KEY="sk-..." \
-  simgen-agent \
-  data/input_sample.json results/output.json
-```
-
-### 필요 환경변수
-
-- `OPENAI_API_KEY` (필수) 또는 `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_BASE_URL`
-
-상세 Docker 가이드: [README.docker.md](README.docker.md)
-
-### run_agent.sh 사용법
-
-`run_agent.sh`는 RAPIDS의 핵심 실행 진입점입니다.
-
-```bash
-# 자연어 입력 → 전체 파이프라인 (Stage 1→2→3)
-./run_agent.sh "Stack the blocks inside the tray on the table"
-./run_agent.sh "Sort the colored blocks into matching colored bins" --robot franka --episodes 5
-
-# JSON 입력 (심사 제출용)
-./run_agent.sh data/input_sample.json results/output.json
-
-# 개별 Stage 실행 (고급)
-./run_agent.sh --mode isaac-lab --task <yaml>       # Stage 2만
-./run_agent.sh --mode data-collection --task <yaml> # Stage 3만
-./run_agent.sh --mode e2e-batch --resume            # 대규모 배치
-
-./run_agent.sh --help                                # 전체 옵션
-```
+`run_agent.sh --help`로 전체 옵션을 확인할 수 있습니다.
 
 ## 참고
 
