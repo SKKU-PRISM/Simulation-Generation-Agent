@@ -147,7 +147,7 @@ Simulation-Generation-Agent/
 ├── configs/                      # 설정 파일
 │   ├── robot_profiles/           #   로봇별 프로파일 (관절, 그리퍼, IK)
 │   └── docker/                   #   Docker 전용 배치 설정
-├── tasks/                        # task YAML corpus (79개)
+├── tasks/                        # task YAML corpus (82개)
 ├── prompts/                      # LLM 시스템 프롬프트
 ├── assets/                       # 로컬 USD/URDF 자산
 └── docs/                         # 사용자 문서
@@ -158,6 +158,7 @@ Simulation-Generation-Agent/
 - 총 task YAML: 82개
 - 로봇: Franka (28), OpenARM (24), SO-101 (13), UR10e (17)
 - 카테고리: Stack, Lift, Pick&Place, Sort, Cabinet, Assembly, Peg Insert, Reach
+
 ## 문서
 
 | 문서 | 역할 |

@@ -118,7 +118,7 @@ pip install langchain langchain-openai langchain-community faiss-cpu sentence-tr
 
 ```bash
 cd scripts/task_spec_agent
-python3 -c "from rag_yaml_generator import RAGYAMLGenerator; print('RAG OK')"
+python3 -c "from rag_match_yaml_generator import RAGYAMLGenerator; print('RAG OK')"
 cd ../..
 ```
 
