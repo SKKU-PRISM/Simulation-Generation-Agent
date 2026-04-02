@@ -6,7 +6,7 @@
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![NVIDIA IsaacLab](https://img.shields.io/badge/IsaacLab-v2.3.2-76B900.svg?logo=nvidia)](https://github.com/isaac-sim/IsaacLab)
 [![IsaacSim](https://img.shields.io/badge/IsaacSim-5.1.0-76B900.svg?logo=nvidia)](https://docs.omniverse.nvidia.com/isaacsim/)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker)](README.docker.md)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker)](README.docker.ja.md)
 [![OpenAI](https://img.shields.io/badge/LLM-GPT--5--mini-412991.svg?logo=openai)](https://openai.com/)
 [![LeRobot](https://img.shields.io/badge/Dataset-LeRobot%20v3.0-FF6F00.svg)](https://github.com/huggingface/lerobot)
 
@@ -198,7 +198,7 @@ Simulation-Generation-Agent/
 | [docs/architecture.md](docs/architecture.md) | 3ステージパイプラインアーキテクチャ、モジュール間関係、データフロー |
 | [docs/getting_started.md](docs/getting_started.md) | インストール、環境変数、サブモジュールセットアップ、初回実行 |
 | [docs/usage.md](docs/usage.md) | CLI使用方法、オプション、出力構造、結果の解釈 |
-| [README.docker.md](README.docker.md) | Dockerビルド/実行ガイド |
+| [README.docker.ja.md](README.docker.ja.md) | Dockerビルド/実行ガイド |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | コントリビューションガイドライン |
 | [LICENSE](LICENSE) | MITライセンス |
 

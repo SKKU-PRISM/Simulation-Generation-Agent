@@ -1,0 +1,289 @@
+# Docker ガイド
+
+🇺🇸 [English](README.docker.md) | 🇰🇷 [한국어](README.docker.ko.md) | 🇨🇳 [中文](README.docker.zh.md) | 🇯🇵 [日本語](README.docker.ja.md) | 🇩🇪 [Deutsch](README.docker.de.md)
+
+このガイドでは、Simulation-Generation-Agent を Docker コンテナ内でビルドして実行する方法をステップバイステップで説明します。ローカルへの IsaacLab のインストールは不要です。
+
+---
+
+## 前提条件
+
+開始する前に、以下が準備されていることを確認してください：
+
+- [ ] 最新ドライバがインストールされた **NVIDIA GPU**
+- [ ] **Docker Engine**（v26.0+）
+- [ ] **NVIDIA Container Toolkit**
+- [ ] **OpenAI API キー**（または Azure OpenAI の認証情報）
+
+### Docker Engine のインストール
+
+公式ガイドに従ってください：[Ubuntu に Docker Engine をインストール](https://docs.docker.com/engine/install/ubuntu/)
+
+インストール後に確認：
+```bash
+docker --version
+docker info
+```
+
+### NVIDIA Container Toolkit のインストール
+
+公式ガイドに従ってください：[NVIDIA Container Toolkit のインストール](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+
+インストール後、Docker から GPU にアクセスできることを確認：
+```bash
+docker run --rm --gpus all nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04 nvidia-smi
+```
+
+GPU の一覧が表示されるはずです。権限エラーが出た場合は、`newgrp docker` を実行するか、ログアウトして再ログインしてください。
+
+---
+
+## ステップ 1：ソースコードの取得
+
+```bash
+git clone --recurse-submodules <repo-url>
+cd Simulation-Generation-Agent
+```
+
+> `--recurse-submodules` なしで既にクローンした場合は、以下を実行してください：
+> ```bash
+> git submodule update --init --recursive
+> ```
+
+---
+
+## ステップ 2：API キーの設定
+
+```bash
+cp .env.example .env
+```
+
+`.env` を開いて API キーを設定します：
+```
+OPENAI_API_KEY=sk-your-key-here
+```
+
+> **注意**：`.env` ファイルは gitignore されており、Docker イメージに含まれることはありません。キーは実行時に `-e` フラグで注入されます。
+
+---
+
+## ステップ 3：Docker イメージのビルド
+
+```bash
+docker build -t simgen-agent .
+```
+
+この処理では以下が行われます：
+1. CUDA 12.1 ベースイメージのプル
+2. Python 3.11 およびシステムライブラリのインストール
+3. pip による Isaac Sim 5.1.0 のインストール
+4. IsaacLab v2.3.2 のクローンとインストール
+5. プロジェクト依存関係のインストール
+
+> **初回ビルドにはインターネット速度に応じて約 30〜60 分かかります**。Docker レイヤーキャッシュにより、以降のビルドはずっと高速です。
+
+イメージがビルドされたことを確認：
+```bash
+docker images | grep simgen-agent
+```
+
+---
+
+## ステップ 4：パイプラインの実行
+
+### オプション A：自然言語入力（最もシンプル）
+
+ロボットが実行すべき操作を記述するだけです：
+
+```bash
+docker run --rm --gpus all \
+  -v $(pwd)/artifacts:/workspace/artifacts \
+  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  simgen-agent \
+  "Stack the blocks inside the tray on the table"
+```
+
+オプション付き：
+```bash
+docker run --rm --gpus all \
+  -v $(pwd)/artifacts:/workspace/artifacts \
+  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  simgen-agent \
+  "Stack the blocks inside the tray on the table" --robot franka --episodes 5
+```
+
+### オプション B：JSON 入力
+
+```bash
+docker run --rm --gpus all \
+  -v $(pwd)/artifacts:/workspace/artifacts \
+  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  simgen-agent \
+  data/input_sample.json results/output.json
+```
+
+デフォルトの `data/input_sample.json` にはサンプルの FrankaStackTray タスクが含まれています。独自に作成することもできます：
+```json
+{
+  "tasks": [
+    {"task_description": "Pick up the cube and place it on the target", "robot": "franka"}
+  ],
+  "config": {"target_success": 1, "max_attempts": 3}
+}
+```
+
+### オプション C：個別ステージ（上級）
+
+```bash
+# Stage 2 のみ：IsaacLab 環境コードの生成
+docker run --rm --gpus all \
+  -v $(pwd)/artifacts:/workspace/artifacts \
+  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  simgen-agent \
+  --mode isaac-lab --task tasks/franka/stack/franka_stack.yaml
+
+# Stage 3 のみ：データ収集
+docker run --rm --gpus all \
+  -v $(pwd)/artifacts:/workspace/artifacts \
+  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  simgen-agent \
+  --mode data-collection --task tasks/franka/stack/franka_stack.yaml
+
+# バッチ実行（複数タスク）
+docker run --rm --gpus all \
+  -v $(pwd)/artifacts:/workspace/artifacts \
+  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  simgen-agent \
+  --mode e2e-batch --config configs/docker/e2e_batch_smoke.yaml
+```
+
+### ヘルプの表示
+
+```bash
+docker run --rm simgen-agent --help
+```
+
+---
+
+## ステップ 5：結果の確認
+
+結果はホストマシンの `./artifacts/` に保存されます（コンテナ内部の `/workspace/artifacts` からマッピング）。
+
+```bash
+ls artifacts/
+```
+
+一般的な出力構造：
+```
+artifacts/
+├── isaaclab/              # Stage 2：生成された環境コード
+│   └── 20260402_*/        # タイムスタンプ付き実行ディレクトリ
+│       ├── env_cfg.py     # 環境設定
+│       ├── run_env.py     # 環境ランナー
+│       ├── result.json    # 成功/失敗ステータス
+│       └── debug/         # スクリーンショット（前面、上面、手首）
+└── data_collection/       # Stage 3：収集されたエピソード
+    └── TaskName_*/
+        ├── collection_results.json
+        ├── raw_dataset/   # エピソードデータ
+        └── videos/        # 録画された動画
+```
+
+JSON 入力モードの場合、結果は `results/output.json` にも書き出されます。
+
+---
+
+## トラブルシューティング
+
+### GPU が検出されない
+
+```
+Error: could not select device driver "nvidia"
+```
+
+**解決方法**：NVIDIA Container Toolkit をインストールまたは再インストールしてください：
+```bash
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+### IsaacSim のインストール中にビルドが失敗する
+
+IsaacSim の pip パッケージは約 15GB です。ネットワークの問題で失敗した場合：
+```bash
+# キャッシュなしで再試行
+docker build --no-cache -t simgen-agent .
+```
+
+### メモリ不足 (OOM)
+
+IsaacLab シミュレーションには最低 6GB の GPU メモリが必要です。OOM エラーが発生した場合：
+- 他の GPU 集約型アプリケーションを終了してください
+- `--episodes` を 1 に減らしてください
+- `--mode isaac-lab` で先に Stage 2 だけをテストしてください
+
+### API キーが機能しない
+
+```
+Either OPENAI_API_KEY or AZURE_OPENAI_API_KEY must be set.
+```
+
+**解決方法**：キーが `-e` で正しく渡されていることを確認してください：
+```bash
+# 方法 1：インライン
+-e OPENAI_API_KEY="sk-your-key"
+
+# 方法 2：.env ファイルから
+-e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)"
+
+# 方法 3：先に export
+export OPENAI_API_KEY="sk-your-key"
+docker run ... -e OPENAI_API_KEY ...
+```
+
+---
+
+## リファレンス
+
+### 環境変数
+
+| 変数 | 必須 | 説明 |
+|------|------|------|
+| `OPENAI_API_KEY` | はい（または Azure） | OpenAI プラットフォーム API キー |
+| `AZURE_OPENAI_API_KEY` | はい（または OpenAI） | Azure OpenAI API キー |
+| `AZURE_OPENAI_BASE_URL` | Azure 使用時 | Azure エンドポイント URL |
+| `OPENAI_BASE_URL` | いいえ | カスタム OpenAI 互換エンドポイント |
+| `HF_TOKEN` | いいえ | HuggingFace トークン（データセットアップロード用） |
+| `OPENAI_MODEL` | いいえ | デフォルトモデルの上書き（デフォルト：gpt-5-mini） |
+
+### `run_agent.sh` モード
+
+| モード | 説明 |
+|--------|------|
+| *（位置引数）* | フルパイプライン：自然言語または JSON 入力 |
+| `--mode e2e-batch` | 複数タスクのバッチ実行 |
+| `--mode isaac-lab` | Stage 2 のみ：環境コード生成 |
+| `--mode data-collection` | Stage 3 のみ：データ収集 |
+
+### イメージ仕様
+
+| コンポーネント | バージョン |
+|----------------|------------|
+| ベースイメージ | `nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04` |
+| Python | 3.11 |
+| Isaac Sim | 5.1.0 (pip) |
+| IsaacLab | v2.3.2 (source) |
+| PyTorch | 2.7.0 (CUDA 12.8) |
+
+### 検証スクリプト
+
+```bash
+# 静的監査（シークレット、パス、構造）
+python3 scripts/audit_release_repo.py
+
+# 完全な Docker 検証（ビルド + 実行 + テスト）
+python3 scripts/validate_docker_release.py
+
+# 完全なソークテスト（全タスク）
+python3 scripts/validate_docker_release.py --run-full-soak
+```

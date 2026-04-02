@@ -1,217 +1,289 @@
-# Docker Release Guide
+# Docker Guide
 
-The public Docker environment targets `headless IsaacLab + data collection + e2e batch`. `Isaac Sim + MCP` visual verification is outside the scope of this container.
+🇺🇸 [English](README.docker.md) | 🇰🇷 [한국어](README.docker.ko.md) | 🇨🇳 [中文](README.docker.zh.md) | 🇯🇵 [日本語](README.docker.ja.md) | 🇩🇪 [Deutsch](README.docker.de.md)
 
-## Target Runtime
+This guide walks you through building and running the Simulation-Generation-Agent inside a Docker container, step by step. No local IsaacLab installation is needed.
 
-- Host OS: Ubuntu 22.04 recommended
-- GPU: NVIDIA GPU required
-- Container runtime: NVIDIA Container Toolkit required
-- Base image: `nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04`
-- Python runtime: `3.11`
-- Isaac Sim runtime: pip package `isaacsim[all,extscache]==5.1.0`
-- Isaac Lab source checkout: `/workspace/IsaacLab` pinned to `v2.3.2`
+---
 
-## Release Layout
+## Prerequisites
 
-- `Dockerfile`
-- `.dockerignore`
-- `run_agent.sh`
-- `configs/docker/e2e_batch_release.yaml`
-- `configs/docker/e2e_batch_representative.yaml`
-- `configs/docker/e2e_batch_smoke.yaml`
-- `configs/docker/data_collection_release.yaml`
-- `configs/docker/isaaclab_agent_release.yaml`
-- `scripts/audit_release_repo.py`
-- `scripts/validate_docker_release.py`
+Before you begin, make sure you have:
 
-Runtime artifacts are written to `/workspace/artifacts` instead of the source tree `outputs/`.
+- [ ] **NVIDIA GPU** with recent drivers installed
+- [ ] **Docker Engine** (v26.0+)
+- [ ] **NVIDIA Container Toolkit**
+- [ ] **OpenAI API Key** (or Azure OpenAI credentials)
 
-## Required Environment Variables (one of)
+### Install Docker Engine
 
-Provide either OpenAI platform or Azure OpenAI credentials.
+Follow the official guide: [Install Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/)
 
-**OpenAI platform (recommended):**
-- `OPENAI_API_KEY`
-
-**Azure OpenAI:**
-- `AZURE_OPENAI_API_KEY`
-- `AZURE_OPENAI_BASE_URL`
-
-## Optional Environment Variables
-
-- `OPENAI_BASE_URL` (custom endpoint)
-- `HF_TOKEN`
-- `ANTHROPIC_API_KEY`
-- `GOOGLE_API_KEY`
-- `ISAACLAB_PATH`
-- `ADC_PATH`
-
-No API keys or `.env` files are baked into the image.
-
-## Host Setup
-
-The host must have Docker Engine and the NVIDIA Container Toolkit installed.
-
-- Docker Engine: `https://docs.docker.com/engine/install/ubuntu/`
-- NVIDIA Container Toolkit: `https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html`
-
-After installation, open a new login session (or run `newgrp docker`) and verify:
-
+After installation, verify:
 ```bash
+docker --version
 docker info
 ```
 
+### Install NVIDIA Container Toolkit
+
+Follow the official guide: [NVIDIA Container Toolkit Installation](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+
+After installation, verify GPU access from Docker:
 ```bash
 docker run --rm --gpus all nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04 nvidia-smi
 ```
 
-## Run (Simplest Method)
+You should see your GPU listed. If you get a permission error, try `newgrp docker` or log out and back in.
 
-Provide a natural language task description and the full pipeline runs automatically.
+---
+
+## Step 1: Get the Source Code
+
+```bash
+git clone --recurse-submodules <repo-url>
+cd Simulation-Generation-Agent
+```
+
+> If you already cloned without `--recurse-submodules`, run:
+> ```bash
+> git submodule update --init --recursive
+> ```
+
+---
+
+## Step 2: Configure API Keys
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` and set your API key:
+```
+OPENAI_API_KEY=sk-your-key-here
+```
+
+> **Note**: The `.env` file is gitignored and never baked into the Docker image. Keys are injected at runtime via `-e` flags.
+
+---
+
+## Step 3: Build the Docker Image
+
+```bash
+docker build -t simgen-agent .
+```
+
+This will:
+1. Pull the CUDA 12.1 base image
+2. Install Python 3.11 and system libraries
+3. Install Isaac Sim 5.1.0 via pip
+4. Clone and install IsaacLab v2.3.2
+5. Install project dependencies
+
+> **First build takes ~30-60 minutes** depending on your internet speed. Subsequent builds are much faster due to Docker layer caching.
+
+Verify the image was built:
+```bash
+docker images | grep simgen-agent
+```
+
+---
+
+## Step 4: Run the Pipeline
+
+### Option A: Natural Language Input (Simplest)
+
+Just describe what the robot should do:
 
 ```bash
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
-  -e OPENAI_API_KEY="sk-..." \
+  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  simgen-agent \
+  "Stack the blocks inside the tray on the table"
+```
+
+With options:
+```bash
+docker run --rm --gpus all \
+  -v $(pwd)/artifacts:/workspace/artifacts \
+  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
   simgen-agent \
   "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
 
-Results are saved to `./artifacts/` on the host (mapped to `/workspace/artifacts` inside the container).
-
-## Quick Run (JSON Input)
-
-Build the image and run with a JSON input file.
+### Option B: JSON Input
 
 ```bash
-# 1. Build the image
-docker build -t simgen-agent .
-
-# 2. Run the container
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
-  -e OPENAI_API_KEY="sk-..." \
+  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
   simgen-agent \
   data/input_sample.json results/output.json
 ```
 
-Input JSON format:
+The default `data/input_sample.json` contains a sample FrankaStackTray task. You can create your own:
 ```json
 {
   "tasks": [
-    {"task_description": "Stack the blocks inside the tray on the table", "robot": "franka"}
+    {"task_description": "Pick up the cube and place it on the target", "robot": "franka"}
   ],
   "config": {"target_success": 1, "max_attempts": 3}
 }
 ```
 
-Results are written to `results/output.json` as structured JSON.
-
-## `run_agent.sh` Modes
-
-`run_agent.sh` supports two interfaces.
-
-**Default mode** (positional args):
-```bash
-run_agent.sh <input_file.json> [output_file.json]
-```
-
-**Advanced pipeline mode** (`--mode` flag):
-- `e2e-batch`: Runs `scripts/run_e2e_batch.py` for release or representative batch execution.
-- `isaac-lab`: Runs `scripts/run_isaac_lab.py` for single task code generation and runtime validation.
-- `data-collection`: Runs `scripts/run_data_collection.py` for single task data collection.
-
-## Build
-
-Build a new image. Submodules must be initialized first.
+### Option C: Individual Stages (Advanced)
 
 ```bash
-cd /path/to/Simulation-Generation-Agent
+# Stage 2 only: Generate IsaacLab environment code
+docker run --rm --gpus all \
+  -v $(pwd)/artifacts:/workspace/artifacts \
+  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  simgen-agent \
+  --mode isaac-lab --task tasks/franka/stack/franka_stack.yaml
 
-# Initialize submodules (first time only)
-git submodule update --init --recursive
+# Stage 3 only: Data collection
+docker run --rm --gpus all \
+  -v $(pwd)/artifacts:/workspace/artifacts \
+  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  simgen-agent \
+  --mode data-collection --task tasks/franka/stack/franka_stack.yaml
 
-# Build
-docker build -t simgen-agent .
+# Batch execution (multiple tasks)
+docker run --rm --gpus all \
+  -v $(pwd)/artifacts:/workspace/artifacts \
+  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  simgen-agent \
+  --mode e2e-batch --config configs/docker/e2e_batch_smoke.yaml
 ```
 
-## Help / Healthcheck
-
-Verify the entrypoint contract and Python runtime.
+### Show Help
 
 ```bash
 docker run --rm simgen-agent --help
 ```
 
+---
+
+## Step 5: View Results
+
+Results are saved to `./artifacts/` on your host machine (mapped from `/workspace/artifacts` inside the container).
+
 ```bash
-docker run --rm --gpus all \
-  --entrypoint python \
-  simgen-agent \
-  -c "import isaaclab, isaacsim; print(isaaclab.__file__); print(isaacsim.__file__)"
+ls artifacts/
 ```
 
-Run a small smoke batch to verify artifact isolation and basic batch flow:
-
-```bash
-docker run --rm --gpus all \
-  -e OPENAI_API_KEY \
-  -v $(pwd)/artifacts:/workspace/artifacts \
-  simgen-agent \
-  --mode e2e-batch \
-  --config /workspace/Simulation-Generation-Agent/configs/docker/e2e_batch_smoke.yaml
+Typical output structure:
+```
+artifacts/
+├── isaaclab/              # Stage 2: generated environment code
+│   └── 20260402_*/        # timestamped run directory
+│       ├── env_cfg.py     # environment configuration
+│       ├── run_env.py     # environment runner
+│       ├── result.json    # success/failure status
+│       └── debug/         # screenshots (front, top, wrist)
+└── data_collection/       # Stage 3: collected episodes
+    └── TaskName_*/
+        ├── collection_results.json
+        ├── raw_dataset/   # episode data
+        └── videos/        # recorded videos
 ```
 
-Run a static security/hygiene audit:
+For JSON input mode, results are also written to `results/output.json`.
+
+---
+
+## Troubleshooting
+
+### GPU not detected
+
+```
+Error: could not select device driver "nvidia"
+```
+
+**Fix**: Install or reinstall the NVIDIA Container Toolkit:
+```bash
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+### Build fails at IsaacSim install
+
+The IsaacSim pip package is ~15GB. If it fails due to network issues:
+```bash
+# Retry with no-cache
+docker build --no-cache -t simgen-agent .
+```
+
+### Out of memory (OOM)
+
+IsaacLab simulation requires at least 6GB GPU memory. If you get OOM errors:
+- Close other GPU-intensive applications
+- Reduce `--episodes` to 1
+- Use `--mode isaac-lab` to test Stage 2 alone first
+
+### API key not working
+
+```
+Either OPENAI_API_KEY or AZURE_OPENAI_API_KEY must be set.
+```
+
+**Fix**: Make sure the key is correctly passed with `-e`:
+```bash
+# Option 1: Inline
+-e OPENAI_API_KEY="sk-your-key"
+
+# Option 2: From .env file
+-e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)"
+
+# Option 3: Export first
+export OPENAI_API_KEY="sk-your-key"
+docker run ... -e OPENAI_API_KEY ...
+```
+
+---
+
+## Reference
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `OPENAI_API_KEY` | Yes (or Azure) | OpenAI platform API key |
+| `AZURE_OPENAI_API_KEY` | Yes (or OpenAI) | Azure OpenAI API key |
+| `AZURE_OPENAI_BASE_URL` | With Azure | Azure endpoint URL |
+| `OPENAI_BASE_URL` | No | Custom OpenAI-compatible endpoint |
+| `HF_TOKEN` | No | HuggingFace token (for dataset upload) |
+| `OPENAI_MODEL` | No | Override default model (default: gpt-5-mini) |
+
+### `run_agent.sh` Modes
+
+| Mode | Description |
+|------|-------------|
+| *(positional args)* | Full pipeline: NL or JSON input |
+| `--mode e2e-batch` | Batch execution of multiple tasks |
+| `--mode isaac-lab` | Stage 2 only: environment code generation |
+| `--mode data-collection` | Stage 3 only: data collection |
+
+### Image Specifications
+
+| Component | Version |
+|-----------|---------|
+| Base image | `nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04` |
+| Python | 3.11 |
+| Isaac Sim | 5.1.0 (pip) |
+| IsaacLab | v2.3.2 (source) |
+| PyTorch | 2.7.0 (CUDA 12.8) |
+
+### Validation Scripts
 
 ```bash
+# Static audit (secrets, paths, structure)
 python3 scripts/audit_release_repo.py
-```
 
-## Representative Validation
-
-Representative validation covers build, entrypoint, image audit, single task execution, representative batch, and resume probe.
-
-```bash
+# Full Docker validation (build + run + test)
 python3 scripts/validate_docker_release.py
-```
 
-To run only the representative batch directly:
-
-```bash
-docker run --rm --gpus all \
-  -e OPENAI_API_KEY \
-  -v $(pwd)/artifacts:/workspace/artifacts \
-  simgen-agent \
-  --mode e2e-batch \
-  --config /workspace/Simulation-Generation-Agent/configs/docker/e2e_batch_representative.yaml
-```
-
-## Full Validation
-
-Full validation includes the complete release batch and full soak test.
-
-```bash
+# Full soak test (all tasks)
 python3 scripts/validate_docker_release.py --run-full-soak
 ```
-
-To run the full batch directly:
-
-```bash
-docker run --rm --gpus all \
-  -e OPENAI_API_KEY \
-  -e HF_TOKEN \
-  -v $(pwd)/artifacts:/workspace/artifacts \
-  simgen-agent \
-  --mode e2e-batch \
-  --config /workspace/Simulation-Generation-Agent/configs/docker/e2e_batch_release.yaml \
-  --resume
-```
-
-## Operating Notes
-
-- `run_agent.sh` is the single public release entry point.
-- Default mode is `e2e-batch`.
-- Default artifact root is `/workspace/artifacts`.
-- `FrankaPickPlaceMug` and `FrankaCabinetBlocks` remain `enabled: false` in the Docker release config.
-- `hf.upload` is `false` by default in release configs. Enable via config override only.

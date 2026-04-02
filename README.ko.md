@@ -6,7 +6,7 @@
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![NVIDIA IsaacLab](https://img.shields.io/badge/IsaacLab-v2.3.2-76B900.svg?logo=nvidia)](https://github.com/isaac-sim/IsaacLab)
 [![IsaacSim](https://img.shields.io/badge/IsaacSim-5.1.0-76B900.svg?logo=nvidia)](https://docs.omniverse.nvidia.com/isaacsim/)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker)](README.docker.md)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker)](README.docker.ko.md)
 [![OpenAI](https://img.shields.io/badge/LLM-GPT--5--mini-412991.svg?logo=openai)](https://openai.com/)
 [![LeRobot](https://img.shields.io/badge/Dataset-LeRobot%20v3.0-FF6F00.svg)](https://github.com/huggingface/lerobot)
 
@@ -201,13 +201,13 @@ Simulation-Generation-Agent/
 | [docs/architecture.md](docs/architecture.md) | 3-Stage 파이프라인 아키텍처, 모듈 관계, 데이터 흐름 |
 | [docs/getting_started.md](docs/getting_started.md) | 설치, 환경변수, submodule 세팅, 첫 실행 |
 | [docs/usage.md](docs/usage.md) | CLI 사용법, 옵션, 출력 구조, 결과 해석 |
-| [README.docker.md](README.docker.md) | Docker 빌드/실행 가이드 |
+| [README.docker.ko.md](README.docker.ko.md) | Docker 빌드/실행 가이드 |
 | [docs/README.md](docs/README.md) | 문서 네비게이션, 권장 읽기 순서 |
 | [LICENSE](LICENSE) | MIT 라이선스 |
 
 ## Docker / run_agent.sh 상세
 
-상세 Docker 빌드·실행 가이드: [README.docker.md](README.docker.md)
+상세 Docker 빌드·실행 가이드: [README.docker.ko.md](README.docker.ko.md)
 
 `run_agent.sh --help`로 전체 옵션을 확인할 수 있습니다.
 

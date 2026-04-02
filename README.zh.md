@@ -6,7 +6,7 @@
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![NVIDIA IsaacLab](https://img.shields.io/badge/IsaacLab-v2.3.2-76B900.svg?logo=nvidia)](https://github.com/isaac-sim/IsaacLab)
 [![IsaacSim](https://img.shields.io/badge/IsaacSim-5.1.0-76B900.svg?logo=nvidia)](https://docs.omniverse.nvidia.com/isaacsim/)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker)](README.docker.md)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker)](README.docker.zh.md)
 [![OpenAI](https://img.shields.io/badge/LLM-GPT--5--mini-412991.svg?logo=openai)](https://openai.com/)
 [![LeRobot](https://img.shields.io/badge/Dataset-LeRobot%20v3.0-FF6F00.svg)](https://github.com/huggingface/lerobot)
 
@@ -198,7 +198,7 @@ Simulation-Generation-Agent/
 | [docs/architecture.md](docs/architecture.md) | 3 阶段流水线架构、模块关系、数据流 |
 | [docs/getting_started.md](docs/getting_started.md) | 安装、环境变量、子模块设置、首次运行 |
 | [docs/usage.md](docs/usage.md) | CLI 用法、选项、输出结构、结果解读 |
-| [README.docker.md](README.docker.md) | Docker 构建/运行指南 |
+| [README.docker.zh.md](README.docker.zh.md) | Docker 构建/运行指南 |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | 贡献指南 |
 | [LICENSE](LICENSE) | MIT 许可证 |
 

@@ -6,7 +6,7 @@
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![NVIDIA IsaacLab](https://img.shields.io/badge/IsaacLab-v2.3.2-76B900.svg?logo=nvidia)](https://github.com/isaac-sim/IsaacLab)
 [![IsaacSim](https://img.shields.io/badge/IsaacSim-5.1.0-76B900.svg?logo=nvidia)](https://docs.omniverse.nvidia.com/isaacsim/)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker)](README.docker.md)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker)](README.docker.de.md)
 [![OpenAI](https://img.shields.io/badge/LLM-GPT--5--mini-412991.svg?logo=openai)](https://openai.com/)
 [![LeRobot](https://img.shields.io/badge/Dataset-LeRobot%20v3.0-FF6F00.svg)](https://github.com/huggingface/lerobot)
 
@@ -198,7 +198,7 @@ Simulation-Generation-Agent/
 | [docs/de/architecture.md](docs/de/architecture.md) | 3-Stufen-Pipeline-Architektur, Modulbeziehungen, Datenfluss |
 | [docs/de/getting_started.md](docs/de/getting_started.md) | Installation, Umgebungsvariablen, Submodul-Einrichtung, erster Lauf |
 | [docs/de/usage.md](docs/de/usage.md) | CLI-Nutzung, Optionen, Ausgabestruktur, Ergebnisinterpretation |
-| [README.docker.md](README.docker.md) | Docker-Build-/Ausfuehrungsanleitung |
+| [README.docker.de.md](README.docker.de.md) | Docker-Build-/Ausfuehrungsanleitung |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Beitragsrichtlinien |
 | [LICENSE](LICENSE) | MIT-Lizenz |
 
