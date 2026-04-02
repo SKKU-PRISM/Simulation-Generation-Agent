@@ -192,11 +192,20 @@ docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
   -e AZURE_OPENAI_API_KEY="your-azure-key" \
   -e AZURE_OPENAI_BASE_URL="https://your-resource.openai.azure.com/openai/v1/" \
+  -e AZURE_OPENAI_ENDPOINT="https://your-resource.openai.azure.com/" \
+  -e AZURE_OPENAI_DEPLOYMENT_NAME="your-deployment-name" \
   simgen-agent \
   "Stack the blocks inside the tray on the table"
 ```
 
-> You need either `OPENAI_API_KEY` or `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_BASE_URL`. Not both.
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `AZURE_OPENAI_API_KEY` | Yes | Azure OpenAI API key |
+| `AZURE_OPENAI_BASE_URL` | Yes | Azure endpoint with `/openai/v1/` suffix |
+| `AZURE_OPENAI_ENDPOINT` | Yes | Azure resource endpoint (used by Stage 1) |
+| `AZURE_OPENAI_DEPLOYMENT_NAME` | Yes | Deployed model name in Azure (used by Stage 1) |
+
+> You need either `OPENAI_API_KEY` or the Azure set above. Not both.
 
 ### Choosing a Model
 

@@ -192,11 +192,20 @@ docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
   -e AZURE_OPENAI_API_KEY="your-azure-key" \
   -e AZURE_OPENAI_BASE_URL="https://your-resource.openai.azure.com/openai/v1/" \
+  -e AZURE_OPENAI_ENDPOINT="https://your-resource.openai.azure.com/" \
+  -e AZURE_OPENAI_DEPLOYMENT_NAME="your-deployment-name" \
   simgen-agent \
   "Stack the blocks inside the tray on the table"
 ```
 
-> `OPENAI_API_KEY` または `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_BASE_URL` のいずれか一方のみ必要です。
+| 変数 | 必須 | 説明 |
+|------|------|------|
+| `AZURE_OPENAI_API_KEY` | はい | Azure OpenAI API キー |
+| `AZURE_OPENAI_BASE_URL` | はい | Azure エンドポイント（`/openai/v1/` サフィックス付き） |
+| `AZURE_OPENAI_ENDPOINT` | はい | Azure リソースエンドポイント（Stage 1 で使用） |
+| `AZURE_OPENAI_DEPLOYMENT_NAME` | はい | Azure にデプロイされたモデル名（Stage 1 で使用） |
+
+> `OPENAI_API_KEY` または上記の Azure 変数セットのいずれか一方のみ必要です。
 
 ### モデルの選択
 

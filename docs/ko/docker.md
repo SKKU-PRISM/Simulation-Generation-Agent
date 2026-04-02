@@ -192,11 +192,20 @@ docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
   -e AZURE_OPENAI_API_KEY="your-azure-key" \
   -e AZURE_OPENAI_BASE_URL="https://your-resource.openai.azure.com/openai/v1/" \
+  -e AZURE_OPENAI_ENDPOINT="https://your-resource.openai.azure.com/" \
+  -e AZURE_OPENAI_DEPLOYMENT_NAME="your-deployment-name" \
   simgen-agent \
   "Stack the blocks inside the tray on the table"
 ```
 
-> `OPENAI_API_KEY` 또는 `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_BASE_URL` 중 하나만 필요합니다.
+| 변수 | 필수 | 설명 |
+|------|------|------|
+| `AZURE_OPENAI_API_KEY` | 예 | Azure OpenAI API 키 |
+| `AZURE_OPENAI_BASE_URL` | 예 | Azure 엔드포인트 (`/openai/v1/` 접미사 포함) |
+| `AZURE_OPENAI_ENDPOINT` | 예 | Azure 리소스 엔드포인트 (Stage 1에서 사용) |
+| `AZURE_OPENAI_DEPLOYMENT_NAME` | 예 | Azure에 배포된 모델 이름 (Stage 1에서 사용) |
+
+> `OPENAI_API_KEY` 또는 위 Azure 변수 세트 중 하나만 필요합니다.
 
 ### 모델 선택
 
