@@ -41,7 +41,7 @@ Usage:
   --episodes <n>         목표 성공 에피소드 수 (기본: 1)
   --max-attempts <n>     최대 시도 횟수 (기본: 3)
 
-JSON 입력 (심사 제출):
+JSON 입력:
   input_file               JSON task spec (default: ./data/input_sample.json)
   output_file              Result JSON path (default: ./results/output.json)
 
@@ -58,7 +58,7 @@ Examples:
   run_agent.sh "Stack the blocks inside the tray on the table"
   run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 
-  # JSON 입력 (심사 제출용)
+  # JSON 입력
   run_agent.sh data/input_sample.json results/output.json
 
   # 개별 Stage 실행

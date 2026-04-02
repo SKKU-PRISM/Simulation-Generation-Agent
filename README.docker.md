@@ -71,26 +71,25 @@ docker run --rm --gpus all nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04 nvidia-sm
 
 ```bash
 docker run --rm --gpus all \
-  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -v $(pwd)/artifacts:/workspace/artifacts \
   -e OPENAI_API_KEY="sk-..." \
   simgen-agent \
   "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
 
-결과는 `results/output.json`에 기록된다.
+결과는 호스트의 `./artifacts/`에 저장된다 (컨테이너 내부 `/workspace/artifacts`).
 
-## Challenge Submission (심사위원 실행)
+## Quick Run (빠른 실행)
 
-심사위원은 아래 명령어로 이미지를 빌드하고 실행할 수 있다.
+아래 명령어로 이미지를 빌드하고 실행할 수 있다.
 
 ```bash
 # 1. 이미지 빌드
 docker build -t simgen-agent .
 
-# 2. 컨테이너 실행 (심사위원 인터페이스)
+# 2. 컨테이너 실행
 docker run --rm --gpus all \
-  -v $(pwd)/input_data:/workspace/Simulation-Generation-Agent/data \
-  -v $(pwd)/output_data:/workspace/Simulation-Generation-Agent/results \
+  -v $(pwd)/artifacts:/workspace/artifacts \
   -e OPENAI_API_KEY="sk-..." \
   simgen-agent \
   data/input_sample.json results/output.json
@@ -112,7 +111,7 @@ docker run --rm --gpus all \
 
 `run_agent.sh`는 두 가지 인터페이스를 지원한다.
 
-**심사 제출 모드** (positional args):
+**기본 실행 모드** (positional args):
 ```bash
 run_agent.sh <input_file.json> [output_file.json]
 ```

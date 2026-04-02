@@ -251,7 +251,7 @@ def run_pipeline(input_path: Path, output_path: Path) -> dict:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Simulation Generation Agent — Challenge Submission Entry Point"
+        description="Simulation Generation Agent — Main Entry Point"
     )
     parser.add_argument("--input", required=True, help="Input JSON file path")
     parser.add_argument("--output", required=True, help="Output JSON file path")

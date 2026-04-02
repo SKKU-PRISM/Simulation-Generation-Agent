@@ -16,7 +16,7 @@
 ./run_agent.sh "Stack the blocks inside the tray on the table"
 ./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 
-# JSON 입력 (심사 제출용)
+# JSON 입력
 ./run_agent.sh data/input_sample.json results/output.json
 ```
 
@@ -90,7 +90,7 @@ python3 scripts/task_spec_agent/task_spec_agent.py "Reach the goal" --verbose
 | --- | --- |
 | `--robot {franka,openarm,ur10,so101}` | 대상 로봇 (기본: franka) |
 | `--output <path>` | YAML 저장 경로 (미지정 시 stdout 출력) |
-| `--provider {openai,azure,huggingface,bedrock}` | LLM 프로바이더 (기본: config에서 결정, default=openai) |
+| `--provider {azure,huggingface,bedrock}` | LLM 프로바이더 override (미지정 시 config 기본값 사용, default=openai) |
 | `--no-rag` | RAG 대신 템플릿 기반 YAML 생성 |
 | `--verbose` | DEBUG 레벨 로깅 |
 

@@ -217,7 +217,7 @@ docker run --rm --gpus all \
   simgen-agent \
   "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 
-# JSON 입력 (심사 제출용)
+# JSON 입력
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
   -e OPENAI_API_KEY="your-key" \

@@ -36,3 +36,7 @@ htmlcov
 .coverage
 
 external/AutoDataCollector/.git
+external/AutoDataCollector/pipeline_config/
+external/AutoDataCollector/pipeline_multi/pipeline_config_multi/
+external/AutoDataCollector/run_record_test.sh
+external/AutoDataCollector/server_inference/

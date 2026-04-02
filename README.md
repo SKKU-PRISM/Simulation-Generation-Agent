@@ -147,7 +147,7 @@ Simulation-Generation-Agent/
 ├── run_agent.sh                  # 메인 실행 진입점 (전체 파이프라인)
 ├── .env.example                  # 환경변수 템플릿
 ├── LICENSE                       # MIT 라이선스
-├── src/main.py                   # Challenge 제출용 진입점
+├── src/main.py                   # 메인 실행 진입점
 ├── scripts/
 │   ├── task_spec_agent/          # Stage 1: NL → YAML
 │   │   ├── task_spec_agent.py    #   메인 오케스트레이터
@@ -199,7 +199,7 @@ Simulation-Generation-Agent/
 | [docs/architecture.md](docs/architecture.md) | 3-Stage 파이프라인 아키텍처, 모듈 관계, 데이터 흐름 |
 | [docs/getting_started.md](docs/getting_started.md) | 설치, 환경변수, submodule 세팅, 첫 실행 |
 | [docs/usage.md](docs/usage.md) | CLI 사용법, 옵션, 출력 구조, 결과 해석 |
-| [README.docker.md](README.docker.md) | Docker 빌드/실행, 심사위원 실행 가이드 |
+| [README.docker.md](README.docker.md) | Docker 빌드/실행 가이드 |
 | [docs/README.md](docs/README.md) | 문서 네비게이션, 권장 읽기 순서 |
 | [LICENSE](LICENSE) | MIT 라이선스 |
 
