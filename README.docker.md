@@ -110,10 +110,15 @@ run_agent.sh <input_file.json> [output_file.json]
 
 ## Build
 
-이미지를 새로 빌드하고 build context가 release 구조만 포함하는지 확인한다.
+이미지를 새로 빌드한다. submodule이 초기화되어 있어야 한다.
 
 ```bash
 cd /path/to/Simulation-Generation-Agent
+
+# submodule 초기화 (최초 1회)
+git submodule update --init --recursive
+
+# 빌드
 docker build -t simgen-agent .
 ```
 

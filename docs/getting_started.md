@@ -6,8 +6,11 @@
 ## 1. 공통 설치
 
 ```bash
-git clone <repo-url>
+git clone --recurse-submodules <repo-url>
 cd Simulation-Generation-Agent
+
+# submodule이 빠졌을 경우 수동 초기화
+git submodule update --init --recursive
 
 pip install -e .
 cp .env.example .env

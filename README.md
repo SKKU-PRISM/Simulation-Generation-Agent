@@ -29,8 +29,11 @@
 ### 1. 설치
 
 ```bash
-git clone <repo-url>
+git clone --recurse-submodules <repo-url>
 cd Simulation-Generation-Agent
+
+# submodule이 빠졌을 경우
+git submodule update --init --recursive
 
 pip install -e .
 cp .env.example .env
@@ -159,10 +162,12 @@ Simulation-Generation-Agent/
 
 | 문서 | 역할 |
 |------|------|
-| `docs/architecture.md` | 파이프라인 아키텍처 상세 |
-| `docs/getting_started.md` | 설치와 첫 실행 |
-| `docs/usage.md` | CLI 사용법, 옵션, 결과 해석 |
-| `README.docker.md` | Docker 빌드/실행 상세 가이드 |
+| [docs/architecture.md](docs/architecture.md) | 3-Stage 파이프라인 아키텍처, 모듈 관계, 데이터 흐름 |
+| [docs/getting_started.md](docs/getting_started.md) | 설치, 환경변수, submodule 세팅, 첫 실행 |
+| [docs/usage.md](docs/usage.md) | CLI 사용법, 옵션, 출력 구조, 결과 해석 |
+| [README.docker.md](README.docker.md) | Docker 빌드/실행, 심사위원 실행 가이드 |
+| [docs/README.md](docs/README.md) | 문서 네비게이션, 권장 읽기 순서 |
+| [LICENSE](LICENSE) | MIT 라이선스 |
 
 ## Docker 빌드 및 실행
 
@@ -187,7 +192,22 @@ docker run --rm --gpus all \
 
 - `OPENAI_API_KEY` (필수) 또는 `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_BASE_URL`
 
-상세 Docker 가이드: `README.docker.md`
+상세 Docker 가이드: [README.docker.md](README.docker.md)
+
+### run_agent.sh 사용법
+
+`run_agent.sh`는 Docker 컨테이너의 엔트리포인트이자 릴리스용 단일 실행 진입점입니다.
+
+```bash
+# 심사 제출 모드 (기본)
+./run_agent.sh <input_file.json> [output_file.json]
+
+# 고급 모드
+./run_agent.sh --mode e2e-batch                    # 대규모 배치 수집
+./run_agent.sh --mode isaac-lab --task <yaml>      # 단일 태스크 환경 생성
+./run_agent.sh --mode data-collection --task <yaml> # 단일 태스크 데이터 수집
+./run_agent.sh --help                               # 전체 옵션 확인
+```
 
 ## 참고
 

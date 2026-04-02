@@ -46,3 +46,14 @@ docs/task_taxonomy.md
 docs/task_yaml_spec.md
 docs/tasks_overview.md
 docs/troubleshooting.md
+
+# Legacy internal documents
+code_gen_lerobot/
+judge/
+record_dataset/
+skills/
+fixing_plan.md
+Joint_recording.md
+server_inference_template.md
+PRISM_Track2_*.md
+RAPIDS_Agent3_5_*.md
