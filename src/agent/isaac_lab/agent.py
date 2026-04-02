@@ -1477,7 +1477,7 @@ Only include files that need modifications."""
                                 + code_eval.get("task_alignment", {}).get("score", 0)
                             )
                             verify_threshold = 60  # out of 80 (runtime excluded)
-                            verify_max_refine = 2
+                            verify_max_refine = 3
 
                             if (
                                 static_score < verify_threshold
