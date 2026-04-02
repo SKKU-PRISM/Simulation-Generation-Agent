@@ -1380,15 +1380,27 @@ Use this structure/pattern, but fill in values from the YAML above.
                             verification = verifier.verify(front_img, top_img, env_cfg_text, yaml_text)
                             result["scene_verification"] = verification
 
+                            # Display code evaluation (4-category)
+                            code_eval = verification.get("code_evaluation", {})
+                            total = code_eval.get("total_score", 0)
+                            console.print(f"  Code evaluation: {total}/100")
+                            for cat in ["scene_fidelity", "mdp_correctness", "task_alignment", "runtime_validity"]:
+                                entry = code_eval.get(cat, {})
+                                console.print(f"    {cat}: {entry.get('score', 0)}/{entry.get('max', 0)}")
+
+                            # Display image evaluation
+                            img_eval = verification.get("image_evaluation", {})
+                            front_s = img_eval.get("front", {}).get("score", 0)
+                            top_s = img_eval.get("top", {}).get("score", 0)
+                            vlm_pass = img_eval.get("vlm_pass", False)
+                            console.print(f"  Image evaluation: front={front_s}/100, top={top_s}/100, pass={vlm_pass}")
+
                             if verification["overall_pass"]:
                                 console.print("  [green]Scene verification PASSED[/green]")
                             else:
                                 console.print("  [red]Scene verification FAILED[/red]")
-                                for vk in ["code_verification", "front_verification", "top_verification"]:
-                                    vr = verification.get(vk, {})
-                                    issues = vr.get("issues", [])
-                                    for issue in issues:
-                                        console.print(f"    [yellow]{vk}:[/yellow] {issue}")
+                                for issue in code_eval.get("issues", []):
+                                    console.print(f"    [yellow]code:[/yellow] {issue}")
                         else:
                             console.print("  [yellow]Skipped:[/yellow] Missing env_cfg.py or debug images")
                     else:

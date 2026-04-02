@@ -1,8 +1,10 @@
 """VLM-based scene verification for IsaacLab generated environments.
 
-Two-stage verification:
-1. Code-based: LLM checks env_cfg.py against YAML task spec
-2. Image-based: VLM scores front/top screenshots against task spec
+Two independent evaluation systems:
+1. Code-based (4-category, 100 points): LLM analyzes env_cfg.py against YAML spec
+   - Scene Fidelity (30), MDP Correctness (25), Task Alignment (25), Runtime Validity (20)
+2. Image-based (separate): VLM scores front/top screenshots against task spec
+   - front/top each 0-100, pass if either >= threshold
 
 Usage:
     verifier = SceneVerifier()
@@ -78,27 +80,63 @@ class SceneVerifier:
                 pass
         return response.output_text
 
+    # ---- Code-based evaluation (4-category, 100 points) ----
+
     def verify_code(self, env_cfg_text: str, yaml_text: str) -> dict:
-        """Code-based verification: check env_cfg.py against YAML spec using LLM."""
+        """Code-based verification using 4-category 100-point scoring system.
+
+        Returns:
+            {
+                "scene_fidelity": {"score": int, "max": 30, "details": str},
+                "mdp_correctness": {"score": int, "max": 25, "details": str},
+                "task_alignment": {"score": int, "max": 25, "details": str},
+                "runtime_validity": {"score": int, "max": 20, "details": str},
+                "total_score": int,
+                "max_score": 100,
+                "issues": [str]
+            }
+        """
         if not self.available:
-            return {"pass": False, "score": 0, "reasoning": "SceneVerifier not available", "issues": []}
+            return self._empty_code_result("SceneVerifier not available")
 
         system_prompt = """You are an expert IsaacLab environment code reviewer.
-You will receive:
-1. A YAML task specification (the intended task)
-2. A generated env_cfg.py (the IsaacLab environment code)
+You will receive a YAML task specification and a generated env_cfg.py.
+Evaluate the code using the following 4-category scoring system (100 points total):
 
-Analyze whether the generated code correctly implements the YAML specification.
+## Scene Fidelity (30 points)
+- asset_completeness (10): Are ALL assets from YAML present in SceneCfg?
+- asset_config (8): Do positions, USD paths, and physics match YAML?
+- physics_config (5): Do timestep, decimation, episode_length match?
+- robot_config (4): Is the correct robot type used?
+- scene_structure (3): Are ground plane, lighting, env_spacing present?
 
-Check these items:
-- All assets from YAML are present in SceneCfg
-- Robot type matches YAML specification
-- Physics parameters (timestep, decimation, episode_length) match
-- Observation, reward, and termination functions align with YAML goals
-- Object positions roughly match YAML asset positions
+## MDP Correctness (25 points)
+- observation_coverage (7): Are relevant observations defined?
+- observation_validity (3): Do observation functions exist and make sense?
+- action_space (5): Is action space properly configured for the robot?
+- reward_structure (5): Are reward terms defined and meaningful?
+- termination_coverage (3): Are termination conditions appropriate?
+- event_coverage (2): Are reset/randomization events defined?
+
+## Task Alignment (25 points)
+- goal_condition_mapping (10): Do rewards/terminations reflect YAML goal conditions?
+- threshold_preservation (8): Are YAML thresholds preserved in code?
+- custom_mdp_validity (7): Are custom MDP functions (mdp/*.py) valid?
+
+## Runtime Validity (20 points)
+- env_creation (5): Will the environment instantiate without errors?
+- reset_step_cycle (5): Will reset/step loop work correctly?
+- reward_computation (5): Will rewards compute without NaN/errors?
+- physics_stability (5): Are physics parameters stable (no extreme values)?
 
 Respond in this exact JSON format:
-{"pass": true/false, "score": 0-100, "reasoning": "brief explanation", "issues": ["issue1", "issue2"]}
+{
+  "scene_fidelity": {"score": 0-30, "details": "brief explanation"},
+  "mdp_correctness": {"score": 0-25, "details": "brief explanation"},
+  "task_alignment": {"score": 0-25, "details": "brief explanation"},
+  "runtime_validity": {"score": 0-20, "details": "brief explanation"},
+  "issues": ["issue1", "issue2"]
+}
 
 Return ONLY the JSON, no other text."""
 
@@ -113,13 +151,59 @@ Return ONLY the JSON, no other text."""
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ])
-            return self._parse_json_response(raw, default_pass=False)
+            parsed = self._parse_json_response(raw)
+            return self._normalize_code_result(parsed)
         except Exception as e:
             logger.error("Code verification failed: %s", e)
-            return {"pass": False, "score": 0, "reasoning": str(e), "issues": []}
+            return self._empty_code_result(str(e))
+
+    def _empty_code_result(self, reason: str) -> dict:
+        return {
+            "scene_fidelity": {"score": 0, "max": 30, "details": reason},
+            "mdp_correctness": {"score": 0, "max": 25, "details": reason},
+            "task_alignment": {"score": 0, "max": 25, "details": reason},
+            "runtime_validity": {"score": 0, "max": 20, "details": reason},
+            "total_score": 0,
+            "max_score": 100,
+            "issues": [reason],
+        }
+
+    def _normalize_code_result(self, parsed: dict) -> dict:
+        categories = {
+            "scene_fidelity": 30,
+            "mdp_correctness": 25,
+            "task_alignment": 25,
+            "runtime_validity": 20,
+        }
+        result = {}
+        total = 0
+        for cat, max_score in categories.items():
+            entry = parsed.get(cat, {})
+            if isinstance(entry, dict):
+                score = min(int(entry.get("score", 0)), max_score)
+                details = entry.get("details", "")
+            elif isinstance(entry, (int, float)):
+                score = min(int(entry), max_score)
+                details = ""
+            else:
+                score = 0
+                details = ""
+            result[cat] = {"score": score, "max": max_score, "details": details}
+            total += score
+
+        result["total_score"] = total
+        result["max_score"] = 100
+        result["issues"] = parsed.get("issues", [])
+        return result
+
+    # ---- Image-based evaluation (separate scoring) ----
 
     def verify_image(self, image_path: Path, view_name: str, yaml_text: str) -> dict:
-        """VLM image verification: score a single screenshot against task spec."""
+        """VLM image verification: score a single screenshot against task spec.
+
+        Returns:
+            {"score": 0-100, "reasoning": str, "issues": [str]}
+        """
         if not self.available:
             return {"score": 0, "reasoning": "SceneVerifier not available", "issues": []}
 
@@ -155,10 +239,12 @@ Return ONLY the JSON, no other text."""
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt_content},
             ])
-            return self._parse_json_response(raw, default_pass=None)
+            return self._parse_json_response(raw)
         except Exception as e:
             logger.error("Image verification (%s) failed: %s", view_name, e)
             return {"score": 0, "reasoning": str(e), "issues": []}
+
+    # ---- Full verification ----
 
     def verify(
         self,
@@ -167,42 +253,51 @@ Return ONLY the JSON, no other text."""
         env_cfg_text: str,
         yaml_text: str,
     ) -> dict:
-        """Full verification: code check + VLM image scoring."""
-        # 1. Code-based verification
-        logger.info("SceneVerifier: running code verification...")
-        code_result = self.verify_code(env_cfg_text, yaml_text)
-        logger.info("  Code verification: pass=%s, score=%s", code_result.get("pass"), code_result.get("score"))
+        """Full verification: code-based 4-category + VLM image scoring (separate)."""
+        # 1. Code-based evaluation (4-category, 100 points)
+        logger.info("SceneVerifier: running code evaluation (4-category)...")
+        code_eval = self.verify_code(env_cfg_text, yaml_text)
+        logger.info("  Code total: %s/100 (SF=%s MDP=%s TA=%s RV=%s)",
+                     code_eval["total_score"],
+                     code_eval["scene_fidelity"]["score"],
+                     code_eval["mdp_correctness"]["score"],
+                     code_eval["task_alignment"]["score"],
+                     code_eval["runtime_validity"]["score"])
 
-        # 2. VLM image verification (front and top separately)
-        logger.info("SceneVerifier: running front image verification...")
+        # 2. VLM image evaluation (separate, front and top)
+        logger.info("SceneVerifier: running front image evaluation...")
         front_result = self.verify_image(front_path, "front", yaml_text)
-        logger.info("  Front score: %s", front_result.get("score"))
+        logger.info("  Front score: %s/100", front_result.get("score"))
 
-        logger.info("SceneVerifier: running top image verification...")
+        logger.info("SceneVerifier: running top image evaluation...")
         top_result = self.verify_image(top_path, "top", yaml_text)
-        logger.info("  Top score: %s", top_result.get("score"))
+        logger.info("  Top score: %s/100", top_result.get("score"))
 
         # 3. VLM pass: either front OR top >= threshold
         front_score = front_result.get("score", 0)
         top_score = top_result.get("score", 0)
         vlm_pass = front_score >= self.threshold or top_score >= self.threshold
 
-        overall_pass = code_result.get("pass", False) and vlm_pass
+        # 4. Overall pass: code total >= 60 AND vlm pass
+        code_pass = code_eval["total_score"] >= 60
+        overall_pass = code_pass and vlm_pass
 
-        logger.info("SceneVerifier: vlm_pass=%s (front=%s, top=%s, threshold=%d), overall=%s",
-                     vlm_pass, front_score, top_score, self.threshold, overall_pass)
+        logger.info("SceneVerifier: code_pass=%s (%s/100), vlm_pass=%s (front=%s, top=%s), overall=%s",
+                     code_pass, code_eval["total_score"], vlm_pass, front_score, top_score, overall_pass)
 
         return {
-            "code_verification": code_result,
-            "front_verification": front_result,
-            "top_verification": top_result,
-            "vlm_pass": vlm_pass,
+            "code_evaluation": code_eval,
+            "image_evaluation": {
+                "front": front_result,
+                "top": top_result,
+                "vlm_pass": vlm_pass,
+                "threshold": self.threshold,
+            },
             "overall_pass": overall_pass,
-            "threshold": self.threshold,
         }
 
     @staticmethod
-    def _parse_json_response(raw: str, default_pass=None) -> dict:
+    def _parse_json_response(raw: str) -> dict:
         """Parse JSON from LLM/VLM response, with fallback."""
         cleaned = raw.strip()
         if cleaned.startswith("```json"):
@@ -213,22 +308,14 @@ Return ONLY the JSON, no other text."""
             cleaned = cleaned[:-3]
         cleaned = cleaned.strip()
 
-        # Find JSON boundaries
         start = cleaned.find("{")
         end = cleaned.rfind("}")
         if start != -1 and end != -1 and end > start:
             cleaned = cleaned[start:end + 1]
 
         try:
-            result = json.loads(cleaned)
-            if "score" not in result and "pass" not in result:
-                result["score"] = 0
-            return result
+            return json.loads(cleaned)
         except json.JSONDecodeError:
-            # Try to extract score from text
             score_match = re.search(r'"?score"?\s*:\s*(\d+)', raw)
             score = int(score_match.group(1)) if score_match else 0
-            result = {"score": score, "reasoning": raw[:200], "issues": ["Failed to parse JSON response"]}
-            if default_pass is not None:
-                result["pass"] = default_pass
-            return result
+            return {"score": score, "reasoning": raw[:200], "issues": ["Failed to parse JSON response"]}

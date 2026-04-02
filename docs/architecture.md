@@ -121,9 +121,32 @@ YAML 태스크 명세를 IsaacLab `ManagerBasedRLEnv` Python 코드로 자동 �
 │          ▼           │
 │  9. 스크린샷 캡처     │  front/top/wrist 3앵글
 │          ▼           │
-│  10. VLM 환경 검증    │  코드 검증 + 이미지별 VLM 점수
-│                      │  (front/top 중 하나 ≥ 70점 → 통과)
+│  10. VLM 환경 검증    │  2개 독립 평가 체계:
+│                      │  ① 코드 기반 (4-카테고리 100점)
+│                      │    SF/30 + MDP/25 + TA/25 + RV/20
+│                      │  ② VLM 이미지 (front/top 각 0-100)
+│                      │    둘 중 하나 ≥ 70 → VLM 통과
 └──────────────────────┘
+```
+
+### SceneVerifier 출력 구조
+
+```json
+{
+  "code_evaluation": {
+    "scene_fidelity": {"score": 28, "max": 30, "details": "..."},
+    "mdp_correctness": {"score": 22, "max": 25, "details": "..."},
+    "task_alignment": {"score": 24, "max": 25, "details": "..."},
+    "runtime_validity": {"score": 18, "max": 20, "details": "..."},
+    "total_score": 92, "max_score": 100
+  },
+  "image_evaluation": {
+    "front": {"score": 85, "reasoning": "..."},
+    "top": {"score": 78, "reasoning": "..."},
+    "vlm_pass": true
+  },
+  "overall_pass": true
+}
 ```
 
 ### 생성되는 코드 구조
