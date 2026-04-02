@@ -10,22 +10,18 @@ CLI 사용법은 `docs/usage.md`, 설치는 `docs/getting_started.md`
 
 자연어 태스크 설명을 입력하면, 3단계를 거쳐 학습 가능한 demonstration 데이터셋이 자동으로 생성됩니다.
 
-```
-  [자연어 입력]                                              [학습 가능 데이터셋]
-      │                                                          ▲
-      ▼                                                          │
- ┌──────────┐     ┌──────────────┐     ┌──────────────┐    ┌───────────┐
- │ Stage 1  │────▶│   Stage 2    │────▶│   Stage 3    │───▶│  Dataset  │
- │ Task Def │     │  Sim Gen     │     │ Data Collect  │    │  Export   │
- │ NL→YAML  │     │ YAML→Env    │     │ CaP→Episodes  │    │ (LeRobot) │
- └──────────┘     └──────┬───────┘     └──────────────┘    └───────────┘
-                         │                    │
-                         ▼                    ▼
-                  ┌──────────────┐     ┌──────────────┐
-                  │  Evaluator   │     │ Episode Judge │
-                  │ 환경 코드 검증 │     │ Geo + VLM 판정│
-                  │ (100점 채점)  │     │ (성공/실패)    │
-                  └──────────────┘     └──────────────┘
+```mermaid
+flowchart LR
+    NL["🗣️ NL Input"] --> S1["Stage 1\nTask Definition\nNL → YAML"]
+    S1 --> S2["Stage 2\nSim Generation\nYAML → IsaacLab"]
+    S2 --> S3["Stage 3\nData Collection\nCaP → Episodes"]
+    S3 --> DS["📦 Dataset Export\nLeRobot Format"]
+
+    S2 -.-> EV["Evaluator\n4-Category 100pt"]
+    S2 -.-> SV["SceneVerifier\nCode + VLM"]
+    SV -- "score < 60/80\nself-refinement" --> S2
+    S2 -- "exec error\nself-refinement" --> S2
+    S3 -.-> JG["Episode Judge\nGeometry + VLM"]
 ```
 
 | Stage | 입력 | 핵심 동작 | 출력 | 진입점 |
@@ -42,34 +38,16 @@ CLI 사용법은 `docs/usage.md`, 설치는 `docs/getting_started.md`
 
 자연어 명령을 구조화된 YAML 태스크 명세로 변환합니다. 내부적으로 4단계 파이프라인을 거칩니다.
 
-```
-자연어 입력 (한/영)
-    │
-    ▼
-┌─────────────────────┐
-│  NL Parser          │  LLM 기반 구조화 추출
-│  (nl_parser.py)     │  → actions, objects, locations, constraints
-└─────────┬───────────┘
-          ▼
-┌─────────────────────┐
-│  Task Decomposer    │  고수준 태스크 → 원자적 동작 시퀀스
-│  (task_decomposer.py│  → reach, grasp, lift, place 등 + 의존 그래프
-└─────────┬───────────┘
-          ▼
-┌─────────────────────┐
-│  Feasibility        │  로봇 물리적 실현 가능성 검증
-│  Validator          │  → workspace, reachability, gripper 호환성,
-│  (feasibility_      │    payload, action sequence 검증
-│   validator.py)     │
-└─────────┬───────────┘
-          ▼
-┌─────────────────────┐
-│  YAML Generator     │  두 가지 모드:
-│  (rag_match_yaml_   │  1) RAG: FAISS 벡터 검색 → 최근접 태스크 YAML 매칭
-│   generator.py)     │  2) 템플릿 기반: 로봇별 템플릿에서 생성
-└─────────┬───────────┘
-          ▼
-  구조화된 YAML 태스크 스펙
+```mermaid
+flowchart TD
+    NL["🗣️ 자연어 입력 (한/영)"]
+    NLP["NL Parser (nl_parser.py)\n→ actions, objects, locations"]
+    TD["Task Decomposer (task_decomposer.py)\n→ 원자적 동작 시퀀스 + 의존 그래프"]
+    FV["Feasibility Validator (feasibility_validator.py)\n→ workspace, reachability, gripper, payload 검증"]
+    RAG["YAML Generator (rag_match_yaml_generator.py)\n→ FAISS 벡터 매칭 또는 템플릿 생성"]
+    YAML["📄 구조화된 YAML 태스크 스펙"]
+
+    NL --> NLP --> TD --> FV --> RAG --> YAML
 ```
 
 ### 각 모듈 역할
@@ -96,41 +74,25 @@ CLI 사용법은 `docs/usage.md`, 설치는 `docs/getting_started.md`
 
 YAML 태스크 명세를 IsaacLab `ManagerBasedRLEnv` Python 코드로 자동 생성하고, 실행 검증합니다.
 
-```
-태스크 YAML 문서
-    │
-    ▼
-┌──────────────────────┐
-│  IsaacLabAgent       │
-│                      │
-│  1. YAML 파싱        │
-│          ▼           │
-│  2. 레퍼런스 코드 선택 │  태스크 카테고리별 (stack, lift, pick_place 등)
-│          ▼           │
-│  3. 프롬프트 구성     │  시스템 프롬프트 + 레퍼런스 + YAML
-│          ▼           │  prompts/isaaclab_generation.md
-│  4. LLM 코드 생성    │  gpt-5-mini (OpenAI)
-│          ▼           │
-│  5. 코드 파싱/저장    │  env_cfg.py + run_env.py + mdp/
-│          ▼           │
-│  6. IsaacLab 실행    │  isaaclab.sh → conda env_isaaclab
-│          ▼           │  마커 파일로 성공 판단
-│  7. 실패 시 자동 수정  │  에러 로그 → LLM 재생성 (최대 5회)
-│          ▼           │
-│  8. 평가 (선택)       │  4-카테고리 100점 채점
-│          ▼           │
-│  9. 스크린샷 캡처     │  front/top/wrist 3앵글
-│          ▼           │
-│  10. VLM 환경 검증    │  2개 독립 평가 체계:
-│                      │  ① 코드 기반 (4-카테고리 100점)
-│                      │    SF/30 + MDP/25 + TA/25 + RV/20
-│                      │  ② VLM 이미지 (front/top 각 0-100)
-│                      │    둘 중 하나 ≥ 70 → VLM 통과
-│          ▼           │
-│  11. Self-Refinement  │  코드 평가 < 60/80 → LLM에 피드백
-│      (조건부)         │  → 코드 재생성 → Step 6 재실행
-│                      │  (최대 5회)
-└──────────────────────┘
+```mermaid
+flowchart TD
+    YAML["📄 태스크 YAML"] --> PARSE["1. YAML 파싱"]
+    PARSE --> REF["2. 레퍼런스 코드 선택\n태스크 카테고리별"]
+    REF --> PROMPT["3. 프롬프트 구성\nisaaclab_generation.md"]
+    PROMPT --> GEN["4. LLM 코드 생성\ngpt-5-mini"]
+    GEN --> WRITE["5. 코드 저장\nenv_cfg.py + run_env.py + mdp/"]
+    WRITE --> EXEC["6. IsaacLab 실행\nisaaclab.sh → conda"]
+
+    EXEC -- "실패" --> FIX["7. 에러 자동 수정\n에러 로그 → LLM (최대 5회)"]
+    FIX --> EXEC
+
+    EXEC -- "성공" --> EVAL["8. Evaluator (선택)\n4-카테고리 100점"]
+    EVAL --> CAP["9. 스크린샷 캡처\nfront / top / wrist"]
+    CAP --> VER["10. SceneVerifier\n① 코드: SF/30+MDP/25+TA/25+RV/20\n② VLM: front·top 각 0-100"]
+
+    VER -- "코드 < 60/80" --> REFINE["11. Self-Refinement\nLLM에 피드백 → 재생성 (최대 5회)"]
+    REFINE --> EXEC
+    VER -- "통과 ✅" --> DONE["완료 → result.json"]
 ```
 
 ### SceneVerifier 출력 구조
