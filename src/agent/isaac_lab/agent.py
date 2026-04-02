@@ -773,8 +773,12 @@ Use this structure/pattern, but fill in values from the YAML above.
    - Goals: convert to termination conditions
    - If any rigid object uses `randomize.position.min_separation`, preserve that constraint; do not emit independent resets that can overlap objects
 
-4. For goal.success_criteria or goal.conditions that need custom logic,
-   generate mdp/terminations.py with the custom function.
+4. **CRITICAL — Custom rewards and terminations are MANDATORY:**
+   - For EVERY YAML goal condition, generate a matching custom termination in `mdp/terminations.py`
+   - Generate at least one task-specific reward in `mdp/rewards.py` (e.g., object-EE distance)
+   - Never submit with only `action_rate_l2` + `time_out` — these are regularizers, not task logic
+   - Add observation terms (`root_pos_w`, `root_quat_w`) for ALL objects in the YAML
+   - Register all custom functions in `mdp/__init__.py` and reference them in env_cfg.py
 """
         return prompt
 

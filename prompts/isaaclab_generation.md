@@ -438,6 +438,8 @@ AVAILABLE reward functions:
 
 For task-specific rewards (e.g., distance-based), generate custom reward functions in `mdp/rewards.py`.
 
+**MANDATORY**: You MUST generate custom reward functions for EVERY task. At minimum, generate a distance-based reward between the end-effector and the primary object. Never submit a reward config with only `action_rate_l2` and `joint_vel_l2` — these are regularizers, not task rewards. Each object in the YAML `assets` list should have at least one reward term referencing it via `SceneEntityCfg`.
+
 ### 9. Terminations
 
 AVAILABLE termination functions:
@@ -448,6 +450,12 @@ AVAILABLE termination functions:
 **DO NOT USE** functions like `mdp.cubes_stacked`, `mdp.object_reached` — these DO NOT EXIST.
 
 For task-specific success criteria (e.g., stacking, placing), generate custom termination functions in `mdp/terminations.py`.
+
+**MANDATORY**: You MUST generate a custom success termination function in `mdp/terminations.py` for EVERY task that has `goal.conditions` in the YAML. Map each YAML goal condition to a corresponding termination check. Never rely on `mdp.time_out` as the only termination — it must always be paired with a task-specific success termination. The success termination function must:
+1. Read object positions from `env.scene[cfg.name].data.root_pos_w`
+2. Implement the exact condition from the YAML (e.g., `stacked`, `placed_at`, `lifted_above`)
+3. Return a `torch.Tensor` of shape `(num_envs,)` with boolean values
+4. Be registered as `DoneTerm(func=mdp.<your_function>, time_out=False)` in TerminationsCfg
 
 ### 9.1 Assembly Tasks
 
