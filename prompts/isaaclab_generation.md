@@ -2,9 +2,17 @@
 
 You are an expert IsaacLab developer. Your task is to convert a YAML task document into IsaacLab ManagerBasedRLEnv Python code.
 
+## CRITICAL RULES (read these first)
+
+1. **ALWAYS generate exactly 5 files** — `env_cfg.py`, `run_env.py`, `mdp/__init__.py`, `mdp/rewards.py`, `mdp/terminations.py`. No exceptions.
+2. **EVERY rigid object** in the YAML `assets` list MUST have observation terms (`root_pos_w` + `root_quat_w` via `SceneEntityCfg`).
+3. **EVERY goal condition** in the YAML MUST map to a custom termination function in `mdp/terminations.py`.
+4. **EVERY task** MUST have at least one distance-based reward (EE ↔ object) in `mdp/rewards.py`.
+5. **Never submit** with only `action_rate_l2` + `time_out` — these are regularizers, not task logic.
+
 ## Output Format
 
-Generate exactly 2 files. Each file must be in a fenced code block with the filename:
+Generate exactly **5 files**. Each file must be in a fenced code block with the filename:
 
 ```python:env_cfg.py
 # ... environment configuration code ...
@@ -14,18 +22,16 @@ Generate exactly 2 files. Each file must be in a fenced code block with the file
 # ... runner script ...
 ```
 
-If the task requires custom reward or termination functions (not available in `isaaclab.envs.mdp`), also generate:
-
 ```python:mdp/__init__.py
-# ... re-exports ...
+# ... re-exports isaaclab.envs.mdp + custom rewards + custom terminations ...
 ```
 
 ```python:mdp/rewards.py
-# ... custom reward functions ...
+# ... custom reward functions (REQUIRED — at least distance reward) ...
 ```
 
 ```python:mdp/terminations.py
-# ... custom termination functions ...
+# ... custom termination functions (REQUIRED — map each YAML goal condition) ...
 ```
 
 ## Required Imports for env_cfg.py
@@ -353,6 +359,14 @@ class ObservationsCfg:
     policy: PolicyCfg = PolicyCfg()
 ```
 
+**MANDATORY observation checklist:**
+- `joint_pos` (mdp.joint_pos_rel) — always include
+- `joint_vel` (mdp.joint_vel_rel) — always include
+- `actions` (mdp.last_action) — always include
+- For **EACH** rigid object in YAML `assets`: add `<name>_pos = ObsTerm(func=mdp.root_pos_w, params={"asset_cfg": SceneEntityCfg("<name>")})` and `<name>_quat = ObsTerm(func=mdp.root_quat_w, params={"asset_cfg": SceneEntityCfg("<name>")})`
+
+Failing to add observations for ALL objects will result in a low MDP Correctness score.
+
 ### 7. Events (Domain Randomization)
 
 AVAILABLE event functions:
@@ -509,7 +523,14 @@ ee_frame = FrameTransformerCfg(
 
 ### 11. Custom MDP Functions
 
-When built-in `mdp` functions are insufficient (e.g., task-specific success criteria), generate custom functions in `mdp/` directory.
+You MUST generate custom `mdp/rewards.py` and `mdp/terminations.py` for EVERY task. These are NOT optional.
+
+**Custom termination patterns by goal type (mdp/terminations.py) — pick the pattern matching your YAML goal:**
+
+- **`lifted` / `height_above`** → check `object_pos[:, 2] > threshold`
+- **`stacked` / `stacked_below`** → check xy alignment + height difference between objects
+- **`placed_at` / `at_position` / `on_surface`** → check `distance(object_pos, target_pos) < threshold`
+- **`sorted` / `in_zone`** → check each object is within its target zone
 
 **Custom termination example (mdp/terminations.py):**
 ```python
@@ -548,9 +569,9 @@ def cubes_stacked(
     return xy_12 & xy_23 & h_12 & h_23
 ```
 
-**Custom reward example (mdp/rewards.py):**
+**Custom reward example (mdp/rewards.py) — MINIMUM TEMPLATE (adapt names to your YAML objects):**
 ```python
-"""Custom reward functions."""
+"""Custom reward functions — REQUIRED for every task."""
 from __future__ import annotations
 from typing import TYPE_CHECKING
 import torch
@@ -571,7 +592,25 @@ def object_ee_distance(
     ee_pos = env.scene[ee_frame_cfg.name].data.target_pos_w[:, 0, :3]
     dist = torch.norm(obj_pos - ee_pos, dim=-1)
     return 1.0 - torch.tanh(dist / std)
+
+
+def object_goal_distance(
+    env: ManagerBasedRLEnv,
+    std: float = 0.1,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cube_1"),
+    target_pos: tuple[float, float, float] = (0.5, 0.0, 0.1),
+) -> torch.Tensor:
+    """Reward for object approaching target position."""
+    obj_pos = env.scene[object_cfg.name].data.root_pos_w[:, :3]
+    goal = torch.tensor(target_pos, device=obj_pos.device).unsqueeze(0)
+    dist = torch.norm(obj_pos - goal, dim=-1)
+    return 1.0 - torch.tanh(dist / std)
 ```
+
+**MINIMUM reward checklist (adapt SceneEntityCfg names to your YAML):**
+- `object_ee_distance` — at least one per primary manipulation object
+- `object_goal_distance` — if YAML has target positions
+- `action_rate_l2` + `joint_vel_l2` — always include as regularizers
 
 **mdp/__init__.py:**
 ```python

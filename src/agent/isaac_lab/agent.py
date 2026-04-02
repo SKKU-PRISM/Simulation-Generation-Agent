@@ -773,12 +773,15 @@ Use this structure/pattern, but fill in values from the YAML above.
    - Goals: convert to termination conditions
    - If any rigid object uses `randomize.position.min_separation`, preserve that constraint; do not emit independent resets that can overlap objects
 
-4. **CRITICAL — Custom rewards and terminations are MANDATORY:**
-   - For EVERY YAML goal condition, generate a matching custom termination in `mdp/terminations.py`
-   - Generate at least one task-specific reward in `mdp/rewards.py` (e.g., object-EE distance)
-   - Never submit with only `action_rate_l2` + `time_out` — these are regularizers, not task logic
-   - Add observation terms (`root_pos_w`, `root_quat_w`) for ALL objects in the YAML
-   - Register all custom functions in `mdp/__init__.py` and reference them in env_cfg.py
+4. **CRITICAL — Pre-submission checklist (all items REQUIRED):**
+   - [ ] `env_cfg.py`: ALL YAML objects present in SceneCfg with correct positions
+   - [ ] `env_cfg.py`: ObservationsCfg has `root_pos_w` + `root_quat_w` for EACH rigid object
+   - [ ] `mdp/rewards.py`: At least one `object_ee_distance` reward per manipulation target
+   - [ ] `mdp/terminations.py`: One custom termination per YAML goal condition
+   - [ ] `mdp/__init__.py`: Imports from both `isaaclab.envs.mdp`, `.rewards`, and `.terminations`
+   - [ ] `env_cfg.py` RewardsCfg: References custom reward functions with `weight` parameter
+   - [ ] `env_cfg.py` TerminationsCfg: References custom termination with `time_out=False`
+   - [ ] Never submit with only `action_rate_l2` + `time_out`
 """
         return prompt
 
