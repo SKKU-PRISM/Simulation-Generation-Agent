@@ -223,22 +223,297 @@ class IsaacLabAgent:
         "nutthread": ("FactoryTaskNutThreadCfg", "nut_thread"),
     }
 
-    def _build_factory_template(self, task_doc: dict) -> dict:
-        """Build run_env.py that uses the existing Factory Direct RL module."""
-        task_name = task_doc["task"]["name"].lower().replace("_", "").replace(" ", "")
+    # Factory asset definitions for ManagerBasedRLEnv env_cfg.py templates
+    _FACTORY_ASSETS = {
+        "peginsert": {
+            "task_class": "FrankaPegInsert",
+            "held_name": "peg",
+            "held_usd": "factory_peg_8mm.usd",
+            "held_mass": 0.019,
+            "held_init_pos": (0.0, 0.2, 0.15),
+            "fixed_name": "hole",
+            "fixed_usd": "factory_hole_8mm.usd",
+            "fixed_mass": 0.05,
+            "fixed_init_pos": (0.5, 0.0, 0.025),
+            "extra_objects": [],
+        },
+        "gearmesh": {
+            "task_class": "FrankaGearMesh",
+            "held_name": "gear",
+            "held_usd": "factory_gear_medium.usd",
+            "held_mass": 0.012,
+            "held_init_pos": (0.0, 0.2, 0.15),
+            "fixed_name": "gear_base",
+            "fixed_usd": "factory_gear_base.usd",
+            "fixed_mass": 0.05,
+            "fixed_init_pos": (0.5, 0.0, 0.05),
+            "extra_objects": [
+                ("small_gear", "factory_gear_small.usd", 0.019, (0.55, 0.1, 0.05)),
+                ("large_gear", "factory_gear_large.usd", 0.019, (0.55, -0.1, 0.05)),
+            ],
+        },
+        "nutthread": {
+            "task_class": "FrankaNutThread",
+            "held_name": "nut",
+            "held_usd": "factory_nut_m16.usd",
+            "held_mass": 0.03,
+            "held_init_pos": (0.0, 0.2, 0.15),
+            "fixed_name": "bolt",
+            "fixed_usd": "factory_bolt_m16.usd",
+            "fixed_mass": 0.05,
+            "fixed_init_pos": (0.5, 0.0, 0.05),
+            "extra_objects": [],
+        },
+    }
 
-        cfg_class = None
-        for key, (cls, _) in self._FACTORY_CFG_MAP.items():
-            if key in task_name:
-                cfg_class = cls
+    def _build_factory_template(self, task_doc: dict) -> dict:
+        """Build ManagerBasedRLEnv env_cfg.py + run_env.py for Factory tasks.
+
+        This generates code compatible with the data-collection pipeline
+        (Step 3), which requires env_cfg.py with ManagerBasedRLEnvCfg.
+        """
+        raw_name = task_doc["task"]["name"].lower().replace("_", "").replace(" ", "")
+
+        assets = None
+        for key, info in self._FACTORY_ASSETS.items():
+            if key in raw_name:
+                assets = info
                 break
-        if cfg_class is None:
+        if assets is None:
             raise ValueError(f"Unknown factory task: {task_doc['task']['name']}")
 
+        task_class = assets["task_class"]
+        env_cfg_class = f"{task_class}EnvCfg"
+
+        def _rigid_object_block(name: str, usd: str, mass: float, pos: tuple,
+                                disable_gravity: bool = False, kinematic: bool = False) -> str:
+            pos_str = f"[{pos[0]}, {pos[1]}, {pos[2]}]"
+            return f'''
+    {name} = RigidObjectCfg(
+        prim_path="{{ENV_REGEX_NS}}/{name.capitalize()}",
+        init_state=RigidObjectCfg.InitialStateCfg(pos={pos_str}, rot=[1.0, 0.0, 0.0, 0.0]),
+        spawn=UsdFileCfg(
+            usd_path=f"{{ISAACLAB_NUCLEUS_DIR}}/Factory/{usd}",
+            activate_contact_sensors=True,
+            rigid_props=RigidBodyPropertiesCfg(
+                disable_gravity={disable_gravity},
+                max_depenetration_velocity=5.0,
+                solver_position_iteration_count=192,
+                solver_velocity_iteration_count=1,
+                max_linear_velocity=1000.0,
+                max_angular_velocity=3666.0,
+            ),
+            mass_props=sim_utils.MassPropertiesCfg(mass={mass}),
+            collision_props=sim_utils.CollisionPropertiesCfg(contact_offset=0.005, rest_offset=0.0),
+            articulation_props=sim_utils.ArticulationRootPropertiesCfg(articulation_enabled=False),
+        ),
+    )'''
+
+        # Build scene objects
+        held_block = _rigid_object_block(
+            assets["held_name"], assets["held_usd"], assets["held_mass"],
+            assets["held_init_pos"], disable_gravity=True,
+        )
+        fixed_block = _rigid_object_block(
+            assets["fixed_name"], assets["fixed_usd"], assets["fixed_mass"],
+            assets["fixed_init_pos"], disable_gravity=False,
+        )
+        extra_blocks = ""
+        extra_names = []
+        for (ename, eusd, emass, epos) in assets.get("extra_objects", []):
+            extra_blocks += _rigid_object_block(ename, eusd, emass, epos)
+            extra_names.append(ename)
+
+        # Scene entity names for observations
+        all_object_names = [assets["held_name"], assets["fixed_name"]] + extra_names
+        obs_terms = "\n".join(
+            f'        {n}_pos = ObsTerm(func=mdp.root_pos_w, params={{"asset_cfg": SceneEntityCfg("{n}")}})\n'
+            f'        {n}_quat = ObsTerm(func=mdp.root_quat_w, params={{"asset_cfg": SceneEntityCfg("{n}")}})'
+            for n in all_object_names
+        )
+        reset_terms = "\n".join(
+            f'    reset_{n} = EventTerm(\n'
+            f'        func=mdp.reset_root_state_uniform,\n'
+            f'        mode="reset",\n'
+            f'        params={{\n'
+            f'            "asset_cfg": SceneEntityCfg("{n}"),\n'
+            f'            "pose_range": {{"x": (-0.0, 0.0), "y": (-0.0, 0.0), "z": (0.0, 0.0)}},\n'
+            f'            "velocity_range": {{}},\n'
+            f'        }},\n'
+            f'    )'
+            for n in all_object_names
+        )
+
+        env_cfg_code = f'''\
+# Auto-generated ManagerBasedRLEnv config for Factory task: {task_class}
+from dataclasses import MISSING
+
+import isaaclab.sim as sim_utils
+from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
+from isaaclab.envs import ManagerBasedRLEnvCfg
+from isaaclab.managers import EventTermCfg as EventTerm
+from isaaclab.managers import ObservationGroupCfg as ObsGroup
+from isaaclab.managers import ObservationTermCfg as ObsTerm
+from isaaclab.managers import RewardTermCfg as RewTerm
+from isaaclab.managers import SceneEntityCfg
+from isaaclab.managers import TerminationTermCfg as DoneTerm
+from isaaclab.scene import InteractiveSceneCfg
+from isaaclab.sensors import FrameTransformerCfg
+from isaaclab.sensors.frame_transformer.frame_transformer_cfg import OffsetCfg
+from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
+from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
+from isaaclab.sim.simulation_cfg import PhysxCfg, SimulationCfg
+from isaaclab.utils import configclass
+from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR, ISAACLAB_NUCLEUS_DIR
+from isaaclab.actuators import ImplicitActuatorCfg
+
+import mdp as mdp
+
+from isaaclab_assets.robots.franka import FRANKA_PANDA_CFG
+
+
+@configclass
+class {task_class}SceneCfg(InteractiveSceneCfg):
+    """Factory task scene: robot + table + factory objects."""
+
+    robot: ArticulationCfg = MISSING
+    ee_frame: FrameTransformerCfg = MISSING
+{held_block}
+{fixed_block}
+{extra_blocks}
+
+    table = AssetBaseCfg(
+        prim_path="{{ENV_REGEX_NS}}/Table",
+        init_state=AssetBaseCfg.InitialStateCfg(pos=[0.5, 0.0, 0.0], rot=[0.707, 0, 0, 0.707]),
+        spawn=UsdFileCfg(usd_path=f"{{ISAAC_NUCLEUS_DIR}}/Props/Mounts/SeattleLabTable/table_instanceable.usd"),
+    )
+
+    plane = AssetBaseCfg(
+        prim_path="/World/GroundPlane",
+        init_state=AssetBaseCfg.InitialStateCfg(pos=[0, 0, -1.05]),
+        spawn=GroundPlaneCfg(),
+    )
+
+    light = AssetBaseCfg(
+        prim_path="/World/light",
+        spawn=sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
+    )
+
+
+@configclass
+class ActionsCfg:
+    arm_action: mdp.JointPositionActionCfg = MISSING
+    gripper_action: mdp.BinaryJointPositionActionCfg = MISSING
+
+
+@configclass
+class ObservationsCfg:
+    @configclass
+    class PolicyCfg(ObsGroup):
+        joint_pos = ObsTerm(func=mdp.joint_pos_rel)
+        joint_vel = ObsTerm(func=mdp.joint_vel_rel)
+        actions = ObsTerm(func=mdp.last_action)
+{obs_terms}
+
+        def __post_init__(self):
+            self.enable_corruption = False
+            self.concatenate_terms = True
+
+    policy: PolicyCfg = PolicyCfg()
+
+
+@configclass
+class EventCfg:
+    reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
+{reset_terms}
+
+
+@configclass
+class RewardsCfg:
+    alive = RewTerm(func=mdp.is_alive, weight=1.0)
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.01)
+
+
+@configclass
+class TerminationsCfg:
+    time_out = DoneTerm(func=mdp.time_out, time_out=True)
+
+
+@configclass
+class {env_cfg_class}(ManagerBasedRLEnvCfg):
+    scene: {task_class}SceneCfg = {task_class}SceneCfg(num_envs=1, env_spacing=2.5)
+    actions: ActionsCfg = ActionsCfg()
+    observations: ObservationsCfg = ObservationsCfg()
+    events: EventCfg = EventCfg()
+    rewards: RewardsCfg = RewardsCfg()
+    terminations: TerminationsCfg = TerminationsCfg()
+
+    sim: SimulationCfg = SimulationCfg(
+        dt=1.0 / 120.0,
+        render_interval=2,
+        physx=PhysxCfg(
+            solver_type=1,
+            max_position_iteration_count=192,
+            max_velocity_iteration_count=1,
+            bounce_threshold_velocity=0.2,
+            gpu_max_rigid_contact_count=2**23,
+            gpu_max_rigid_patch_count=2**23,
+            gpu_collision_stack_size=2**28,
+        ),
+    )
+
+    def __post_init__(self):
+        self.decimation = 2
+        self.episode_length_s = 30.0
+        self.sim.render_interval = self.decimation
+
+        self.scene.robot = FRANKA_PANDA_CFG.replace(
+            prim_path="{{ENV_REGEX_NS}}/Robot",
+        )
+        self.scene.robot.init_state.pos = (0.0, 0.0, 0.0)
+        self.scene.robot.init_state.joint_pos = {{
+            "panda_joint1": 0.0,
+            "panda_joint2": -0.569,
+            "panda_joint3": 0.0,
+            "panda_joint4": -2.810,
+            "panda_joint5": 0.0,
+            "panda_joint6": 3.037,
+            "panda_joint7": 0.741,
+            "panda_finger_joint.*": 0.04,
+        }}
+
+        self.scene.ee_frame = FrameTransformerCfg(
+            prim_path="{{ENV_REGEX_NS}}/Robot/panda_link0",
+            debug_vis=False,
+            target_frames=[
+                FrameTransformerCfg.FrameCfg(
+                    prim_path="{{ENV_REGEX_NS}}/Robot/panda_hand",
+                    name="ee_frame",
+                    offset=OffsetCfg(pos=(0.0, 0.0, 0.1034)),
+                ),
+            ],
+        )
+
+        self.actions.arm_action = mdp.JointPositionActionCfg(
+            asset_name="robot",
+            joint_names=["panda_joint.*"],
+            scale=0.5,
+            use_default_offset=True,
+        )
+        self.actions.gripper_action = mdp.BinaryJointPositionActionCfg(
+            asset_name="robot",
+            joint_names=["panda_finger.*"],
+            open_command_expr={{"panda_finger_.*": 0.04}},
+            close_command_expr={{"panda_finger_.*": 0.0}},
+        )
+'''
+
+        # run_env.py — standard ManagerBasedRLEnv runner (same pattern as all other tasks)
         run_env_code = f'''\
-"""Factory Direct RL environment runner (auto-generated)."""
+"""Factory ManagerBasedRLEnv runner (auto-generated)."""
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -253,29 +528,42 @@ simulation_app = app_launcher.app
 
 import torch
 
-# Ensure project root is importable
-PROJECT_ROOT = str(Path(__file__).resolve().parents[3])
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from isaaclab.envs import ManagerBasedRLEnv
+from env_cfg import {env_cfg_class}
 
-from src.agent.isaac_lab.factory.factory_env import FactoryEnv
-from src.agent.isaac_lab.factory.factory_env_cfg import {cfg_class}
+def main():
+    env_cfg = {env_cfg_class}()
+    env_cfg.scene.num_envs = args.num_envs
+    env = ManagerBasedRLEnv(cfg=env_cfg)
+    env.reset()
 
-cfg = {cfg_class}()
-cfg.scene.num_envs = args.num_envs
-env = FactoryEnv(cfg=cfg)
-env.reset()
+    for _ in range(200):
+        action = torch.zeros(env.num_envs, env.action_manager.total_action_dim, device=env.device)
+        env.step(action)
 
-# Run a short episode to validate the environment
-for step in range(200):
-    action = torch.zeros(env.num_envs, env.cfg.action_space, device=env.device)
-    env.step(action)
+    print("SUCCESS")
+    marker = os.environ.get("ISAACLAB_SUCCESS_MARKER")
+    if marker:
+        Path(marker).write_text("ok")
 
-env.close()
-simulation_app.close()
+    env.close()
+    simulation_app.close()
+
+if __name__ == "__main__":
+    main()
 '''
 
-        return {"run_env.py": run_env_code}
+        # mdp/__init__.py — re-export isaaclab.envs.mdp (standard pattern)
+        mdp_init = '''\
+from isaaclab.envs.mdp import *  # noqa: F401,F403
+'''
+
+        return {
+            "env_cfg.py": env_cfg_code,
+            "run_env.py": run_env_code,
+            "mdp/__init__.py": mdp_init,
+        }
 
     # ----- Reference Code Loading -----
 

@@ -1,0 +1,150 @@
+# Task Document: FrankaNutThread
+# Description: Franka robot threads a grasped M16 nut onto a bolt on a table
+
+task:
+  name: FrankaNutThread
+  description: "Thread an M16 nut onto the first 2 threads of a bolt on the table. The Franka robot starts with the nut already grasped, positioned above the bolt. The robot must align the nut, then rotate while descending to engage the threads."
+  category: assembly
+  initial_grasp:
+    held_object: nut
+    fixed_object: bolt
+    grasp_width: 0.015
+    held_asset:
+      height: 0.01
+      diameter: 0.024
+    fixed_asset:
+      height: 0.025
+      diameter: 0.024
+      base_height: 0.01
+      thread_pitch: 0.002
+    fingerpad_length: 0.017608
+    hand_initialization:
+      position_above_fixed: [0.0, 0.0, 0.045]
+      position_noise: [0.0, 0.0, 0.0]
+      orientation_euler: [3.1416, 0.0, 0.0]
+      orientation_noise: [0.0, 0.0, 0.0]
+    fixed_object_randomization:
+      position_noise: [0.0, 0.0, 0.0]
+      orientation_range_deg: 0.0
+    held_object_randomization:
+      position_noise: [0.0, 0.0, 0.0]
+      initial_rotation_deg: 0.0
+
+simulation:
+  gravity: [0, 0, -9.81]
+  timestep: 0.01
+  decimation: 5
+  episode_length: 60.0
+  render_interval: 2
+  physx:
+    bounce_threshold: 0.01
+    friction_correlation_distance: 0.00625
+    gpu_found_lost_aggregate_pairs_capacity: 4194304
+    gpu_total_aggregate_pairs_capacity: 16384
+
+scene:
+  lighting:
+    type: dome
+    intensity: 3000
+    color: [0.75, 0.75, 0.75]
+  ground:
+    enabled: true
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Environments/Grid/default_environment.usd"
+    position: [0, 0, -1.05]
+
+assets:
+  - name: robot
+    type: articulation
+    source: usd
+    robot_type: franka
+    asset_path: "{ISAACLAB_NUCLEUS_DIR}/Robots/FrankaEmika/panda_instanceable.usd"
+    prim_path: "/World/Robot"
+    position: [0, 0, 0]
+    rotation: [1, 0, 0, 0]
+    initial_joints:
+      panda_joint1: 0.0
+      panda_joint2: -0.7854
+      panda_joint3: 0.0
+      panda_joint4: -2.3562
+      panda_joint5: 0.0
+      panda_joint6: 1.5708
+      panda_joint7: 0.7854
+      panda_finger_joint: 0.04
+    actuators:
+      shoulder:
+        joint_names: ["panda_joint1", "panda_joint2", "panda_joint3", "panda_joint4"]
+        effort_limit: 87.0
+        stiffness: 80.0
+        damping: 4.0
+      forearm:
+        joint_names: ["panda_joint5", "panda_joint6", "panda_joint7"]
+        effort_limit: 12.0
+        stiffness: 80.0
+        damping: 4.0
+      hand:
+        joint_names: ["panda_finger_joint.*"]
+        effort_limit: 200.0
+        stiffness: 2000.0
+        damping: 100.0
+    ee_frame:
+      body: panda_hand
+      offset_position: [0, 0, 0.1034]
+    physics:
+      self_collision: true
+      solver_position_iterations: 8
+      solver_velocity_iterations: 0
+      max_depenetration_velocity: 5.0
+
+  - name: table
+    type: static
+    source: usd
+    asset_path: "{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
+    prim_path: "/World/Table"
+    position: [0.5, 0.0, 0.0]
+    rotation: [0.707, 0, 0, 0.707]
+    physics:
+      collision: true
+
+  # Bolt (fixed target on table)
+  - name: bolt
+    type: rigid
+    role: fixed_target
+    source: usd
+    asset_path: "{ISAACLAB_NUCLEUS_DIR}/Factory/factory_bolt_m16.usd"
+    prim_path: "/World/Bolt"
+    position: [0.5, 0.0, 0.02]
+    rotation: [1, 0, 0, 0]
+    physics:
+      rigid_body: false
+      collision: true
+
+  # Nut (held object, teleported into gripper)
+  - name: nut
+    type: rigid
+    role: held_object
+    source: usd
+    asset_path: "{ISAACLAB_NUCLEUS_DIR}/Factory/factory_nut_m16.usd"
+    prim_path: "/World/Nut"
+    position: [0.5, 0.2, 0.05]
+    rotation: [1, 0, 0, 0]
+    physics:
+      rigid_body: true
+      collision: true
+      mass: 0.03
+
+goal:
+  description: "Thread the nut onto the first 2 threads of the bolt on the table"
+  conditions:
+    - type: inserted_into
+      subject: nut
+      target: bolt
+  success_criteria:
+    type: thread_depth
+    thread_pitch: 0.002
+    success_fraction: 0.375
+    xy_threshold: 0.0025
+
+notes:
+  - "Nut is teleported into gripper at episode start via initial_grasp config"
+  - "Bolt is a fixed target on the table surface"
+  - "Ground plane at z=-1.05 (IsaacLab convention)"
