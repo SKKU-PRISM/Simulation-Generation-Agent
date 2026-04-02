@@ -1,5 +1,18 @@
 # Simulation-Generation-Agent (RAPIDS)
 
+An end-to-end robotics simulation automation framework that converts natural language task descriptions into structured YAML specs, auto-generates IsaacLab simulation environments, executes Code-as-Policies (CaP) robot manipulation, and collects training-ready demonstration datasets.
+
+**Quick Start (English):**
+```bash
+git clone --recurse-submodules <repo-url> && cd Simulation-Generation-Agent
+pip install -e . && cp .env.example .env  # Set OPENAI_API_KEY in .env
+./run_agent.sh "Stack the blocks inside the tray on the table"
+```
+
+See [docs/getting_started.md](docs/getting_started.md) for full setup and [docs/architecture.md](docs/architecture.md) for pipeline details.
+
+---
+
 자연어 태스크 설명에서 시작해 YAML 태스크 명세 생성, IsaacLab 시뮬레이션 환경 코드 자동 구성, Code-as-Policies(CaP) 기반 로봇 조작 실행, 학습 가능 데이터셋 수집까지 연결하는 로봇 시뮬레이션 자동화 프레임워크입니다.
 
 ## 파이프라인 개요
