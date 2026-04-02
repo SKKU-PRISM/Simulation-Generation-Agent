@@ -1,5 +1,5 @@
 # 使用方法
-🇺🇸 [English](../usage.md) | 🇰🇷 [한국어](../ko/usage.md) | 🇨🇳 [中文](../zh/usage.md) | 🇯🇵 [日本語](usage.md) | 🇩🇪 [Deutsch](../de/usage.md)
+[<img src="https://flagcdn.com/24x18/us.png" width="20" alt="English"> English](../usage.md) | [<img src="https://flagcdn.com/24x18/kr.png" width="20" alt="한국어"> 한국어](../ko/usage.md) | [<img src="https://flagcdn.com/24x18/cn.png" width="20" alt="中文"> 中文](../zh/usage.md) | [<img src="https://flagcdn.com/24x18/jp.png" width="20" alt="日本語"> 日本語](usage.md) | [<img src="https://flagcdn.com/24x18/de.png" width="20" alt="Deutsch"> Deutsch](../de/usage.md)
 
 対象読者: 実際にCLIを実行するユーザー
 本ドキュメントの内容: 代表的なコマンド、主要オプション、出力構造、結果の解釈

@@ -1,6 +1,6 @@
 # Docker-Anleitung
 
-🇺🇸 [English](README.docker.md) | 🇰🇷 [한국어](README.docker.ko.md) | 🇨🇳 [中文](README.docker.zh.md) | 🇯🇵 [日本語](README.docker.ja.md) | 🇩🇪 [Deutsch](README.docker.de.md)
+[<img src="https://flagcdn.com/24x18/us.png" width="20" alt="English"> English](README.docker.md) | [<img src="https://flagcdn.com/24x18/kr.png" width="20" alt="한국어"> 한국어](README.docker.ko.md) | [<img src="https://flagcdn.com/24x18/cn.png" width="20" alt="中文"> 中文](README.docker.zh.md) | [<img src="https://flagcdn.com/24x18/jp.png" width="20" alt="日本語"> 日本語](README.docker.ja.md) | [<img src="https://flagcdn.com/24x18/de.png" width="20" alt="Deutsch"> Deutsch](README.docker.de.md)
 
 Diese Anleitung fuehrt Sie Schritt fuer Schritt durch das Erstellen und Ausfuehren des Simulation-Generation-Agent in einem Docker-Container. Eine lokale IsaacLab-Installation ist nicht erforderlich.
 

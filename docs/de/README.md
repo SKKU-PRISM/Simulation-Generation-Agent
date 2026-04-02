@@ -1,6 +1,6 @@
 # Dokumentation
 
-🇺🇸 [English](../README.md) | 🇰🇷 [한국어](../ko/README.md) | 🇨🇳 [中文](../zh/README.md) | 🇯🇵 [日本語](../ja/README.md) | 🇩🇪 [Deutsch](README.md)
+[<img src="https://flagcdn.com/24x18/us.png" width="20" alt="English"> English](../README.md) | [<img src="https://flagcdn.com/24x18/kr.png" width="20" alt="한국어"> 한국어](../ko/README.md) | [<img src="https://flagcdn.com/24x18/cn.png" width="20" alt="中文"> 中文](../zh/README.md) | [<img src="https://flagcdn.com/24x18/jp.png" width="20" alt="日本語"> 日本語](../ja/README.md) | [<img src="https://flagcdn.com/24x18/de.png" width="20" alt="Deutsch"> Deutsch](README.md)
 
 ## Dokumentenverzeichnis
 

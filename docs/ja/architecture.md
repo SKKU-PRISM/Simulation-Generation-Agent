@@ -1,6 +1,6 @@
 # パイプラインアーキテクチャ
 
-🇺🇸 [English](../architecture.md) | 🇰🇷 [한국어](../ko/architecture.md) | 🇨🇳 [中文](../zh/architecture.md) | 🇯🇵 [日本語](architecture.md) | 🇩🇪 [Deutsch](../de/architecture.md)
+[<img src="https://flagcdn.com/24x18/us.png" width="20" alt="English"> English](../architecture.md) | [<img src="https://flagcdn.com/24x18/kr.png" width="20" alt="한국어"> 한국어](../ko/architecture.md) | [<img src="https://flagcdn.com/24x18/cn.png" width="20" alt="中文"> 中文](../zh/architecture.md) | [<img src="https://flagcdn.com/24x18/jp.png" width="20" alt="日本語"> 日本語](architecture.md) | [<img src="https://flagcdn.com/24x18/de.png" width="20" alt="Deutsch"> Deutsch](../de/architecture.md)
 
 対象読者: システム全体のフローを理解したいユーザー
 本ドキュメントの内容: 3ステージパイプライン構造、各ステージの内部動作、モジュール間関係

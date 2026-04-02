@@ -1,6 +1,6 @@
 # 사용법
 
-🇺🇸 [English](../usage.md) | 🇰🇷 [한국어](usage.md) | 🇨🇳 [中文](../zh/usage.md) | 🇯🇵 [日本語](../ja/usage.md) | 🇩🇪 [Deutsch](../de/usage.md)
+[<img src="https://flagcdn.com/24x18/us.png" width="20" alt="English"> English](../usage.md) | [<img src="https://flagcdn.com/24x18/kr.png" width="20" alt="한국어"> 한국어](usage.md) | [<img src="https://flagcdn.com/24x18/cn.png" width="20" alt="中文"> 中文](../zh/usage.md) | [<img src="https://flagcdn.com/24x18/jp.png" width="20" alt="日本語"> 日本語](../ja/usage.md) | [<img src="https://flagcdn.com/24x18/de.png" width="20" alt="Deutsch"> Deutsch](../de/usage.md)
 
 대상: 실제로 CLI를 실행하는 사용자  
 이 문서가 다루는 것: 대표 명령, 주요 옵션, 출력 구조, 결과 해석  

@@ -1,6 +1,6 @@
 # 설치 가이드
 
-🇺🇸 [English](../getting_started.md) | 🇰🇷 [한국어](getting_started.md) | 🇨🇳 [中文](../zh/getting_started.md) | 🇯🇵 [日本語](../ja/getting_started.md) | 🇩🇪 [Deutsch](../de/getting_started.md)
+[<img src="https://flagcdn.com/24x18/us.png" width="20" alt="English"> English](../getting_started.md) | [<img src="https://flagcdn.com/24x18/kr.png" width="20" alt="한국어"> 한국어](getting_started.md) | [<img src="https://flagcdn.com/24x18/cn.png" width="20" alt="中文"> 中文](../zh/getting_started.md) | [<img src="https://flagcdn.com/24x18/jp.png" width="20" alt="日本語"> 日本語](../ja/getting_started.md) | [<img src="https://flagcdn.com/24x18/de.png" width="20" alt="Deutsch"> Deutsch](../de/getting_started.md)
 
 대상: 처음 이 레포를 실행하는 사용자
 세부 CLI 옵션과 결과 해석: `docs/usage.md`

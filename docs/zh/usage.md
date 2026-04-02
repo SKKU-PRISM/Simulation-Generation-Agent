@@ -1,5 +1,5 @@
 # 使用方法
-🇺🇸 [English](../usage.md) | 🇰🇷 [한국어](../ko/usage.md) | 🇨🇳 [中文](usage.md) | 🇯🇵 [日本語](../ja/usage.md) | 🇩🇪 [Deutsch](../de/usage.md)
+[<img src="https://flagcdn.com/24x18/us.png" width="20" alt="English"> English](../usage.md) | [<img src="https://flagcdn.com/24x18/kr.png" width="20" alt="한국어"> 한국어](../ko/usage.md) | [<img src="https://flagcdn.com/24x18/cn.png" width="20" alt="中文"> 中文](usage.md) | [<img src="https://flagcdn.com/24x18/jp.png" width="20" alt="日本語"> 日本語](../ja/usage.md) | [<img src="https://flagcdn.com/24x18/de.png" width="20" alt="Deutsch"> Deutsch](../de/usage.md)
 
 目标读者：实际运行 CLI 的用户
 本文档涵盖：典型命令、关键选项、输出结构、结果解读

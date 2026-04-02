@@ -1,6 +1,6 @@
 # Pipeline-Architektur
 
-🇺🇸 [English](../architecture.md) | 🇰🇷 [한국어](../ko/architecture.md) | 🇨🇳 [中文](../zh/architecture.md) | 🇯🇵 [日本語](../ja/architecture.md) | 🇩🇪 [Deutsch](architecture.md)
+[<img src="https://flagcdn.com/24x18/us.png" width="20" alt="English"> English](../architecture.md) | [<img src="https://flagcdn.com/24x18/kr.png" width="20" alt="한국어"> 한국어](../ko/architecture.md) | [<img src="https://flagcdn.com/24x18/cn.png" width="20" alt="中文"> 中文](../zh/architecture.md) | [<img src="https://flagcdn.com/24x18/jp.png" width="20" alt="日本語"> 日本語](../ja/architecture.md) | [<img src="https://flagcdn.com/24x18/de.png" width="20" alt="Deutsch"> Deutsch](architecture.md)
 
 Zielgruppe: Nutzer, die den gesamten Systemablauf verstehen moechten
 Dieses Dokument behandelt: 3-Stufen-Pipeline-Struktur, interne Funktionsweise jeder Stufe, Modulbeziehungen

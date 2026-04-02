@@ -1,6 +1,6 @@
 # 流水线架构
 
-🇺🇸 [English](../architecture.md) | 🇰🇷 [한국어](../ko/architecture.md) | 🇨🇳 [中文](architecture.md) | 🇯🇵 [日本語](../ja/architecture.md) | 🇩🇪 [Deutsch](../de/architecture.md)
+[<img src="https://flagcdn.com/24x18/us.png" width="20" alt="English"> English](../architecture.md) | [<img src="https://flagcdn.com/24x18/kr.png" width="20" alt="한국어"> 한국어](../ko/architecture.md) | [<img src="https://flagcdn.com/24x18/cn.png" width="20" alt="中文"> 中文](architecture.md) | [<img src="https://flagcdn.com/24x18/jp.png" width="20" alt="日本語"> 日本語](../ja/architecture.md) | [<img src="https://flagcdn.com/24x18/de.png" width="20" alt="Deutsch"> Deutsch](../de/architecture.md)
 
 目标读者：希望了解系统整体流程的用户
 本文档涵盖：3 阶段流水线结构、各阶段的内部工作原理、模块间关系

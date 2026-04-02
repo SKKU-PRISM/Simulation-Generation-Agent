@@ -1,5 +1,5 @@
 # Nutzung
-🇺🇸 [English](../usage.md) | 🇰🇷 [한국어](../ko/usage.md) | 🇨🇳 [中文](../zh/usage.md) | 🇯🇵 [日本語](../ja/usage.md) | 🇩🇪 [Deutsch](usage.md)
+[<img src="https://flagcdn.com/24x18/us.png" width="20" alt="English"> English](../usage.md) | [<img src="https://flagcdn.com/24x18/kr.png" width="20" alt="한국어"> 한국어](../ko/usage.md) | [<img src="https://flagcdn.com/24x18/cn.png" width="20" alt="中文"> 中文](../zh/usage.md) | [<img src="https://flagcdn.com/24x18/jp.png" width="20" alt="日本語"> 日本語](../ja/usage.md) | [<img src="https://flagcdn.com/24x18/de.png" width="20" alt="Deutsch"> Deutsch](usage.md)
 
 Zielgruppe: Nutzer, die das CLI tatsaechlich verwenden
 Was dieses Dokument behandelt: Repraesentative Befehle, wichtige Optionen, Ausgabestruktur, Ergebnisinterpretation

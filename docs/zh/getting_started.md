@@ -1,6 +1,6 @@
 # 安装指南
 
-🇺🇸 [English](../getting_started.md) | 🇰🇷 [한국어](../ko/getting_started.md) | 🇨🇳 [中文](getting_started.md) | 🇯🇵 [日本語](../ja/getting_started.md) | 🇩🇪 [Deutsch](../de/getting_started.md)
+[<img src="https://flagcdn.com/24x18/us.png" width="20" alt="English"> English](../getting_started.md) | [<img src="https://flagcdn.com/24x18/kr.png" width="20" alt="한국어"> 한국어](../ko/getting_started.md) | [<img src="https://flagcdn.com/24x18/cn.png" width="20" alt="中文"> 中文](getting_started.md) | [<img src="https://flagcdn.com/24x18/jp.png" width="20" alt="日本語"> 日本語](../ja/getting_started.md) | [<img src="https://flagcdn.com/24x18/de.png" width="20" alt="Deutsch"> Deutsch](../de/getting_started.md)
 
 目标读者：首次运行本仓库的用户
 详细 CLI 选项和结果解读请参阅：`docs/usage.md`
