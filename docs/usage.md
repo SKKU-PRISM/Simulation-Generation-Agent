@@ -1,34 +1,35 @@
-# 사용법
+# Usage
+> **[한국어 (Korean)](ko/usage.md)**
 
-대상: 실제로 CLI를 실행하는 사용자  
-이 문서가 다루는 것: 대표 명령, 주요 옵션, 출력 구조, 결과 해석  
-설치와 환경 연결: `docs/getting_started.md`
+Audience: Users who actually run the CLI  
+What this document covers: Representative commands, key options, output structure, interpreting results  
+Installation and environment setup: `docs/getting_started.md`
 
-이 문서는 **실행 방법과 결과 해석의 source-of-truth**다. 내부 구현 상세나 schema 배경 설명은 다른 문서로 분리한다.
-파이프라인 아키텍처: [docs/architecture.md](architecture.md)
+This document is the **source-of-truth for how to run and interpret results**. Internal implementation details and schema background are separated into other documents.
+Pipeline architecture: [docs/architecture.md](architecture.md)
 
-## run_agent.sh — 전체 파이프라인 실행 (메인 기능)
+## run_agent.sh — Full Pipeline Execution (Main Feature)
 
-자연어 태스크 설명 하나만 넣으면 NL→YAML→IsaacLab→DataCollection 전체 파이프라인이 자동 실행됩니다.
+Just provide a single natural language task description, and the entire NL→YAML→IsaacLab→DataCollection pipeline runs automatically.
 
 ```bash
-# 자연어 입력
+# Natural language input
 ./run_agent.sh "Stack the blocks inside the tray on the table"
 ./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 
-# JSON 입력
+# JSON input
 ./run_agent.sh data/input_sample.json results/output.json
 ```
 
-### 옵션
+### Options
 
-| 옵션 | 설명 |
+| Option | Description |
 | --- | --- |
-| `--robot <type>` | 로봇 종류: franka, ur10e, openarm, so101 (기본: franka) |
-| `--episodes <n>` | 목표 성공 에피소드 수 (기본: 1) |
-| `--max-attempts <n>` | 최대 시도 횟수 (기본: 3) |
+| `--robot <type>` | Robot type: franka, ur10e, openarm, so101 (default: franka) |
+| `--episodes <n>` | Target number of successful episodes (default: 1) |
+| `--max-attempts <n>` | Maximum number of attempts (default: 3) |
 
-### Docker에서 실행
+### Running in Docker
 
 ```bash
 docker run --rm --gpus all \
@@ -38,11 +39,11 @@ docker run --rm --gpus all \
   "Stack the blocks inside the tray on the table" --episodes 5
 ```
 
-> **출력 경로**: Docker 내부에서는 `/workspace/artifacts`에 결과가 저장됩니다. `-v` 옵션으로 호스트에 매핑하세요. 로컬 실행 시에는 `outputs/`에 저장됩니다.
+> **Output path**: Inside Docker, results are saved to `/workspace/artifacts`. Map it to the host using the `-v` option. For local execution, results are saved to `outputs/`.
 
-### 결과
+### Results
 
-`results/output.json`에 구조화된 JSON으로 기록됩니다:
+Results are recorded as structured JSON in `results/output.json`:
 
 ```json
 {
@@ -62,91 +63,91 @@ docker run --rm --gpus all \
 
 ## 0. Task Spec Agent (NL → YAML)
 
-자연어 태스크 설명을 구조화된 YAML 태스크 명세로 변환합니다 (파이프라인 Stage 1).
+Converts a natural language task description into a structured YAML task specification (Pipeline Stage 1).
 
-> **참고**: `run_agent.sh "자연어 태스크"`를 사용하면 Stage 1→2→3 전체가 자동 실행됩니다.
-> 아래는 Stage 1만 개별 실행하는 방법입니다.
+> **Note**: Using `run_agent.sh "natural language task"` automatically runs the entire Stage 1→2→3 pipeline.
+> Below is how to run Stage 1 individually.
 
-### 대표 명령어
+### Representative Commands
 
 ```bash
-# 기본 사용
+# Basic usage
 python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube and place it on the target" \
   --robot franka --output task.yaml
 
-# RAG 없이 템플릿 기반 생성
+# Template-based generation without RAG
 python3 scripts/task_spec_agent/task_spec_agent.py "Stack blocks" --no-rag
 
-# 다른 LLM 프로바이더 사용
+# Use a different LLM provider
 python3 scripts/task_spec_agent/task_spec_agent.py "Sort the colored blocks into matching colored bins" --provider huggingface
 
-# 상세 로그
+# Verbose logging
 python3 scripts/task_spec_agent/task_spec_agent.py "Reach the goal" --verbose
 ```
 
-### 주요 옵션
+### Key Options
 
-| 옵션 | 설명 |
+| Option | Description |
 | --- | --- |
-| `--robot {franka,openarm,ur10,so101}` | 대상 로봇 (기본: franka) |
-| `--output <path>` | YAML 저장 경로 (미지정 시 stdout 출력) |
-| `--provider {azure,huggingface,bedrock}` | LLM 프로바이더 override (미지정 시 config 기본값 사용, default=openai) |
-| `--no-rag` | RAG 대신 템플릿 기반 YAML 생성 |
-| `--verbose` | DEBUG 레벨 로깅 |
+| `--robot {franka,openarm,ur10,so101}` | Target robot (default: franka) |
+| `--output <path>` | YAML save path (outputs to stdout if not specified) |
+| `--provider {azure,huggingface,bedrock}` | LLM provider override (uses config default if not specified, default=openai) |
+| `--no-rag` | Template-based YAML generation instead of RAG |
+| `--verbose` | DEBUG level logging |
 
-### 내부 처리 단계
+### Internal Processing Steps
 
 ```
-자연어 입력
-  → NL Parser (actions, objects, locations 추출)
-  → Task Decomposer (원자적 동작 시퀀스 분해)
-  → Feasibility Validator (로봇 물리적 실현 가능성 검증)
-  → RAG YAML Generator (FAISS 벡터 검색 → 최근접 태스크 YAML 매칭)
+Natural language input
+  → NL Parser (extract actions, objects, locations)
+  → Task Decomposer (decompose into atomic action sequences)
+  → Feasibility Validator (verify physical feasibility for the robot)
+  → RAG YAML Generator (FAISS vector search → nearest task YAML matching)
   → task.yaml
 ```
 
 ## 1. IsaacLab Pipeline (Stage 2)
 
-> **run_agent.sh로 실행**: `./run_agent.sh --mode isaac-lab --task <yaml>`
-> 아래는 Python 스크립트 직접 실행 방법입니다.
+> **Running via run_agent.sh**: `./run_agent.sh --mode isaac-lab --task <yaml>`
+> Below is how to run the Python script directly.
 
-### 대표 명령어
+### Representative Commands
 
 ```bash
-# 생성 + 실행
+# Generate + Run
 python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml
 
-# 생성만
+# Generate only
 python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml --dry-run
 
-# 생성 + 실행 + 평가
+# Generate + Run + Evaluate
 python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml --evaluate
 
-# 기존 출력물 재평가
+# Re-evaluate existing output
 python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml \
   --eval-only outputs/isaaclab/frankastack_20260219_160916
 
-# standalone evaluator
+# Standalone evaluator
 python3 scripts/evaluate.py \
   outputs/isaaclab/frankastack_20260219_160916 \
   tasks/franka/stack/franka_stack.yaml
 
-# batch
+# Batch
 python3 scripts/run_isaac_lab.py --batch tasks/franka/
 ```
 
-### 주요 옵션
+### Key Options
 
-| 옵션 | 설명 |
+| Option | Description |
 | --- | --- |
-| `--dry-run` | 코드만 생성하고 IsaacLab 실행은 생략 |
-| `--evaluate` | 성공 후 evaluator 실행 |
-| `--eval-only <dir>` | 기존 생성 결과만 평가 |
-| `--batch <dir>` | 디렉토리 내 YAML 일괄 처리 |
-| `--output-dir <dir>` | 기본 `outputs/isaaclab` 대신 다른 출력 루트 사용 |
-| `--config <path>` | agent config override |
+| `--dry-run` | Generate code only, skip IsaacLab execution |
+| `--evaluate` | Run evaluator after success |
+| `--eval-only <dir>` | Evaluate existing generated output only |
+| `--batch <dir>` | Batch process all YAMLs in a directory |
+| `--output-dir <dir>` | Use a different output root instead of default `outputs/isaaclab` |
+| `--config <path>` | Agent config override |
 
-### 출력 구조
+### Output Structure
 
 ```text
 outputs/isaaclab/<task_slug>_<timestamp>/
@@ -155,41 +156,41 @@ outputs/isaaclab/<task_slug>_<timestamp>/
 ├── mdp/
 ├── .success_marker
 ├── error_attempt_*.txt
-├── debug/                    # 환경 스크린샷 (front/top/wrist)
-├── result.json               # 실행 결과 + scene_verification 포함
-└── eval_report.json          # --evaluate 사용 시
+├── debug/                    # Environment screenshots (front/top/wrist)
+├── result.json               # Execution result + includes scene_verification
+└── eval_report.json          # When --evaluate is used
 ```
 
-## 2. Isaac Sim Pipeline (로컬 개발 환경 전용)
+## 2. Isaac Sim Pipeline (Local Development Environment Only)
 
-> **참고**: Isaac Sim MCP 시각 검증은 로컬에서 Isaac Sim Desktop이 실행 중일 때만 사용 가능합니다. Docker 환경에서는 지원되지 않습니다.
+> **Note**: Isaac Sim MCP visual verification is only available when Isaac Sim Desktop is running locally. It is not supported in Docker environments.
 
-### 대표 명령어
+### Representative Commands
 
 ```bash
-# 자동 빌드 + 스크린샷 + VLM 평가
+# Auto build + screenshot + VLM evaluation
 python3 scripts/run_isaac_sim.py tasks/franka/stack/franka_stack.yaml --backend auto
 
-# VLM 없이 빌드 + 캡처 1회
+# Build + capture once without VLM
 python3 scripts/run_isaac_sim.py tasks/franka/stack/franka_stack.yaml --skip-vlm
 
-# 반복/기준점수 override
+# Iteration/threshold override
 python3 scripts/run_isaac_sim.py tasks/franka/stack/franka_stack.yaml \
   --backend azure --max-iterations 3 --threshold 85
 ```
 
-### 주요 옵션
+### Key Options
 
-| 옵션 | 설명 |
+| Option | Description |
 | --- | --- |
-| `--skip-vlm` | VLM 평가 없이 1회 빌드/캡처만 수행 |
-| `--backend {auto,azure,claude,gemini,ollama,mock}` | VLM backend 선택 |
-| `--max-iterations <n>` | 최대 반복 횟수 override |
-| `--threshold <n>` | 성공 기준 점수 override |
-| `--output-dir <dir>` | 출력 루트 override |
-| `--config <path>` | `configs/pipeline_config.yaml` 대체 |
+| `--skip-vlm` | Perform a single build/capture without VLM evaluation |
+| `--backend {auto,azure,claude,gemini,ollama,mock}` | VLM backend selection |
+| `--max-iterations <n>` | Maximum iteration count override |
+| `--threshold <n>` | Success threshold score override |
+| `--output-dir <dir>` | Output root override |
+| `--config <path>` | Alternative to `configs/pipeline_config.yaml` |
 
-### 출력 구조
+### Output Structure
 
 ```text
 outputs/isaac_sim/<task_slug>_<timestamp>/
@@ -202,46 +203,46 @@ outputs/isaac_sim/<task_slug>_<timestamp>/
 
 ## 3. Data Collection (Stage 3)
 
-> **run_agent.sh로 실행**: `./run_agent.sh --mode data-collection --task <yaml>`
-> 아래는 Python 스크립트 직접 실행 방법입니다.
+> **Running via run_agent.sh**: `./run_agent.sh --mode data-collection --task <yaml>`
+> Below is how to run the Python script directly.
 
-### 대표 명령어
+### Representative Commands
 
 ```bash
-# env 자동 생성 후 수집
+# Auto-generate env then collect
 python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml
 
-# 기존 env 사용
+# Use existing env
 python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml \
   --env-dir outputs/isaaclab/frankastack_20260219_160916
 
-# 성공 episode 기준
+# Success episode target
 python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml \
   --target-success 5 --max-attempts 25
 
-# VLM 없이 기하학적 verification만 사용
+# Geometric verification only, without VLM
 python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml --no-vlm-judge
 
-# batch
+# Batch
 python3 scripts/run_data_collection.py --batch tasks/franka/ --episodes 10
 ```
 
-### 주요 옵션
+### Key Options
 
-| 옵션 | 설명 |
+| Option | Description |
 | --- | --- |
-| `--env-dir <path>` | 기존 IsaacLab 출력 디렉토리 사용 |
-| `--episodes <n>` | 최대 episode 수 override |
-| `--target-success <n>` | 목표 성공 episode 수 |
-| `--max-attempts <n>` | 전체 시도 수 상한 |
-| `--repo-id <id>` | dataset ID |
-| `--fps <n>` | 녹화 FPS override |
-| `--no-vlm-judge` | VLM 판정 비활성화 |
-| `--gui` | headless 대신 GUI 실행 |
-| `--config <path>` | data collection config override |
-| `-v`, `--verbose` | 상세 로그 |
+| `--env-dir <path>` | Use an existing IsaacLab output directory |
+| `--episodes <n>` | Maximum episode count override |
+| `--target-success <n>` | Target number of successful episodes |
+| `--max-attempts <n>` | Upper limit on total attempts |
+| `--repo-id <id>` | Dataset ID |
+| `--fps <n>` | Recording FPS override |
+| `--no-vlm-judge` | Disable VLM judgment |
+| `--gui` | Run with GUI instead of headless |
+| `--config <path>` | Data collection config override |
+| `-v`, `--verbose` | Verbose logging |
 
-### 출력 구조
+### Output Structure
 
 ```text
 outputs/data_collection/<TaskName>_<timestamp>/
@@ -254,26 +255,26 @@ outputs/data_collection/<TaskName>_<timestamp>/
 │   └── metadata.json
 ├── collection_results.json
 ├── COLLECTION_COMPLETE_MARKER
-└── <repo_id>/                   # optional LeRobot conversion 결과
+└── <repo_id>/                   # Optional LeRobot conversion output
 ```
 
-### 결과 해석
+### Interpreting Results
 
-`collection_results.json`에서 먼저 볼 값은 아래다.
+The first values to check in `collection_results.json` are the following.
 
-| key | 의미 |
+| Key | Meaning |
 | --- | --- |
-| `pipeline_completed` | 수집/정리 경로가 끝까지 완료됐는지 |
-| `target_met` | 목표 성공 episode 수를 달성했는지 |
-| `successful_episodes` | 성공 episode 수 |
-| `total_episodes` | 실제 시도/저장된 episode 수 |
-| `raw_dataset` | raw dataset 경로 |
+| `pipeline_completed` | Whether the collection/cleanup pipeline completed to the end |
+| `target_met` | Whether the target number of successful episodes was achieved |
+| `successful_episodes` | Number of successful episodes |
+| `total_episodes` | Number of episodes actually attempted/saved |
+| `raw_dataset` | Raw dataset path |
 
-해석 규칙:
+Interpretation rules:
 
-- `success`는 현재 `pipeline_completed` alias다.
-- `pipeline_completed=true`라도 `target_met=false`일 수 있다.
-- 기본 완료 기준은 `raw_dataset/` 생성이다. LeRobot 변환은 환경에 따라 스킵될 수 있다.
+- `success` is currently an alias for `pipeline_completed`.
+- `pipeline_completed=true` does not necessarily mean `target_met=true`.
+- The default completion criterion is the creation of `raw_dataset/`. LeRobot conversion may be skipped depending on the environment.
 
 ## 4. Dataset Export / Preprocess
 
@@ -286,7 +287,7 @@ python3 scripts/export_dataset.py \
   --output-dir outputs/exported_datasets
 ```
 
-기본 schema는 `adc_compatible`이다.
+The default schema is `adc_compatible`.
 
 ### Preprocess
 
@@ -296,16 +297,16 @@ python3 scripts/preprocess_dataset.py \
   --output-dir outputs/preprocessed_datasets
 ```
 
-산출물:
+Outputs:
 
 - `manifest.json`
 - `samples.jsonl`
 - `train.jsonl`
 - `val.jsonl`
 
-기본 `adc_compatible` 경로에서는 `observation.gripper_state`, `observation.tcp.robot_xyzrpy`, `skill.goal_position.robot_xyzrpy`가 학습 입력 manifest에 포함된다.
+In the default `adc_compatible` path, `observation.gripper_state`, `observation.tcp.robot_xyzrpy`, and `skill.goal_position.robot_xyzrpy` are included in the training input manifest.
 
-기본 `adc_compatible` schema로 export되며, `canonical_training`은 확장 분석용이다.
+The default export uses the `adc_compatible` schema, and `canonical_training` is for extended analysis.
 
 ### Optional: Local LeRobot conversion
 
@@ -318,7 +319,7 @@ python3 scripts/check_lerobot_dataset.py \
   --repo-id local/franka_stack_sim
 ```
 
-`lerobot` 패키지가 host Python에 설치되어 있어야 한다.
+The `lerobot` package must be installed in the host Python environment.
 
 ### Optional: Publish to Hub
 
@@ -330,21 +331,21 @@ python3 scripts/publish_lerobot_dataset.py \
   --private
 ```
 
-기본 인증은 `HF_TOKEN` env var 또는 기존 `huggingface-cli login` 세션을 사용한다.
+Default authentication uses the `HF_TOKEN` env var or an existing `huggingface-cli login` session.
 
-## 5. 추천 운영 순서
+## 5. Recommended Workflow Order
 
-### NL → 데이터셋 (Full Pipeline)
+### NL → Dataset (Full Pipeline)
 
 ```bash
 # 1. NL → YAML
 python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube and stack it" \
   --robot franka --output outputs/generated_task.yaml
 
-# 2. YAML → IsaacLab 환경 코드
+# 2. YAML → IsaacLab environment code
 python3 scripts/run_isaac_lab.py outputs/generated_task.yaml --evaluate
 
-# 3. 데이터 수집
+# 3. Data collection
 python3 scripts/run_data_collection.py outputs/generated_task.yaml \
   --env-dir outputs/isaaclab/<run_dir> --target-success 10
 
@@ -355,7 +356,7 @@ python3 scripts/preprocess_dataset.py outputs/exported_datasets/<export_dir> \
   --output-dir outputs/preprocessed_datasets
 ```
 
-### 기존 YAML → 데이터셋
+### Existing YAML → Dataset
 
 ```bash
 python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml --evaluate
@@ -364,27 +365,27 @@ python3 scripts/export_dataset.py outputs/data_collection/<run_dir>/raw_dataset 
 python3 scripts/preprocess_dataset.py outputs/exported_datasets/<export_dir> --output-dir outputs/preprocessed_datasets
 ```
 
-시각 검증이 필요할 때만 `scripts/run_isaac_sim.py`를 추가한다.
+Add `scripts/run_isaac_sim.py` only when visual verification is needed.
 
 ## 6. Full Pipeline (NL → Video)
 
-`run_full_test.sh`는 13개 Franka 태스크에 대해 Stage 1→2→3을 순차적으로 실행하는 통합 스크립트다.
+`run_full_test.sh` is an integration script that sequentially runs Stage 1→2→3 for 13 Franka tasks.
 
 ```bash
 bash scripts/run_full_test.sh
 ```
 
-내부적으로 각 태스크마다:
-1. `task_spec_agent.py` — 자연어 → YAML 생성
-2. `run_isaac_lab.py` — YAML → IsaacLab 환경 코드 생성/검증
-3. `run_data_collection.py` — CaP 코드 생성 → 실행 → 성공 판정 → 데이터 수집
+Internally, for each task:
+1. `task_spec_agent.py` — Natural language → YAML generation
+2. `run_isaac_lab.py` — YAML → IsaacLab environment code generation/verification
+3. `run_data_collection.py` — CaP code generation → execution → success determination → data collection
 
-### 출력 구조
+### Output Structure
 
 ```text
 outputs/test_run_<timestamp>/
-├── summary.txt                  # 전체 태스크 결과 요약
-├── token_usage.jsonl            # API 토큰 사용량 (TOKEN_USAGE_FILE 설정 시)
+├── summary.txt                  # Overall task result summary
+├── token_usage.jsonl            # API token usage (when TOKEN_USAGE_FILE is set)
 ├── FrankaLift/
 │   ├── step1_nl_to_yaml.log
 │   ├── step2_isaaclab.log
@@ -395,78 +396,78 @@ outputs/test_run_<timestamp>/
 └── ...
 ```
 
-### 토큰 사용량 추적
+### Token Usage Tracking
 
 ```bash
 export TOKEN_USAGE_FILE=outputs/token_usage.jsonl
-export TOKEN_USAGE_LOG=1  # 실시간 콘솔 로그
+export TOKEN_USAGE_LOG=1  # Real-time console logging
 bash scripts/run_full_test.sh
 ```
 
 ## 7. E2E Batch Pipeline
 
-config 기반으로 다수 태스크의 환경 생성 + 데이터 수집 + export + LeRobot 변환을 일괄 처리한다.
+Batch processes environment generation + data collection + export + LeRobot conversion for multiple tasks based on a config file.
 
-### 대표 명령어
+### Representative Commands
 
 ```bash
-# Batch 실행 (Docker)
+# Batch execution (Docker)
 python3 scripts/run_e2e_batch.py configs/docker/e2e_batch_release.yaml
 
-# 중단 후 재개
+# Resume after interruption
 python3 scripts/run_e2e_batch.py configs/docker/e2e_batch_release.yaml --resume
 
-# 조용한 로그
+# Quiet logging
 python3 scripts/run_e2e_batch.py configs/docker/e2e_batch_release.yaml -q
 ```
 
 ### Docker / run_agent.sh
 
 ```bash
-# Docker 내부 (기본 모드: e2e-batch)
+# Inside Docker (default mode: e2e-batch)
 run_agent.sh --mode e2e-batch --resume
 
-# 단일 태스크
+# Single task
 run_agent.sh --mode isaac-lab --task tasks/franka/lift/franka_lift.yaml
 
-# 데이터 수집
+# Data collection
 run_agent.sh --mode data-collection --task tasks/franka/lift/franka_lift.yaml -- --episodes 10
 ```
 
-### Config 구조
+### Config Structure
 
-E2E batch config YAML은 4개 섹션으로 구성된다:
+The E2E batch config YAML consists of 4 sections:
 
-| 섹션 | 역할 |
+| Section | Role |
 | --- | --- |
-| `run` | output_root, resume, cleanup, export 설정 |
-| `collection` | LLM/VLM 모델, max_attempts, timeout, VLM judge 사용 여부 |
-| `hf` | HuggingFace Hub 업로드 설정 (선택) |
-| `tasks` | 태스크 목록 (YAML 경로, 목표 demos 수, 활성화 여부) |
+| `run` | output_root, resume, cleanup, export settings |
+| `collection` | LLM/VLM model, max_attempts, timeout, VLM judge usage |
+| `hf` | HuggingFace Hub upload settings (optional) |
+| `tasks` | Task list (YAML path, target demo count, enabled flag) |
 
-### 주요 옵션
+### Key Options
 
-| 옵션 | 설명 |
+| Option | Description |
 | --- | --- |
-| `--resume` | 이전 실행의 성공 태스크를 건너뛰고 실패/미완료 태스크만 재실행 |
-| `-q`, `--quiet` | INFO 레벨 로깅 (기본: DEBUG) |
+| `--resume` | Skip previously successful tasks and re-run only failed/incomplete tasks |
+| `-q`, `--quiet` | INFO level logging (default: DEBUG) |
 
-### 출력 구조
+### Output Structure
 
 ```text
 <output_root>/
-├── config_snapshot.yaml         # 실행에 사용된 config 사본
-├── task_runs/                   # 태스크별 수집 결과
-├── task_reports/                # 태스크별 JSON 리포트
-├── successful_raw/              # 성공 에피소드만 모은 raw dataset
-├── exported/                    # export 결과
-├── preprocessed/                # preprocess 결과
-├── lerobot/                     # LeRobot 변환 결과
-├── batch_report.md              # Markdown 요약 리포트
-└── batch_report.json            # JSON 리포트
+├── config_snapshot.yaml         # Copy of the config used for execution
+├── task_runs/                   # Per-task collection results
+├── task_reports/                # Per-task JSON reports
+├── successful_raw/              # Raw dataset of successful episodes only
+├── exported/                    # Export results
+├── preprocessed/                # Preprocess results
+├── lerobot/                     # LeRobot conversion results
+├── batch_report.md              # Markdown summary report
+└── batch_report.json            # JSON report
 ```
 
-## 관련 문서
+## Related Documents
 
-- 파이프라인 아키텍처: `docs/architecture.md`
-- 설치: `docs/getting_started.md`
+- Pipeline architecture: `docs/architecture.md`
+- Installation: `docs/getting_started.md`

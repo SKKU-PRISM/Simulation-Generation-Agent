@@ -1,9 +1,11 @@
-# 설치 가이드
+# Installation Guide
 
-대상: 처음 이 레포를 실행하는 사용자
-세부 CLI 옵션과 결과 해석: `docs/usage.md`
+> **[한국어 (Korean)](ko/getting_started.md)**
 
-## 1. 공통 설치
+Audience: Users running this repo for the first time
+For detailed CLI options and result interpretation: `docs/usage.md`
+
+## 1. Common Installation
 
 ```bash
 git clone --recurse-submodules <repo-url>
@@ -15,37 +17,37 @@ cp .env.example .env
 
 ### Submodule (AutoDataCollector)
 
-이 프로젝트는 `external/AutoDataCollector`를 git submodule로 포함합니다. Data Collection (Stage 3)에서 judge 프롬프트와 IK 유틸리티를 참조합니다.
+This project includes `external/AutoDataCollector` as a git submodule. It is referenced during Data Collection (Stage 3) for judge prompts and IK utilities.
 
-`--recurse-submodules`로 클론하면 자동으로 받아집니다. 빠졌을 경우 수동 초기화:
+Cloning with `--recurse-submodules` will fetch it automatically. If it was missed, initialize manually:
 
 ```bash
 git submodule update --init --recursive
-ls external/AutoDataCollector/  # 파일이 있어야 정상
+ls external/AutoDataCollector/  # Files should be present
 ```
 
-필수 `.env`:
+Required `.env`:
 
 ```bash
 OPENAI_API_KEY=your-openai-api-key
 OPENAI_BASE_URL=https://api.openai.com/v1/
 ```
 
-선택 설정:
+Optional settings:
 
 ```bash
-# VLM backends (환경 검증 + 에피소드 성공 판정용)
+# VLM backends (for environment verification + episode success judgment)
 # ANTHROPIC_API_KEY=...
 # GOOGLE_API_KEY=...
 
 # Paths
 # ISAACLAB_PATH=~/workspace/IsaacLab
 
-# 토큰 사용량 추적
+# Token usage tracking
 # TOKEN_USAGE_FILE=outputs/token_usage.jsonl
 ```
 
-## 2. IsaacLab 설치 (주력 경로)
+## 2. IsaacLab Installation (Primary Path)
 
 ```bash
 cd ~/workspace
@@ -54,30 +56,30 @@ cd IsaacLab
 ./isaaclab.sh --install
 ```
 
-프로젝트에서 IsaacLab 위치를 인식시키는 방법:
+How to point the project to your IsaacLab location:
 
 ```bash
 export ISAACLAB_PATH=~/workspace/IsaacLab
 ```
 
-또는 `configs/isaaclab_agent_config.yaml`의 `isaaclab.path`를 직접 설정한다.
+Or set `isaaclab.path` directly in `configs/isaaclab_agent_config.yaml`.
 
-연결 확인:
+Verify the connection:
 
 ```bash
-# 로컬 (conda 환경)
+# Local (conda environment)
 conda run -n env_isaaclab --no-capture-output \
   python -c "import isaaclab; print('IsaacLab import OK')"
 
-# Docker 환경에서는 conda 대신 venv가 사용되므로 아래처럼 확인
+# In Docker, venv is used instead of conda, so verify as follows
 # python -c "import isaaclab; print('IsaacLab import OK')"
 
 python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml --dry-run
 ```
 
-## 3. Isaac Sim + MCP 설치 (선택)
+## 3. Isaac Sim + MCP Installation (Optional)
 
-Isaac Sim은 시각 검증 경로에서만 필요하다.
+Isaac Sim is only needed for the visual verification path.
 
 ```bash
 cd ~/workspace
@@ -91,24 +93,24 @@ cd ~/workspace/isaac-sim
   --enable isaac.sim.mcp_extension
 ```
 
-정상 기동 시 `localhost:8766`에서 TCP 소켓을 수신한다.
+On successful startup, a TCP socket will be listening on `localhost:8766`.
 
-연결 확인:
+Verify the connection:
 
 ```bash
 python3 tests/test_components.py connection
 ```
 
-## 4. Data Collection 설치 (선택)
+## 4. Data Collection Installation (Optional)
 
-Data Collection은 IsaacLab 위에서 동작한다.
+Data Collection runs on top of IsaacLab.
 
 ```bash
 pip install -e ".[data-collection]"
 pip install pin
 ```
 
-확인:
+Verify:
 
 ```bash
 python3 -c "from src.agent.data_collection.adc_imports import is_adc_available; print(is_adc_available())"
@@ -116,17 +118,17 @@ python3 -c "import pinocchio; print('Pinocchio OK')"
 python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml --help
 ```
 
-## 5. Task Spec Agent 설치 (NL → YAML)
+## 5. Task Spec Agent Installation (NL -> YAML)
 
-Task Spec Agent는 자연어 입력을 YAML 태스크 명세로 변환하는 Stage 1 파이프라인입니다.
+The Task Spec Agent is a Stage 1 pipeline that converts natural language input into YAML task specifications.
 
 ```bash
 pip install langchain langchain-openai langchain-community faiss-cpu sentence-transformers
 ```
 
-벡터 스토어는 첫 실행 시 `data/vector_store/`에 자동 생성됩니다 (tasks/ 디렉토리의 기존 YAML을 인덱싱).
+The vector store is automatically created at `data/vector_store/` on the first run (indexing existing YAMLs from the tasks/ directory).
 
-확인:
+Verify:
 
 ```bash
 cd scripts/task_spec_agent
@@ -134,59 +136,59 @@ python3 -c "from rag_match_yaml_generator import RAGYAMLGenerator; print('RAG OK
 cd ../..
 ```
 
-단독 실행:
+Standalone execution:
 
 ```bash
 python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube" --robot franka --output outputs/test_task.yaml
 ```
 
-## 6. 첫 성공 실행 권장 순서
+## 6. Recommended Order for Your First Successful Run
 
-### 가장 간단한 실행 — 자연어 한 줄
+### Simplest Execution -- A Single Line of Natural Language
 
 ```bash
 ./run_agent.sh "Stack the blocks inside the tray on the table"
 ```
 
-자연어 태스크 설명 하나만 입력하면 NL→YAML→IsaacLab→DataCollection 전체 파이프라인이 자동 실행됩니다.
+Simply provide a natural language task description, and the entire NL->YAML->IsaacLab->DataCollection pipeline runs automatically.
 
-옵션:
+Options:
 ```bash
 ./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
 
-### Full Pipeline (13개 태스크 일괄)
+### Full Pipeline (Batch of 13 Tasks)
 
 ```bash
 bash scripts/run_full_test.sh
 ```
 
-13개 Franka 태스크에 대해 3단계를 순차 실행합니다:
-1. **NL → YAML**: `task_spec_agent`가 자연어를 YAML로 변환
-2. **YAML → IsaacLab**: LLM이 환경 Python 코드를 생성하고 실행 검증
-3. **CaP → Data**: LLM이 스킬 코드를 생성하고, IK로 실행하고, 성공 판정 후 데이터 수집
+Runs all 3 stages sequentially for 13 Franka tasks:
+1. **NL -> YAML**: `task_spec_agent` converts natural language to YAML
+2. **YAML -> IsaacLab**: LLM generates environment Python code and verifies execution
+3. **CaP -> Data**: LLM generates skill code, executes via IK, judges success, and collects data
 
-### IsaacLab 단독 실행 (Stage 2만)
+### IsaacLab Only (Stage 2 Only)
 
 ```bash
 ./run_agent.sh --mode isaac-lab --task tasks/franka/stack/franka_stack.yaml
 ```
 
-성공 기준:
+Success criteria:
 - `outputs/isaaclab/<run_dir>/env_cfg.py`
 - `outputs/isaaclab/<run_dir>/result.json`
 
-### Data Collection 단독 실행 (Stage 3만)
+### Data Collection Only (Stage 3 Only)
 
 ```bash
 ./run_agent.sh --mode data-collection --task tasks/franka/stack/franka_stack.yaml
 ```
 
-성공 기준:
+Success criteria:
 - `outputs/data_collection/<run_dir>/collection_results.json`
 - `outputs/data_collection/<run_dir>/raw_dataset/`
 
-### 학습 준비 경로
+### Training Preparation Path
 
 ```bash
 python3 scripts/export_dataset.py \
@@ -199,40 +201,40 @@ python3 scripts/preprocess_dataset.py \
   --output-dir outputs/preprocessed_datasets
 ```
 
-## 7. Docker로 실행
+## 7. Running with Docker
 
-로컬 환경 세팅 없이 Docker 컨테이너로 바로 실행할 수 있습니다.
+You can run immediately using a Docker container without any local environment setup.
 
-사전 요구: [Docker Engine](https://docs.docker.com/engine/install/ubuntu/) + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+Prerequisites: [Docker Engine](https://docs.docker.com/engine/install/ubuntu/) + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
 
 ```bash
-# submodule 초기화 + 이미지 빌드
+# Initialize submodule + build image
 git submodule update --init --recursive
 docker build -t simgen-agent .
 
-# 자연어 입력으로 전체 파이프라인 실행
+# Run the full pipeline with natural language input
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
   -e OPENAI_API_KEY="your-key" \
   simgen-agent \
   "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 
-# JSON 입력
+# JSON input
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
   -e OPENAI_API_KEY="your-key" \
   simgen-agent \
   data/input_sample.json results/output.json
 
-# 사용법 확인
+# Show usage
 docker run --rm simgen-agent --help
 ```
 
-> **출력 경로 차이**: Docker에서는 `/workspace/artifacts`에 결과가 저장됩니다 (호스트 `./artifacts/`로 마운트). 로컬에서는 `outputs/`에 저장됩니다. Docker에서 로컬과 동일한 경로를 사용하려면 `-e SIMGEN_ARTIFACT_ROOT=/workspace/Simulation-Generation-Agent/outputs`를 추가하세요.
+> **Output path difference**: In Docker, results are saved to `/workspace/artifacts` (mounted to `./artifacts/` on the host). Locally, results are saved to `outputs/`. To use the same path as local inside Docker, add `-e SIMGEN_ARTIFACT_ROOT=/workspace/Simulation-Generation-Agent/outputs`.
 
-상세 Docker 가이드: [README.docker.md](../README.docker.md)
+Detailed Docker guide: [README.docker.md](../README.docker.md)
 
-## 8. 다음에 볼 문서
+## 8. What to Read Next
 
-- 파이프라인 아키텍처 상세: [docs/architecture.md](architecture.md)
-- 실제 옵션/출력 구조/결과 해석: [docs/usage.md](usage.md)
+- Pipeline architecture details: [docs/architecture.md](architecture.md)
+- CLI options / output structure / result interpretation: [docs/usage.md](usage.md)

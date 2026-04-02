@@ -31,21 +31,21 @@ MAX_ATTEMPTS_NL=""
 print_help() {
   cat <<'EOF'
 Usage:
-  run_agent.sh "자연어 태스크 설명" [options]                  자연어 → 전체 파이프라인 (Stage 1→2→3)
-  run_agent.sh <input_file.json> [output_file]               JSON 입력 → 전체 파이프라인
-  run_agent.sh --mode <mode> [options] [-- extra args]       개별 Stage 실행
+  run_agent.sh "task description" [options]                   NL input -> full pipeline (Stage 1->2->3)
+  run_agent.sh <input_file.json> [output_file]               JSON input -> full pipeline
+  run_agent.sh --mode <mode> [options] [-- extra args]       Run individual stage
 
-자연어 입력 (메인 기능):
-  첫 번째 인자로 자연어 태스크 설명을 넣으면 NL→YAML→IsaacLab→DataCollection 전체 파이프라인이 실행됩니다.
-  --robot <type>         로봇 종류: franka, ur10e, openarm, so101 (기본: franka)
-  --episodes <n>         목표 성공 에피소드 수 (기본: 1)
-  --max-attempts <n>     최대 시도 횟수 (기본: 3)
+Natural language input (main feature):
+  Pass a task description as the first argument to run the full NL->YAML->IsaacLab->DataCollection pipeline.
+  --robot <type>         Robot type: franka, ur10e, openarm, so101 (default: franka)
+  --episodes <n>         Target successful episodes (default: 1)
+  --max-attempts <n>     Maximum total attempts (default: 3)
 
-JSON 입력:
+JSON input:
   input_file               JSON task spec (default: ./data/input_sample.json)
   output_file              Result JSON path (default: ./results/output.json)
 
-개별 Stage (고급):
+Individual stage (advanced):
   --mode <mode>            e2e-batch | isaac-lab | data-collection (default: e2e-batch)
   --config <path>          Config file override
   --task <yaml>            Task YAML path for isaac-lab or data-collection mode
@@ -54,14 +54,14 @@ JSON 입력:
   -h, --help               Show this help
 
 Examples:
-  # 자연어 입력 → 전체 파이프라인 (가장 간단한 사용법)
+  # NL input -> full pipeline (simplest usage)
   run_agent.sh "Stack the blocks inside the tray on the table"
   run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 
-  # JSON 입력
+  # JSON input
   run_agent.sh data/input_sample.json results/output.json
 
-  # 개별 Stage 실행
+  # Individual stage execution
   run_agent.sh --mode isaac-lab --task tasks/franka/lift/franka_lift.yaml -- --dry-run
   run_agent.sh --mode data-collection --task tasks/franka/lift/franka_lift.yaml -- --episodes 2
 
