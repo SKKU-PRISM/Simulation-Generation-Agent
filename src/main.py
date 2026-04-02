@@ -49,40 +49,48 @@ def _fmt_time(seconds: float) -> str:
 def _run_step(
     cmd: list[str], label: str, log_path: Path | None = None, est_seconds: int = 0
 ) -> tuple[bool, str, float]:
-    """Run a subprocess step with spinner. Returns (success, output, elapsed)."""
+    """Run a subprocess step with live elapsed timer. Returns (success, output, elapsed)."""
     start = time.time()
     est_hint = f", est. ~{_fmt_time(est_seconds)}" if est_seconds else ""
+    timeout = 7200
 
     try:
-        with console.status(
-            f"  [cyan]⏳ {label}[/] ... (elapsed: 0s{est_hint})",
-            spinner="dots",
-        ):
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=7200,
-                cwd=str(PROJECT_ROOT),
-                env={**os.environ, "PYTHONPATH": str(PROJECT_ROOT), "PYTHONUNBUFFERED": "1"},
-            )
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=str(PROJECT_ROOT),
+            env={**os.environ, "PYTHONPATH": str(PROJECT_ROOT), "PYTHONUNBUFFERED": "1"},
+        )
+
+        with console.status("", spinner="dots") as status:
+            while proc.poll() is None:
+                elapsed = time.time() - start
+                status.update(
+                    f"  [cyan]⏳ {label}[/] ... (elapsed: {_fmt_time(elapsed)}{est_hint})"
+                )
+                if elapsed > timeout:
+                    proc.kill()
+                    proc.wait()
+                    console.print(f"  [red]⏰ {label} (timeout)[/]  {_fmt_time(elapsed)}")
+                    return False, "TIMEOUT", elapsed
+                time.sleep(1)
+
         elapsed = time.time() - start
-        combined = result.stdout + "\n" + result.stderr
+        stdout, stderr = proc.communicate()
+        combined = stdout + "\n" + stderr
 
         if log_path:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             log_path.write_text(combined, encoding="utf-8")
 
-        if result.returncode != 0:
+        if proc.returncode != 0:
             console.print(f"  [red]❌ {label}[/]  {_fmt_time(elapsed)}")
             return False, combined, elapsed
         console.print(f"  [green]✅ {label}[/]  {_fmt_time(elapsed)}")
         return True, combined, elapsed
 
-    except subprocess.TimeoutExpired:
-        elapsed = time.time() - start
-        console.print(f"  [red]⏰ {label} (timeout)[/]  {_fmt_time(elapsed)}")
-        return False, "TIMEOUT", elapsed
     except Exception as e:
         elapsed = time.time() - start
         console.print(f"  [red]💥 {label} ({e})[/]  {_fmt_time(elapsed)}")
