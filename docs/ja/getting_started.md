@@ -253,7 +253,7 @@ docker run --rm simgen-agent --help
 
 > **出力パスの違い**: Docker内では結果は`/workspace/artifacts`に保存されます（ホスト上の`./artifacts/`にマウント）。ローカルでは`outputs/`に保存されます。Docker内でローカルと同じパスを使用するには、`-e SIMGEN_ARTIFACT_ROOT=/workspace/Simulation-Generation-Agent/outputs`を追加してください。
 
-詳細なDockerガイド: [README.docker.md](../README.docker.md)
+詳細なDockerガイド: [README.docker.md](../../README.docker.md)
 
 ## 8. 次に読むもの
 

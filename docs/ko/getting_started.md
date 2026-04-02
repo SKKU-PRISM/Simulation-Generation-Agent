@@ -253,7 +253,7 @@ docker run --rm simgen-agent --help
 
 > **출력 경로 차이**: Docker에서는 `/workspace/artifacts`에 결과가 저장됩니다 (호스트 `./artifacts/`로 마운트). 로컬에서는 `outputs/`에 저장됩니다. Docker에서 로컬과 동일한 경로를 사용하려면 `-e SIMGEN_ARTIFACT_ROOT=/workspace/Simulation-Generation-Agent/outputs`를 추가하세요.
 
-상세 Docker 가이드: [README.docker.md](../README.docker.md)
+상세 Docker 가이드: [README.docker.md](../../README.docker.md)
 
 ## 8. 다음에 볼 문서
 
