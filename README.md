@@ -18,7 +18,7 @@
 
 | Stage | 무엇을 하는가 | 핵심 기술 |
 |-------|-------------|----------|
-| **1. Task Definition** | 자연어 → 구조화된 YAML 태스크 명세 | LangChain RAG (FAISS 벡터 검색) + LLM few-shot 생성 |
+| **1. Task Definition** | 자연어 → 구조화된 YAML 태스크 명세 | LangChain RAG (FAISS 벡터 매칭) + LLM 태스크 분해 |
 | **2. Simulation Generation** | YAML → IsaacLab 환경 Python 코드 | LLM 코드 생성 + PhysX 실행 검증 + 에러 자동 수정 + VLM 환경 검증 |
 | **3. Data Collection** | 환경 위에서 로봇 조작 + 성공 데이터 수집 | CaP 스킬 코드 생성 + Pinocchio IK + Geometry/VLM 이중 평가 |
 
@@ -117,7 +117,12 @@ bash scripts/run_full_test.sh
 
 ```text
 Simulation-Generation-Agent/
+├── Dockerfile                    # Docker 이미지 빌드 설정
+├── requirements.txt              # 파이썬 의존성 패키지 목록
 ├── run_agent.sh                  # Docker/릴리스 엔트리포인트
+├── .env.example                  # 환경변수 템플릿
+├── LICENSE                       # MIT 라이선스
+├── src/main.py                   # Challenge 제출용 진입점
 ├── scripts/
 │   ├── task_spec_agent/          # Stage 1: NL → YAML
 │   │   ├── task_spec_agent.py    #   메인 오케스트레이터
@@ -134,6 +139,7 @@ Simulation-Generation-Agent/
 │   ├── common/                   # LLM 클라이언트, 토큰 트래커, MCP
 │   ├── isaac_lab/                # Stage 2: 환경 코드 생성 + 평가
 │   │   ├── agent.py              #   IsaacLabAgent (LLM 코드 생성)
+│   │   ├── scene_verifier.py     #   VLM 환경 검증 (코드 4-카테고리 + 이미지)
 │   │   └── evaluator/            #   4-카테고리 100점 평가
 │   ├── isaac_sim/                # Isaac Sim 시각 검증 (부가 경로)
 │   ├── data_collection/          # Stage 3: 데이터 수집
@@ -150,6 +156,8 @@ Simulation-Generation-Agent/
 ├── tasks/                        # task YAML corpus (82개)
 ├── prompts/                      # LLM 시스템 프롬프트
 ├── assets/                       # 로컬 USD/URDF 자산
+├── external/AutoDataCollector/   # ADC submodule (judge 프롬프트, IK 유틸)
+├── data/                         # 시연용 입력 데이터, RAG 벡터 스토어
 └── docs/                         # 사용자 문서
 ```
 
@@ -175,6 +183,9 @@ Simulation-Generation-Agent/
 ### 빌드
 
 ```bash
+# submodule 초기화 (최초 1회)
+git submodule update --init --recursive
+
 docker build -t simgen-agent .
 ```
 

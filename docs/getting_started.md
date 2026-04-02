@@ -9,11 +9,19 @@
 git clone --recurse-submodules <repo-url>
 cd Simulation-Generation-Agent
 
-# submodule이 빠졌을 경우 수동 초기화
-git submodule update --init --recursive
-
 pip install -e .
 cp .env.example .env
+```
+
+### Submodule (AutoDataCollector)
+
+이 프로젝트는 `external/AutoDataCollector`를 git submodule로 포함합니다. Data Collection (Stage 3)에서 judge 프롬프트와 IK 유틸리티를 참조합니다.
+
+`--recurse-submodules`로 클론하면 자동으로 받아집니다. 빠졌을 경우 수동 초기화:
+
+```bash
+git submodule update --init --recursive
+ls external/AutoDataCollector/  # 파일이 있어야 정상
 ```
 
 필수 `.env`:
@@ -26,12 +34,12 @@ OPENAI_BASE_URL=https://api.openai.com/v1/
 선택 설정:
 
 ```bash
-# VLM backends (Isaac Sim 시각 검증용)
+# VLM backends (환경 검증 + 에피소드 성공 판정용)
 # ANTHROPIC_API_KEY=...
 # GOOGLE_API_KEY=...
 
 # Paths
-# ISAACLAB_PATH=/home/you/workspace/IsaacLab
+# ISAACLAB_PATH=~/workspace/IsaacLab
 
 # 토큰 사용량 추적
 # TOKEN_USAGE_FILE=outputs/token_usage.jsonl
@@ -175,7 +183,31 @@ python3 scripts/preprocess_dataset.py \
   --output-dir outputs/preprocessed_datasets
 ```
 
-## 7. 다음에 볼 문서
+## 7. Docker로 실행
 
-- 파이프라인 아키텍처 상세: `docs/architecture.md`
-- 실제 옵션/출력 구조/결과 해석: `docs/usage.md`
+로컬 환경 세팅 없이 Docker 컨테이너로 바로 실행할 수 있습니다.
+
+사전 요구: [Docker Engine](https://docs.docker.com/engine/install/ubuntu/) + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
+
+```bash
+# submodule 초기화 + 이미지 빌드
+git submodule update --init --recursive
+docker build -t simgen-agent .
+
+# 실행 (심사 제출 모드)
+docker run --rm --gpus all \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -e OPENAI_API_KEY="your-key" \
+  simgen-agent \
+  data/input_sample.json results/output.json
+
+# 사용법 확인
+docker run --rm simgen-agent --help
+```
+
+상세 Docker 가이드: [README.docker.md](../README.docker.md)
+
+## 8. 다음에 볼 문서
+
+- 파이프라인 아키텍처 상세: [docs/architecture.md](architecture.md)
+- 실제 옵션/출력 구조/결과 해석: [docs/usage.md](usage.md)

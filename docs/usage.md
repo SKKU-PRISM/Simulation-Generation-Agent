@@ -34,7 +34,7 @@ python3 scripts/task_spec_agent/task_spec_agent.py "Reach the goal" --verbose
 | --- | --- |
 | `--robot {franka,openarm,ur10,so101}` | 대상 로봇 (기본: franka) |
 | `--output <path>` | YAML 저장 경로 (미지정 시 stdout 출력) |
-| `--provider {azure,huggingface,bedrock}` | LLM 프로바이더 (기본: config에서 결정) |
+| `--provider {openai,azure,huggingface,bedrock}` | LLM 프로바이더 (기본: config에서 결정, default=openai) |
 | `--no-rag` | RAG 대신 템플릿 기반 YAML 생성 |
 | `--verbose` | DEBUG 레벨 로깅 |
 
@@ -45,7 +45,7 @@ python3 scripts/task_spec_agent/task_spec_agent.py "Reach the goal" --verbose
   → NL Parser (actions, objects, locations 추출)
   → Task Decomposer (원자적 동작 시퀀스 분해)
   → Feasibility Validator (로봇 물리적 실현 가능성 검증)
-  → RAG YAML Generator (FAISS 유사 검색 → LLM few-shot 생성)
+  → RAG YAML Generator (FAISS 벡터 검색 → 최근접 태스크 YAML 매칭)
   → task.yaml
 ```
 
