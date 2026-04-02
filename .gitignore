@@ -13,6 +13,7 @@ build/
 
 # Runtime outputs
 outputs/
+artifacts/
 
 
 # Environment variables (API keys)
