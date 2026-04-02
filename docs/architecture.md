@@ -65,7 +65,7 @@ CLI 사용법은 `docs/usage.md`, 설치는 `docs/getting_started.md`
           ▼
 ┌─────────────────────┐
 │  YAML Generator     │  두 가지 모드:
-│  (rag_yaml_         │  1) RAG + LLM: FAISS 벡터 검색 → 유사 태스크 few-shot 생성
+│  (rag_match_yaml_   │  1) RAG: FAISS 벡터 검색 → 최근접 태스크 YAML 매칭
 │   generator.py)     │  2) 템플릿 기반: 로봇별 템플릿에서 생성
 └─────────┬───────────┘
           ▼
@@ -79,7 +79,7 @@ CLI 사용법은 `docs/usage.md`, 설치는 `docs/getting_started.md`
 | **NL Parser** | 자연어 문장 | `ParsedTask` (actions, objects, locations) | LLM에 JSON 스키마를 지정하여 구조화된 출력 생성 |
 | **Task Decomposer** | `ParsedTask` | `TaskPlan` (AtomicAction 리스트 + 의존성) | reach, grasp, lift, place 등 원자적 동작 분해. 위상 정렬로 순환 검증 |
 | **Feasibility Validator** | `TaskPlan` | `ValidationResult` (is_valid, errors, warnings) | 로봇 프로파일 기반 6가지 물리적 검증 (workspace, reachability, gripper, payload 등) |
-| **RAG YAML Generator** | 자연어 + ParsedTask + TaskPlan | YAML 문자열 | FAISS 벡터 검색으로 유사 태스크 2-3개 → LLM few-shot으로 새 YAML 생성 |
+| **RAG YAML Generator** | 자연어 + ParsedTask + TaskPlan | YAML 문자열 | FAISS 벡터 검색으로 가장 유사한 기존 태스크 YAML을 매칭하여 반환 |
 
 ### RAG 벡터 검색
 
@@ -167,7 +167,6 @@ outputs/isaaclab/{TaskName}_{timestamp}/
 │   └── terminations.py # 커스텀 종료 조건
 ├── debug/              # 환경 스크린샷 (front/top/wrist)
 └── result.json         # 실행 결과 + scene_verification 포함
-└── result.json         # 실행 결과
 ```
 
 ### YAML → IsaacLab 매핑 규칙
@@ -195,7 +194,7 @@ IsaacLab 외에 Isaac Sim MCP 확장을 활용한 시각적 검증 경로도 있
 
 ## Stage 3: Data Collection (CaP → Dataset)
 
-> 구현 위치: `src/agent/data_collection/` (10개 모듈)
+> 구현 위치: `src/agent/data_collection/`
 
 Stage 2에서 생성한 시뮬레이션 환경 위에서 로봇이 태스크를 수행하고, 성공한 에피소드만 데이터셋으로 기록합니다.
 
@@ -281,7 +280,7 @@ Geometry가 하나라도 통과하면 데이터셋에 포함됩니다.
 |------|-------|-------|------|
 | `observation.state` | float32 | (N_dof,) | 관절 위치 |
 | `action` | float32 | (N_dof,) | 관절 제어 목표 |
-| `observation.images.{top,wrist}` | image | (480, 640, 3) | 카메라 이미지 |
+| `observation.images.{top,wrist,front}` | image | (480, 640, 3) | 카메라 이미지 |
 | `skill.natural_language` | string | (1,) | 스킬 자연어 설명 |
 | `skill.type` | string | (1,) | 스킬 유형 |
 | `skill.progress` | float32 | (1,) | 진행률 |

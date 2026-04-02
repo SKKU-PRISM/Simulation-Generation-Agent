@@ -22,7 +22,7 @@
 | **2. Simulation Generation** | YAML → IsaacLab 환경 Python 코드 | LLM 코드 생성 + PhysX 실행 검증 + 에러 자동 수정 + VLM 환경 검증 |
 | **3. Data Collection** | 환경 위에서 로봇 조작 + 성공 데이터 수집 | CaP 스킬 코드 생성 + Pinocchio IK + Geometry/VLM 이중 평가 |
 
-상세 아키텍처: `docs/architecture.md`
+상세 아키텍처: [docs/architecture.md](docs/architecture.md)
 
 ## Quick Start
 
@@ -124,7 +124,7 @@ Simulation-Generation-Agent/
 │   │   ├── nl_parser.py          #   자연어 파싱 (LLM)
 │   │   ├── task_decomposer.py    #   태스크 분해 (LLM)
 │   │   ├── feasibility_validator.py  # 물리적 실현 가능성 검증
-│   │   ├── rag_yaml_generator.py #   RAG + LLM YAML 생성
+│   │   ├── rag_match_yaml_generator.py # RAG 벡터 매칭 YAML 생성
 │   │   └── llm_client.py         #   멀티 LLM 클라이언트
 │   ├── run_isaac_lab.py          # Stage 2 진입점
 │   ├── run_data_collection.py    # Stage 3 진입점
