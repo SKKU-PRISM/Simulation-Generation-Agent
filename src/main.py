@@ -23,7 +23,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from rich.console import Console
 
-console = Console()
+console = Console(force_terminal=True)
 
 PYTHON_BIN = os.environ.get("PYTHON_BIN", sys.executable)
 
