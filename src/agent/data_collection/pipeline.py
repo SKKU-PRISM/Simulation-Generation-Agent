@@ -464,7 +464,8 @@ class DataCollectionPipeline:
             "prebuilt_env": bool(self.task_doc.get("task", {}).get("prebuilt_env", False)),
             "initial_grasp": (
                 {**self.task_doc["task"]["initial_grasp"],
-                 "task_name": self.task_doc["task"].get("name", "")}
+                 "task_name": self.task_doc["task"].get("name", ""),
+                 "_assets": self.task_doc.get("assets", [])}
                 if self.task_doc.get("task", {}).get("initial_grasp")
                 else None
             ),
@@ -1306,7 +1307,15 @@ class DataCollectionPipeline:
                             contact_offset=0.005,
                             rest_offset=0.0,
                         )
-                        if asset_name in insertion_subject_names and spawn_cfg is not None:
+                        # Disable articulation root on ALL RigidObjectCfg assets that use
+                        # Factory USD files (they contain FixedJoint / ArticulationRoot prims
+                        # which conflict with RigidObjectCfg).  Also applies to explicitly
+                        # listed insertion subjects for backward compatibility.
+                        _needs_art_disable = (
+                            asset_name in insertion_subject_names
+                            or "factory" in asset_path_lower
+                        )
+                        if _needs_art_disable and spawn_cfg is not None:
                             articulation_props = getattr(spawn_cfg, "articulation_props", None)
                             if articulation_props is None:
                                 try:
@@ -1319,7 +1328,7 @@ class DataCollectionPipeline:
                             if articulation_props is not None and hasattr(articulation_props, "articulation_enabled"):
                                 articulation_props.articulation_enabled = False
                                 patched_scene_assets.append(
-                                    f"{{asset_name}}: disabled articulation root on insertion subject"
+                                    f"{{asset_name}}: disabled articulation root on factory/insertion asset"
                                 )
 
                         # Skip factory proxy substitution for prebuilt_env tasks

@@ -65,8 +65,12 @@ export ISAACLAB_PATH=~/workspace/IsaacLab
 연결 확인:
 
 ```bash
+# 로컬 (conda 환경)
 conda run -n env_isaaclab --no-capture-output \
   python -c "import isaaclab; print('IsaacLab import OK')"
+
+# Docker 환경에서는 conda 대신 venv가 사용되므로 아래처럼 확인
+# python -c "import isaaclab; print('IsaacLab import OK')"
 
 python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml --dry-run
 ```
@@ -208,14 +212,14 @@ docker build -t simgen-agent .
 
 # 자연어 입력으로 전체 파이프라인 실행
 docker run --rm --gpus all \
-  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -v $(pwd)/artifacts:/workspace/artifacts \
   -e OPENAI_API_KEY="your-key" \
   simgen-agent \
   "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 
 # JSON 입력 (심사 제출용)
 docker run --rm --gpus all \
-  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -v $(pwd)/artifacts:/workspace/artifacts \
   -e OPENAI_API_KEY="your-key" \
   simgen-agent \
   data/input_sample.json results/output.json
@@ -223,6 +227,8 @@ docker run --rm --gpus all \
 # 사용법 확인
 docker run --rm simgen-agent --help
 ```
+
+> **출력 경로 차이**: Docker에서는 `/workspace/artifacts`에 결과가 저장됩니다 (호스트 `./artifacts/`로 마운트). 로컬에서는 `outputs/`에 저장됩니다. Docker에서 로컬과 동일한 경로를 사용하려면 `-e SIMGEN_ARTIFACT_ROOT=/workspace/Simulation-Generation-Agent/outputs`를 추가하세요.
 
 상세 Docker 가이드: [README.docker.md](../README.docker.md)
 

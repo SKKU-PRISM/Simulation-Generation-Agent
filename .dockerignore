@@ -2,6 +2,8 @@
 .gitmodules
 .github
 .internal
+.local_docs
+.reference
 .claude
 .mcp.json
 .DS_Store

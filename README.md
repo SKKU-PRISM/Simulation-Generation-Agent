@@ -79,11 +79,15 @@ git submodule update --init --recursive
 docker build -t simgen-agent .
 
 docker run --rm --gpus all \
-  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -v $(pwd)/artifacts:/workspace/artifacts \
   -e OPENAI_API_KEY="your-key" \
   simgen-agent \
   "Stack the blocks inside the tray on the table" --episodes 5
 ```
+
+> **출력 경로**: Docker 내부에서는 `/workspace/artifacts`에 결과가 저장됩니다.
+> 위 `-v` 옵션으로 호스트의 `./artifacts/`에 매핑됩니다.
+> 로컬 실행 시에는 `outputs/` 디렉토리에 저장됩니다.
 
 ### 4. 개별 Stage 실행 (고급)
 
@@ -95,7 +99,7 @@ docker run --rm --gpus all \
 ./run_agent.sh --mode data-collection --task tasks/franka/stack/franka_stack.yaml
 
 # 대규모 배치 수집
-./run_agent.sh --mode e2e-batch --config configs/e2e_batch_franka50.yaml --resume
+./run_agent.sh --mode e2e-batch --config configs/docker/e2e_batch_release.yaml --resume
 ```
 
 <details>

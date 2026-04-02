@@ -215,6 +215,7 @@ fi
 
 OUTPUT_ROOT="$(resolve_path "${OUTPUT_ROOT}")"
 mkdir -p "${OUTPUT_ROOT}"
+export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
 export SIMGEN_ISAACLAB_PYTHON="${PYTHON_BIN}"
 
 case "${MODE}" in

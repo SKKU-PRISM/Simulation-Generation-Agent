@@ -28,6 +28,8 @@ Thumbs.db
 
 # Internal development (not for public release)
 .internal/
+.local_docs/
+.reference/
 .claude
 .mcp.json
 

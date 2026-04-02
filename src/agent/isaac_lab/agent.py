@@ -206,6 +206,77 @@ class IsaacLabAgent:
         task_name = str(task_doc.get("task", {}).get("name", "")).lower()
         return "assembling_kits" in stem or "assemblingkits" in task_name
 
+    @staticmethod
+    def _is_factory_task(task_doc: dict) -> bool:
+        """Return True for Factory tasks (PegInsert, GearMesh, NutThread).
+
+        Detected by the ``initial_grasp`` field in the YAML or by name.
+        """
+        if task_doc.get("task", {}).get("initial_grasp"):
+            return True
+        name = task_doc.get("task", {}).get("name", "").lower().replace("_", "").replace(" ", "")
+        return any(k in name for k in ("peginsert", "gearmesh", "nutthread"))
+
+    _FACTORY_CFG_MAP = {
+        "peginsert": ("FactoryTaskPegInsertCfg", "peg_insert"),
+        "gearmesh": ("FactoryTaskGearMeshCfg", "gear_mesh"),
+        "nutthread": ("FactoryTaskNutThreadCfg", "nut_thread"),
+    }
+
+    def _build_factory_template(self, task_doc: dict) -> dict:
+        """Build run_env.py that uses the existing Factory Direct RL module."""
+        task_name = task_doc["task"]["name"].lower().replace("_", "").replace(" ", "")
+
+        cfg_class = None
+        for key, (cls, _) in self._FACTORY_CFG_MAP.items():
+            if key in task_name:
+                cfg_class = cls
+                break
+        if cfg_class is None:
+            raise ValueError(f"Unknown factory task: {task_doc['task']['name']}")
+
+        run_env_code = f'''\
+"""Factory Direct RL environment runner (auto-generated)."""
+
+import argparse
+import sys
+from pathlib import Path
+
+from isaaclab.app import AppLauncher
+
+parser = argparse.ArgumentParser(description="Factory task runner")
+AppLauncher.add_app_launcher_args(parser)
+parser.add_argument("--num_envs", type=int, default=1)
+args = parser.parse_args()
+app_launcher = AppLauncher(args)
+simulation_app = app_launcher.app
+
+import torch
+
+# Ensure project root is importable
+PROJECT_ROOT = str(Path(__file__).resolve().parents[3])
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from src.agent.isaac_lab.factory.factory_env import FactoryEnv
+from src.agent.isaac_lab.factory.factory_env_cfg import {cfg_class}
+
+cfg = {cfg_class}()
+cfg.scene.num_envs = args.num_envs
+env = FactoryEnv(cfg=cfg)
+env.reset()
+
+# Run a short episode to validate the environment
+for step in range(200):
+    action = torch.zeros(env.num_envs, env.cfg.action_space, device=env.device)
+    env.step(action)
+
+env.close()
+simulation_app.close()
+'''
+
+        return {"run_env.py": run_env_code}
+
     # ----- Reference Code Loading -----
 
     def _robot_reference_paths(self, category: str, robot: str) -> list[str]:
@@ -1335,6 +1406,7 @@ Only include files that need modifications."""
         category = self._detect_category(yaml_path)
         robot = self._detect_robot(task_doc, yaml_path)
         use_assembling_kits_template = category == "assembly" and self._is_assembling_kits_task(yaml_path, task_doc)
+        use_factory_template = category == "assembly" and self._is_factory_task(task_doc)
 
         console.print(Panel(
             f"[bold]Task[/bold]: {task_name}\n"
@@ -1350,7 +1422,11 @@ Only include files that need modifications."""
         task_slug = task_name.lower().replace(" ", "_")
         output_dir = self.output_dir / f"{timestamp}_{task_slug}"
 
-        if use_assembling_kits_template:
+        if use_factory_template:
+            console.print("[bold]Step 1:[/bold] Using Factory environment template...")
+            code_dict = self._build_factory_template(task_doc)
+            console.print(f"  Generated {len(code_dict)} template file(s): {list(code_dict.keys())}")
+        elif use_assembling_kits_template:
             console.print("[bold]Step 1:[/bold] Using deterministic AssemblingKits template...")
             code_dict = build_assembling_kits_template(task_doc, robot)
             console.print(f"  Generated {len(code_dict)} template file(s): {list(code_dict.keys())}")
@@ -1385,13 +1461,14 @@ Only include files that need modifications."""
             return {"success": True, "output_dir": str(output_dir), "attempts": 0, "error": None}
 
         # Step 3.5: Validate and auto-fix known mistakes
-        if not use_assembling_kits_template:
+        use_deterministic_template = use_factory_template or use_assembling_kits_template
+        if not use_deterministic_template:
             fixes = self._validate_generated_code(output_dir, robot, task_doc)
             for fix in fixes:
                 console.print(f"  [yellow]Auto-fix[/yellow]: {fix}")
 
         # Step 4: Execute and iterate
-        max_attempts = 1 if use_assembling_kits_template else self.max_retries
+        max_attempts = 1 if use_deterministic_template else self.max_retries
         for attempt in range(1, max_attempts + 1):
             console.print(f"[bold]Step 4:[/bold] Execution attempt {attempt}/{max_attempts}...")
             success, output = self.execute_isaaclab(output_dir)
@@ -1415,8 +1492,8 @@ Only include files that need modifications."""
 
                 # Debug capture: 3-angle screenshots for all tasks
                 console.print("[bold]Step 6:[/bold] Capturing debug screenshots (front/top/wrist)...")
-                if use_assembling_kits_template:
-                    # AssemblingKits: use existing single-camera capture
+                if use_deterministic_template:
+                    # AssemblingKits / Factory: use existing single-camera capture
                     captured, capture_output = self.capture_scene(output_dir)
                     if captured and (output_dir / "scene_capture.png").exists():
                         result["scene_capture"] = str(output_dir / "scene_capture.png")
@@ -1481,14 +1558,14 @@ Only include files that need modifications."""
 
                             if (
                                 static_score < verify_threshold
-                                and not use_assembling_kits_template
+                                and not use_deterministic_template
                                 and not hasattr(self, "_verify_refine_count")
                             ):
                                 self._verify_refine_count = 0
 
                             if (
                                 static_score < verify_threshold
-                                and not use_assembling_kits_template
+                                and not use_deterministic_template
                                 and getattr(self, "_verify_refine_count", 0) < verify_max_refine
                             ):
                                 self._verify_refine_count = getattr(self, "_verify_refine_count", 0) + 1

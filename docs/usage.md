@@ -32,11 +32,13 @@
 
 ```bash
 docker run --rm --gpus all \
-  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -v $(pwd)/artifacts:/workspace/artifacts \
   -e OPENAI_API_KEY="your-key" \
   simgen-agent \
   "Stack the blocks inside the tray on the table" --episodes 5
 ```
+
+> **출력 경로**: Docker 내부에서는 `/workspace/artifacts`에 결과가 저장됩니다. `-v` 옵션으로 호스트에 매핑하세요. 로컬 실행 시에는 `outputs/`에 저장됩니다.
 
 ### 결과
 
@@ -408,14 +410,14 @@ config 기반으로 다수 태스크의 환경 생성 + 데이터 수집 + expor
 ### 대표 명령어
 
 ```bash
-# Batch 실행
-python3 scripts/run_e2e_batch.py configs/e2e_batch_franka50.yaml
+# Batch 실행 (Docker)
+python3 scripts/run_e2e_batch.py configs/docker/e2e_batch_release.yaml
 
 # 중단 후 재개
-python3 scripts/run_e2e_batch.py configs/e2e_batch_franka50.yaml --resume
+python3 scripts/run_e2e_batch.py configs/docker/e2e_batch_release.yaml --resume
 
 # 조용한 로그
-python3 scripts/run_e2e_batch.py configs/e2e_batch_franka50.yaml -q
+python3 scripts/run_e2e_batch.py configs/docker/e2e_batch_release.yaml -q
 ```
 
 ### Docker / run_agent.sh
