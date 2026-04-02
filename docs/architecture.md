@@ -85,7 +85,7 @@ CLI 사용법은 `docs/usage.md`, 설치는 `docs/getting_started.md`
 
 - 임베딩 모델: `sentence-transformers/all-MiniLM-L6-v2`
 - 벡터 스토어: `data/vector_store/index.faiss` (첫 실행 시 자동 생성)
-- 검색 소스: `tasks/` 디렉토리의 기존 YAML 79개
+- 검색 소스: `tasks/` 디렉토리의 기존 YAML 82개
 - 로봇 유형 필터링 지원 (franka, ur10e, openarm, so101)
 
 ---

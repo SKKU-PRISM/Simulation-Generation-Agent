@@ -155,8 +155,8 @@ Simulation-Generation-Agent/
 
 ## Task Corpus
 
-- 총 task YAML: 79개
-- 로봇: Franka (24), OpenARM (24), SO-101 (13), UR10e (17)
+- 총 task YAML: 82개
+- 로봇: Franka (28), OpenARM (24), SO-101 (13), UR10e (17)
 - 카테고리: Stack, Lift, Pick&Place, Sort, Cabinet, Assembly, Peg Insert, Reach
 ## 문서
 
@@ -211,6 +211,6 @@ docker run --rm --gpus all \
 
 ## 참고
 
-- 생성 산출물은 `outputs/` 아래에 저장되며 git에 커밋하지 않습니다.
-- IK 엔진(`src/agent/kinematics/`)은 Pinocchio 기반이며 `pip install pin`이 필요합니다.
-- MCP 기반 Isaac Sim 검증은 `localhost:8766`에 의존합니다.
+- 생성 산출물은 로컬 실행 시 `outputs/`, Docker 실행 시 `/workspace/artifacts`에 저장됩니다.
+- IK 엔진(`src/agent/kinematics/`)은 Pinocchio 기반이며 `pip install pin`이 필요합니다. Pinocchio 미설치 시 IsaacLab DifferentialIK로 자동 fallback됩니다.
+- Isaac Sim MCP 시각 검증은 로컬 개발 환경 전용이며 Docker에서는 지원되지 않습니다.
