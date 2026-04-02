@@ -15,6 +15,15 @@
 - [ ] **NVIDIA Container Toolkit**
 - [ ] **OpenAI API 키** (또는 Azure OpenAI 자격 증명)
 
+### 시스템 요구 사항
+
+| 구성 요소 | 최소 | 권장 |
+|-----------|------|------|
+| GPU 메모리 | 8 GB | 16+ GB |
+| 디스크 공간 | 50 GB 여유 | 100+ GB 여유 |
+| RAM | 16 GB | 32+ GB |
+| OS | Ubuntu 22.04 | Ubuntu 22.04 |
+
 ### Docker Engine 설치
 
 공식 가이드를 따르세요: [Ubuntu에 Docker Engine 설치](https://docs.docker.com/engine/install/ubuntu/)
@@ -58,12 +67,12 @@ cd Simulation-Generation-Agent
 cp .env.example .env
 ```
 
-`.env`를 열고 API 키를 설정하세요:
+`.env`를 열고 API 키를 설정하세요 (로컬 실행용):
 ```
 OPENAI_API_KEY=sk-your-key-here
 ```
 
-> **참고**: `.env` 파일은 gitignore 처리되며 Docker 이미지에 포함되지 않습니다. 키는 런타임에 `-e` 플래그를 통해 주입됩니다.
+> **Docker 사용자**: Docker 실행 시 `.env` 파일을 만들 필요가 없습니다. API 키는 런타임에 `-e` 플래그를 통해 직접 전달됩니다. `.env` 파일은 로컬(비Docker) 실행에만 필요합니다.
 
 ---
 
@@ -72,6 +81,8 @@ OPENAI_API_KEY=sk-your-key-here
 ```bash
 docker build -t simgen-agent .
 ```
+
+> **디스크 공간**: 빌드에는 약 **50GB**의 여유 디스크 공간이 필요합니다.
 
 이 과정에서 다음이 수행됩니다:
 1. CUDA 12.1 베이스 이미지 풀
@@ -98,7 +109,8 @@ docker images | grep simgen-agent
 ```bash
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
-  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -e OPENAI_API_KEY="your-key-here" \
   simgen-agent \
   "Stack the blocks inside the tray on the table"
 ```
@@ -107,7 +119,8 @@ docker run --rm --gpus all \
 ```bash
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
-  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -e OPENAI_API_KEY="your-key-here" \
   simgen-agent \
   "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
@@ -163,6 +176,30 @@ docker run --rm --gpus all \
 docker run --rm simgen-agent --help
 ```
 
+### 실행 화면 예시
+
+파이프라인이 실행되면 터미널에 깔끔한 진행 상황이 표시됩니다:
+
+```
+🚀 RAPIDS Pipeline — "Stack the blocks inside the tray on the table"
+   Robot: franka | Target: 5 episodes
+
+  ✅ Stage 1: NL → YAML                              1m 12s
+  ✅ Stage 2: YAML → IsaacLab                         9m 44s
+  ✅ Stage 3: Data Collection (5/5 episodes)           7m 30s
+
+──────────────────────────────────────────────────────
+  📊 Result: ✅ completed
+  ⏱️  Total: 18m 26s
+  🔤 Tokens: 123,008 (10 API calls)
+  💰 Cost: ~$0.15
+  📄 Output: results/output.json
+  📁 Logs: outputs/challenge_run_20260402_151823/
+──────────────────────────────────────────────────────
+```
+
+각 스테이지가 실행되는 동안 회전 인디케이터가 표시됩니다. 상세 로그는 파일에 저장되며, 터미널에는 깔끔한 상태 라인만 표시됩니다.
+
 ---
 
 ## 5단계: 결과 확인
@@ -217,7 +254,7 @@ docker build --no-cache -t simgen-agent .
 
 ### 메모리 부족 (OOM)
 
-IsaacLab 시뮬레이션은 최소 6GB GPU 메모리가 필요합니다. OOM 오류가 발생하면:
+IsaacLab 시뮬레이션은 최소 **8GB GPU 메모리** (Stage 2만) 또는 **16GB+** (Stage 3 포함 전체 파이프라인)가 필요합니다. OOM 오류가 발생하면:
 - 다른 GPU 집약적 애플리케이션을 종료하세요
 - `--episodes`를 1로 줄이세요
 - `--mode isaac-lab`으로 Stage 2만 먼저 테스트하세요

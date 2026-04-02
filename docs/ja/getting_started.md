@@ -152,6 +152,27 @@ python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube" --robot fr
 
 自然言語のタスク記述を入力するだけで、NL→YAML→IsaacLab→DataCollectionのパイプライン全体が自動的に実行されます。
 
+실행 시 터미널에 깔끔한 진행 상태가 표시됩니다:
+```
+🚀 RAPIDS Pipeline — "Stack the blocks inside the tray on the table"
+   Robot: franka | Target: 1 episodes
+
+  ✅ Stage 1: NL → YAML                              1m 12s
+  ✅ Stage 2: YAML → IsaacLab                         9m 44s
+  ✅ Stage 3: Data Collection (1/1 episodes)           7m 30s
+
+──────────────────────────────────────────────────────
+  📊 Result: ✅ completed
+  ⏱️  Total: 18m 26s
+  🔤 Tokens: 123,008 (10 API calls)
+  💰 Cost: ~$0.15
+  📄 Output: results/output.json
+──────────────────────────────────────────────────────
+```
+
+
+
+실행 시 터미널에 진행 상태가 표시됩니다:
 オプション:
 ```bash
 ./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5

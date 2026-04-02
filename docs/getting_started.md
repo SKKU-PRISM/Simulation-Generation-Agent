@@ -150,7 +150,25 @@ python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube" --robot fr
 ./run_agent.sh "Stack the blocks inside the tray on the table"
 ```
 
-Simply provide a natural language task description, and the entire NL->YAML->IsaacLab->DataCollection pipeline runs automatically.
+Simply provide a natural language task description, and the entire NL→YAML→IsaacLab→DataCollection pipeline runs automatically.
+
+You'll see clean progress updates:
+```
+🚀 RAPIDS Pipeline — "Stack the blocks inside the tray on the table"
+   Robot: franka | Target: 1 episodes
+
+  ✅ Stage 1: NL → YAML                              1m 12s
+  ✅ Stage 2: YAML → IsaacLab                         9m 44s
+  ✅ Stage 3: Data Collection (1/1 episodes)           7m 30s
+
+──────────────────────────────────────────────────────
+  📊 Result: ✅ completed
+  ⏱️  Total: 18m 26s
+  🔤 Tokens: 123,008 (10 API calls)
+  💰 Cost: ~$0.15
+  📄 Output: results/output.json
+──────────────────────────────────────────────────────
+```
 
 Options:
 ```bash

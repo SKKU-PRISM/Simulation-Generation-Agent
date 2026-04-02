@@ -15,6 +15,15 @@
 - [ ] **NVIDIA Container Toolkit**
 - [ ] **OpenAI API 密钥**（或 Azure OpenAI 凭据）
 
+### 系统要求
+
+| 组件 | 最低要求 | 推荐配置 |
+|------|---------|---------|
+| GPU 显存 | 8 GB | 16+ GB |
+| 磁盘空间 | 50 GB 可用 | 100+ GB 可用 |
+| 内存 | 16 GB | 32+ GB |
+| 操作系统 | Ubuntu 22.04 | Ubuntu 22.04 |
+
 ### 安装 Docker Engine
 
 请参阅官方指南：[在 Ubuntu 上安装 Docker Engine](https://docs.docker.com/engine/install/ubuntu/)
@@ -58,12 +67,12 @@ cd Simulation-Generation-Agent
 cp .env.example .env
 ```
 
-打开 `.env` 并设置您的 API 密钥：
+打开 `.env` 并设置您的 API 密钥（用于本地运行）：
 ```
 OPENAI_API_KEY=sk-your-key-here
 ```
 
-> **注意**：`.env` 文件已被 gitignore，不会被打包到 Docker 镜像中。密钥在运行时通过 `-e` 标志注入。
+> **Docker 用户**：Docker 运行时无需创建 `.env` 文件。API 密钥在运行时通过 `-e` 标志直接传递。`.env` 文件仅在本地（非 Docker）执行时需要。
 
 ---
 
@@ -72,6 +81,8 @@ OPENAI_API_KEY=sk-your-key-here
 ```bash
 docker build -t simgen-agent .
 ```
+
+> **磁盘空间**：构建大约需要 **50GB** 的可用磁盘空间。
 
 此过程将：
 1. 拉取 CUDA 12.1 基础镜像
@@ -98,7 +109,8 @@ docker images | grep simgen-agent
 ```bash
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
-  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -e OPENAI_API_KEY="your-key-here" \
   simgen-agent \
   "Stack the blocks inside the tray on the table"
 ```
@@ -107,7 +119,8 @@ docker run --rm --gpus all \
 ```bash
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
-  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -e OPENAI_API_KEY="your-key-here" \
   simgen-agent \
   "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
@@ -163,6 +176,30 @@ docker run --rm --gpus all \
 docker run --rm simgen-agent --help
 ```
 
+### 运行时的显示内容
+
+流水线运行时，终端会显示简洁的进度更新：
+
+```
+🚀 RAPIDS Pipeline — "Stack the blocks inside the tray on the table"
+   Robot: franka | Target: 5 episodes
+
+  ✅ Stage 1: NL → YAML                              1m 12s
+  ✅ Stage 2: YAML → IsaacLab                         9m 44s
+  ✅ Stage 3: Data Collection (5/5 episodes)           7m 30s
+
+──────────────────────────────────────────────────────
+  📊 Result: ✅ completed
+  ⏱️  Total: 18m 26s
+  🔤 Tokens: 123,008 (10 API calls)
+  💰 Cost: ~$0.15
+  📄 Output: results/output.json
+  📁 Logs: outputs/challenge_run_20260402_151823/
+──────────────────────────────────────────────────────
+```
+
+每个阶段运行时会显示旋转指示器。详细日志保存到文件中，终端只显示简洁的状态行。
+
 ---
 
 ## 第 5 步：查看结果
@@ -217,7 +254,7 @@ docker build --no-cache -t simgen-agent .
 
 ### 内存不足 (OOM)
 
-IsaacLab 仿真至少需要 6GB GPU 显存。如果出现 OOM 错误：
+IsaacLab 仿真至少需要 **8GB GPU 显存**（仅 Stage 2）或 **16GB+**（包含 Stage 3 的完整流水线）。如果出现 OOM 错误：
 - 关闭其他 GPU 密集型应用程序
 - 将 `--episodes` 减少为 1
 - 使用 `--mode isaac-lab` 先单独测试 Stage 2

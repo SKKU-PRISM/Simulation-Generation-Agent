@@ -15,6 +15,15 @@ Before you begin, make sure you have:
 - [ ] **NVIDIA Container Toolkit**
 - [ ] **OpenAI API Key** (or Azure OpenAI credentials)
 
+### System Requirements
+
+| Component | Minimum | Recommended |
+|-----------|---------|-------------|
+| GPU Memory | 8 GB | 16+ GB |
+| Disk Space | 50 GB free | 100+ GB free |
+| RAM | 16 GB | 32+ GB |
+| OS | Ubuntu 22.04 | Ubuntu 22.04 |
+
 ### Install Docker Engine
 
 Follow the official guide: [Install Docker Engine on Ubuntu](https://docs.docker.com/engine/install/ubuntu/)
@@ -58,12 +67,12 @@ cd Simulation-Generation-Agent
 cp .env.example .env
 ```
 
-Open `.env` and set your API key:
+Open `.env` and set your API key (for local runs):
 ```
 OPENAI_API_KEY=sk-your-key-here
 ```
 
-> **Note**: The `.env` file is gitignored and never baked into the Docker image. Keys are injected at runtime via `-e` flags.
+> **Docker users**: You don't need to create `.env` for Docker runs. API keys are passed directly via `-e` flags at runtime. The `.env` file is only needed for local (non-Docker) execution.
 
 ---
 
@@ -72,6 +81,8 @@ OPENAI_API_KEY=sk-your-key-here
 ```bash
 docker build -t simgen-agent .
 ```
+
+> **Disk space**: The build requires approximately **50GB** of free disk space.
 
 This will:
 1. Pull the CUDA 12.1 base image
@@ -98,7 +109,8 @@ Just describe what the robot should do:
 ```bash
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
-  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -e OPENAI_API_KEY="your-key-here" \
   simgen-agent \
   "Stack the blocks inside the tray on the table"
 ```
@@ -107,7 +119,8 @@ With options:
 ```bash
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
-  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -e OPENAI_API_KEY="your-key-here" \
   simgen-agent \
   "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
@@ -163,6 +176,30 @@ docker run --rm --gpus all \
 docker run --rm simgen-agent --help
 ```
 
+### What You'll See
+
+When the pipeline runs, you'll see clean progress updates in your terminal:
+
+```
+🚀 RAPIDS Pipeline — "Stack the blocks inside the tray on the table"
+   Robot: franka | Target: 5 episodes
+
+  ✅ Stage 1: NL → YAML                              1m 12s
+  ✅ Stage 2: YAML → IsaacLab                         9m 44s
+  ✅ Stage 3: Data Collection (5/5 episodes)           7m 30s
+
+──────────────────────────────────────────────────────
+  📊 Result: ✅ completed
+  ⏱️  Total: 18m 26s
+  🔤 Tokens: 123,008 (10 API calls)
+  💰 Cost: ~$0.15
+  📄 Output: results/output.json
+  📁 Logs: outputs/challenge_run_20260402_151823/
+──────────────────────────────────────────────────────
+```
+
+A spinning indicator (⏳) appears while each stage is running. Detailed logs are saved to files — only clean status lines appear in the terminal.
+
 ---
 
 ## Step 5: View Results
@@ -217,7 +254,7 @@ docker build --no-cache -t simgen-agent .
 
 ### Out of memory (OOM)
 
-IsaacLab simulation requires at least 6GB GPU memory. If you get OOM errors:
+IsaacLab simulation requires at least **8GB GPU memory** (Stage 2 only) or **16GB+** (full pipeline with Stage 3). If you get OOM errors:
 - Close other GPU-intensive applications
 - Reduce `--episodes` to 1
 - Use `--mode isaac-lab` to test Stage 2 alone first
