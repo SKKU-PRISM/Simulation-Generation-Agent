@@ -62,6 +62,9 @@ docker run --rm --gpus all \
 
 자연어 태스크 설명을 구조화된 YAML 태스크 명세로 변환합니다 (파이프라인 Stage 1).
 
+> **참고**: `run_agent.sh "자연어 태스크"`를 사용하면 Stage 1→2→3 전체가 자동 실행됩니다.
+> 아래는 Stage 1만 개별 실행하는 방법입니다.
+
 ### 대표 명령어
 
 ```bash
@@ -100,7 +103,10 @@ python3 scripts/task_spec_agent/task_spec_agent.py "Reach the goal" --verbose
   → task.yaml
 ```
 
-## 1. IsaacLab Pipeline (권장 경로)
+## 1. IsaacLab Pipeline (Stage 2)
+
+> **run_agent.sh로 실행**: `./run_agent.sh --mode isaac-lab --task <yaml>`
+> 아래는 Python 스크립트 직접 실행 방법입니다.
 
 ### 대표 명령어
 
@@ -188,7 +194,10 @@ outputs/isaac_sim/<task_slug>_<timestamp>/
 └── run_report.json
 ```
 
-## 3. Data Collection
+## 3. Data Collection (Stage 3)
+
+> **run_agent.sh로 실행**: `./run_agent.sh --mode data-collection --task <yaml>`
+> 아래는 Python 스크립트 직접 실행 방법입니다.
 
 ### 대표 명령어
 

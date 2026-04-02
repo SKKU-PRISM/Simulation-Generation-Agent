@@ -66,69 +66,64 @@ docker run --rm --gpus all -e OPENAI_API_KEY="sk-..." \
 ```bash
 git clone --recurse-submodules <repo-url>
 cd Simulation-Generation-Agent
-
-# submodule이 빠졌을 경우
-git submodule update --init --recursive
-
 pip install -e .
-cp .env.example .env
+cp .env.example .env    # OPENAI_API_KEY를 설정하세요
 ```
 
-필수 `.env`:
+### 2. 실행
 
 ```bash
-OPENAI_API_KEY=your-openai-api-key
-OPENAI_BASE_URL=https://api.openai.com/v1/
+./run_agent.sh "Stack the blocks inside the tray on the table"
 ```
 
-### 2. IsaacLab 연결
+옵션:
+```bash
+./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
+```
+
+### 3. Docker로 실행
 
 ```bash
-export ISAACLAB_PATH=~/workspace/IsaacLab
-python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml --dry-run
+git submodule update --init --recursive
+docker build -t simgen-agent .
+
+docker run --rm --gpus all \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -e OPENAI_API_KEY="your-key" \
+  simgen-agent \
+  "Stack the blocks inside the tray on the table" --episodes 5
 ```
 
-### 3. Full Pipeline 실행 (NL → YAML → IsaacLab → CaP → Video)
+### 4. 개별 Stage 실행 (고급)
 
 ```bash
-bash scripts/run_full_test.sh
+# Stage 2만: YAML → IsaacLab 환경 코드
+./run_agent.sh --mode isaac-lab --task tasks/franka/stack/franka_stack.yaml
+
+# Stage 3만: 데이터 수집
+./run_agent.sh --mode data-collection --task tasks/franka/stack/franka_stack.yaml
+
+# 대규모 배치 수집
+./run_agent.sh --mode e2e-batch --config configs/e2e_batch_franka50.yaml --resume
 ```
 
-13개 Franka 태스크에 대해 자연어 입력 → YAML 생성 → 환경 코드 생성 → CaP 실행 → 데이터 수집을 순차적으로 실행합니다.
-
-### 4. 개별 Stage 실행
+<details>
+<summary>Python 스크립트 직접 실행 (개발자용)</summary>
 
 ```bash
 # Stage 1: NL → YAML
-python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube and stack it" \
-  --robot franka --output task.yaml
+python3 scripts/task_spec_agent/task_spec_agent.py "Stack the blocks" --robot franka --output task.yaml
 
-# Stage 2: YAML → IsaacLab 환경 코드
+# Stage 2: YAML → IsaacLab
 python3 scripts/run_isaac_lab.py task.yaml --evaluate
 
 # Stage 3: 데이터 수집
-pip install -e ".[data-collection]" && pip install pin
-python3 scripts/run_data_collection.py task.yaml \
-  --env-dir outputs/isaaclab/<run_dir> --target-success 5
+python3 scripts/run_data_collection.py task.yaml --env-dir outputs/isaaclab/<run_dir> --target-success 5
+
+# 13개 태스크 일괄 실행
+bash scripts/run_full_test.sh
 ```
-
-### 5. E2E Batch (대규모 데이터 수집)
-
-```bash
-python3 scripts/run_e2e_batch.py configs/e2e_batch_franka50.yaml
-python3 scripts/run_e2e_batch.py configs/e2e_batch_franka50.yaml --resume  # 중단 후 재개
-```
-
-## 실행 진입점
-
-| 스크립트 | 실행 범위 | 설명 |
-|---------|----------|------|
-| `scripts/task_spec_agent/task_spec_agent.py` | Stage 1 | NL → YAML 변환 |
-| `scripts/run_isaac_lab.py` | Stage 2 | YAML → 환경 코드 생성 + 평가 |
-| `scripts/run_data_collection.py` | Stage 3 | 환경 위에서 데이터 수집 |
-| `scripts/run_full_test.sh` | Stage 1→2→3 | 13개 태스크 Full Pipeline |
-| `scripts/run_e2e_batch.py` | Stage 2→3 + 후처리 | config 기반 대규모 배치 |
-| `run_agent.sh` | Stage 2→3 + 후처리 | Docker/릴리스 엔트리포인트 |
+</details>
 
 ## 지원 로봇
 
@@ -144,7 +139,7 @@ python3 scripts/run_e2e_batch.py configs/e2e_batch_franka50.yaml --resume  # 중
 ```bash
 export TOKEN_USAGE_FILE=outputs/token_usage.jsonl
 export TOKEN_USAGE_LOG=1  # 실시간 콘솔 로그
-bash scripts/run_full_test.sh
+./run_agent.sh "Stack the blocks inside the tray on the table"
 # 실행 완료 시 step별/model별 토큰 리포트 출력
 ```
 
@@ -154,7 +149,7 @@ bash scripts/run_full_test.sh
 Simulation-Generation-Agent/
 ├── Dockerfile                    # Docker 이미지 빌드 설정
 ├── requirements.txt              # 파이썬 의존성 패키지 목록
-├── run_agent.sh                  # Docker/릴리스 엔트리포인트
+├── run_agent.sh                  # 메인 실행 진입점 (전체 파이프라인)
 ├── .env.example                  # 환경변수 템플릿
 ├── LICENSE                       # MIT 라이선스
 ├── src/main.py                   # Challenge 제출용 진입점
@@ -227,6 +222,14 @@ docker build -t simgen-agent .
 ### 실행
 
 ```bash
+# 자연어 입력 → 전체 파이프라인
+docker run --rm --gpus all \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -e OPENAI_API_KEY="sk-..." \
+  simgen-agent \
+  "Stack the blocks inside the tray on the table" --episodes 5
+
+# JSON 입력 (심사 제출용)
 docker run --rm --gpus all \
   -v $(pwd)/input_data:/workspace/Simulation-Generation-Agent/data \
   -v $(pwd)/output_data:/workspace/Simulation-Generation-Agent/results \

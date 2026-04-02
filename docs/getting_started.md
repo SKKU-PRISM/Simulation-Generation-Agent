@@ -162,21 +162,20 @@ bash scripts/run_full_test.sh
 2. **YAML → IsaacLab**: LLM이 환경 Python 코드를 생성하고 실행 검증
 3. **CaP → Data**: LLM이 스킬 코드를 생성하고, IK로 실행하고, 성공 판정 후 데이터 수집
 
-### IsaacLab 단독 실행
+### IsaacLab 단독 실행 (Stage 2만)
 
 ```bash
-python3 scripts/run_isaac_lab.py tasks/franka/stack/franka_stack.yaml --evaluate
+./run_agent.sh --mode isaac-lab --task tasks/franka/stack/franka_stack.yaml
 ```
 
 성공 기준:
 - `outputs/isaaclab/<run_dir>/env_cfg.py`
-- `outputs/isaaclab/<run_dir>/eval_report.json`
+- `outputs/isaaclab/<run_dir>/result.json`
 
-### Data Collection 단독 실행
+### Data Collection 단독 실행 (Stage 3만)
 
 ```bash
-python3 scripts/run_data_collection.py tasks/franka/stack/franka_stack.yaml \
-  --env-dir outputs/isaaclab/<run_dir>
+./run_agent.sh --mode data-collection --task tasks/franka/stack/franka_stack.yaml
 ```
 
 성공 기준:

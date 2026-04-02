@@ -328,15 +328,14 @@ Stage 1, 2, 3이 공유하는 기반 모듈들입니다.
 
 | 스크립트 | 실행 범위 | 설명 |
 |---------|----------|------|
-| `scripts/task_spec_agent/task_spec_agent.py` | Stage 1만 | NL → YAML |
-| `scripts/run_isaac_lab.py` | Stage 2만 | YAML → 환경 코드 생성/검증 |
-| `scripts/run_data_collection.py` | Stage 3만 | 기존 환경으로 데이터 수집 |
-| `scripts/run_full_test.sh` | Stage 1 → 2 → 3 | 13개 태스크 순차 Full Pipeline |
-| `scripts/run_e2e_batch.py` | Stage 2 → 3 + 후처리 | config 기반 대규모 배치 수집 |
-| `run_agent.sh` | Stage 2 → 3 + 후처리 | Docker/릴리스 엔트리포인트 |
+| **`run_agent.sh`** | **Stage 1 → 2 → 3** | **메인 실행 진입점 (자연어 입력 → 전체 파이프라인)** |
+| `run_agent.sh --mode isaac-lab` | Stage 2만 | YAML → 환경 코드 생성/검증 |
+| `run_agent.sh --mode data-collection` | Stage 3만 | 기존 환경으로 데이터 수집 |
+| `run_agent.sh --mode e2e-batch` | Stage 2 → 3 + 후처리 | config 기반 대규모 배치 수집 |
+| `scripts/run_full_test.sh` | Stage 1 → 2 → 3 | 13개 태스크 순차 벤치마크 |
 
-> `run_full_test.sh`는 Stage 1(NL→YAML)부터 시작하는 유일한 진입점입니다.
-> `run_e2e_batch.py`와 `run_agent.sh`는 이미 존재하는 task YAML로부터 시작합니다.
+> `run_agent.sh "자연어 태스크"`가 Stage 1(NL→YAML)부터 시작하는 **메인 진입점**입니다.
+> `--mode` 옵션으로 개별 Stage를 실행할 수도 있습니다.
 
 ---
 
