@@ -183,6 +183,34 @@ docker run --rm --gpus all \
   --mode e2e-batch --config configs/docker/e2e_batch_smoke.yaml
 ```
 
+### 使用 Azure OpenAI
+
+如需使用 Azure OpenAI 而非 OpenAI 平台，通过 `-e` 标志传递 Azure 凭据：
+
+```bash
+docker run --rm --gpus all \
+  -v $(pwd)/artifacts:/workspace/artifacts \
+  -e AZURE_OPENAI_API_KEY="your-azure-key" \
+  -e AZURE_OPENAI_BASE_URL="https://your-resource.openai.azure.com/openai/v1/" \
+  simgen-agent \
+  "Stack the blocks inside the tray on the table"
+```
+
+> 只需 `OPENAI_API_KEY` 或 `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_BASE_URL` 其中之一。
+
+### 选择模型
+
+默认模型为 `gpt-5-mini`。可通过 `OPENAI_MODEL` 环境变量覆盖：
+
+```bash
+docker run --rm --gpus all \
+  -v $(pwd)/artifacts:/workspace/artifacts \
+  -e OPENAI_API_KEY="your-key" \
+  -e OPENAI_MODEL="gpt-4o" \
+  simgen-agent \
+  "Stack the blocks inside the tray on the table"
+```
+
 ### 显示帮助
 
 ```bash

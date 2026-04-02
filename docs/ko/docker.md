@@ -183,6 +183,34 @@ docker run --rm --gpus all \
   --mode e2e-batch --config configs/docker/e2e_batch_smoke.yaml
 ```
 
+### Azure OpenAI 사용
+
+OpenAI 플랫폼 대신 Azure OpenAI를 사용하려면 `-e` 플래그로 Azure 자격 증명을 전달합니다:
+
+```bash
+docker run --rm --gpus all \
+  -v $(pwd)/artifacts:/workspace/artifacts \
+  -e AZURE_OPENAI_API_KEY="your-azure-key" \
+  -e AZURE_OPENAI_BASE_URL="https://your-resource.openai.azure.com/openai/v1/" \
+  simgen-agent \
+  "Stack the blocks inside the tray on the table"
+```
+
+> `OPENAI_API_KEY` 또는 `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_BASE_URL` 중 하나만 필요합니다.
+
+### 모델 선택
+
+기본 모델은 `gpt-5-mini`입니다. `OPENAI_MODEL` 환경변수로 변경할 수 있습니다:
+
+```bash
+docker run --rm --gpus all \
+  -v $(pwd)/artifacts:/workspace/artifacts \
+  -e OPENAI_API_KEY="your-key" \
+  -e OPENAI_MODEL="gpt-4o" \
+  simgen-agent \
+  "Stack the blocks inside the tray on the table"
+```
+
 ### 도움말 표시
 
 ```bash

@@ -183,6 +183,34 @@ docker run --rm --gpus all \
   --mode e2e-batch --config configs/docker/e2e_batch_smoke.yaml
 ```
 
+### Using Azure OpenAI
+
+To use Azure OpenAI instead of the OpenAI platform, pass Azure credentials via `-e` flags:
+
+```bash
+docker run --rm --gpus all \
+  -v $(pwd)/artifacts:/workspace/artifacts \
+  -e AZURE_OPENAI_API_KEY="your-azure-key" \
+  -e AZURE_OPENAI_BASE_URL="https://your-resource.openai.azure.com/openai/v1/" \
+  simgen-agent \
+  "Stack the blocks inside the tray on the table"
+```
+
+> You need either `OPENAI_API_KEY` or `AZURE_OPENAI_API_KEY` + `AZURE_OPENAI_BASE_URL`. Not both.
+
+### Choosing a Model
+
+The default model is `gpt-5-mini`. To override, pass the `OPENAI_MODEL` environment variable:
+
+```bash
+docker run --rm --gpus all \
+  -v $(pwd)/artifacts:/workspace/artifacts \
+  -e OPENAI_API_KEY="your-key" \
+  -e OPENAI_MODEL="gpt-4o" \
+  simgen-agent \
+  "Stack the blocks inside the tray on the table"
+```
+
 ### Show Help
 
 ```bash
