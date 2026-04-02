@@ -9,6 +9,7 @@
 | [architecture.md](architecture.md) | Users exploring the system | 3-Stage pipeline architecture, module relationships |
 | [getting_started.md](getting_started.md) | First-time users | Installation, environment variables, submodule setup, first run |
 | [usage.md](usage.md) | Active users | CLI usage, output structure, result interpretation |
+| [dataset.md](dataset.md) | Data engineers | Dataset export, LeRobot conversion, HuggingFace upload |
 | [../README.docker.md](../README.docker.md) | Docker users | Docker build/run guide |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Contributors | Contribution guidelines |
 | [../LICENSE](../LICENSE) | License | MIT License |

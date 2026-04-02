@@ -201,6 +201,7 @@ Simulation-Generation-Agent/
 | [architecture.md](architecture.md) | 3-Stage 파이프라인 아키텍처, 모듈 관계, 데이터 흐름 |
 | [getting_started.md](getting_started.md) | 설치, 환경변수, submodule 세팅, 첫 실행 |
 | [usage.md](usage.md) | CLI 사용법, 옵션, 출력 구조, 결과 해석 |
+| [dataset.md](dataset.md) | 데이터셋 내보내기, LeRobot 변환, HuggingFace 업로드 |
 | [docker.md](docker.md) | Docker 빌드/실행 가이드 |
 | [LICENSE](../../LICENSE) | MIT 라이선스 |
 

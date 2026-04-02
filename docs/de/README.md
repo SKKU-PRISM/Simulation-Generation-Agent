@@ -198,6 +198,7 @@ Simulation-Generation-Agent/
 | [architecture.md](architecture.md) | 3-Stufen-Pipeline-Architektur, Modulbeziehungen, Datenfluss |
 | [getting_started.md](getting_started.md) | Installation, Umgebungsvariablen, Submodul-Einrichtung, erster Lauf |
 | [usage.md](usage.md) | CLI-Nutzung, Optionen, Ausgabestruktur, Ergebnisinterpretation |
+| [dataset.md](dataset.md) | Datensatz-Export, LeRobot-Konvertierung, HuggingFace-Upload |
 | [docker.md](docker.md) | Docker-Build-/Ausfuehrungsanleitung |
 | [CONTRIBUTING.md](../../CONTRIBUTING.md) | Beitragsrichtlinien |
 | [LICENSE](../../LICENSE) | MIT-Lizenz |

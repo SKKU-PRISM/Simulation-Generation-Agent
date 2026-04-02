@@ -198,6 +198,7 @@ Simulation-Generation-Agent/
 | [architecture.md](architecture.md) | 3ステージパイプラインアーキテクチャ、モジュール間関係、データフロー |
 | [getting_started.md](getting_started.md) | インストール、環境変数、サブモジュールセットアップ、初回実行 |
 | [usage.md](usage.md) | CLI使用方法、オプション、出力構造、結果の解釈 |
+| [dataset.md](dataset.md) | データセットエクスポート、LeRobot変換、HuggingFaceアップロード |
 | [docker.md](docker.md) | Dockerビルド/実行ガイド |
 | [CONTRIBUTING.md](../../CONTRIBUTING.md) | コントリビューションガイドライン |
 | [LICENSE](../../LICENSE) | MITライセンス |

@@ -198,6 +198,7 @@ Simulation-Generation-Agent/
 | [architecture.md](architecture.md) | 3 阶段流水线架构、模块关系、数据流 |
 | [getting_started.md](getting_started.md) | 安装、环境变量、子模块设置、首次运行 |
 | [usage.md](usage.md) | CLI 用法、选项、输出结构、结果解读 |
+| [dataset.md](dataset.md) | 数据集导出、LeRobot 转换、HuggingFace 上传 |
 | [docker.md](docker.md) | Docker 构建/运行指南 |
 | [CONTRIBUTING.md](../../CONTRIBUTING.md) | 贡献指南 |
 | [LICENSE](../../LICENSE) | MIT 许可证 |

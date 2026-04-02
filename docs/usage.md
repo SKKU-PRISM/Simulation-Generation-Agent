@@ -276,62 +276,39 @@ Interpretation rules:
 - `pipeline_completed=true` does not necessarily mean `target_met=true`.
 - The default completion criterion is the creation of `raw_dataset/`. LeRobot conversion may be skipped depending on the environment.
 
-## 4. Dataset Export / Preprocess
+## 4. Dataset Export / LeRobot Conversion / HuggingFace Upload
 
-### Export
+After Stage 3 completes, the raw dataset is at `outputs/data_collection/<run>/raw_dataset/`. From here you can export, convert to LeRobot format, and upload to HuggingFace.
+
+For the **complete step-by-step guide** with output structure details, validation, and batch automation, see **[dataset.md](dataset.md)**.
+
+### Quick reference
 
 ```bash
+# Export to normalized schema
 python3 scripts/export_dataset.py \
-  outputs/data_collection/<run_dir>/raw_dataset \
-  --source-type sim_raw \
-  --output-dir outputs/exported_datasets
-```
+  outputs/data_collection/<run>/raw_dataset \
+  --source-type sim_raw --output-dir outputs/exported_datasets
 
-The default schema is `adc_compatible`.
-
-### Preprocess
-
-```bash
+# Preprocess into train/val splits
 python3 scripts/preprocess_dataset.py \
   outputs/exported_datasets/<export_dir> \
-  --output-dir outputs/preprocessed_datasets
-```
+  --output-dir outputs/preprocessed_datasets --success-only
 
-Outputs:
-
-- `manifest.json`
-- `samples.jsonl`
-- `train.jsonl`
-- `val.jsonl`
-
-In the default `adc_compatible` path, `observation.gripper_state`, `observation.tcp.robot_xyzrpy`, and `skill.goal_position.robot_xyzrpy` are included in the training input manifest.
-
-The default export uses the `adc_compatible` schema, and `canonical_training` is for extended analysis.
-
-### Optional: Local LeRobot conversion
-
-```bash
+# Convert to LeRobot v3.0 format (requires: pip install "lerobot>=0.4.0,<0.5.0")
 python3 scripts/convert_lerobot_dataset.py \
-  outputs/data_collection/<run_dir>/raw_dataset \
-  --repo-id local/franka_stack_sim
+  outputs/data_collection/<run>/raw_dataset \
+  --repo-id local/my_dataset --output-root outputs/lerobot_datasets
+
+# Validate
 python3 scripts/check_lerobot_dataset.py \
-  outputs/data_collection/<run_dir>/local/franka_stack_sim \
-  --repo-id local/franka_stack_sim
-```
+  outputs/lerobot_datasets/local/my_dataset --repo-id local/my_dataset
 
-The `lerobot` package must be installed in the host Python environment.
-
-### Optional: Publish to Hub
-
-```bash
+# Upload to HuggingFace (requires: pip install huggingface_hub, export HF_TOKEN=...)
 python3 scripts/publish_lerobot_dataset.py \
-  outputs/data_collection/<run_dir>/local/franka_stack_sim \
-  --repo-id <org>/<dataset_name> \
-  --local-repo-id local/franka_stack_sim \
-  --private
+  outputs/lerobot_datasets/local/my_dataset \
+  --repo-id your-org/my_dataset --private
 ```
-
-Default authentication uses the `HF_TOKEN` env var or an existing `huggingface-cli login` session.
 
 ## 5. Recommended Workflow Order
 
