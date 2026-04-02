@@ -17,16 +17,19 @@ See [docs/getting_started.md](docs/getting_started.md) for full setup and [docs/
 
 ## 파이프라인 개요
 
-```
-  [자연어 입력]                                              [학습 가능 데이터셋]
-  "큐브를 집어서 쌓아라"                                       raw_dataset/
-      │                                                          ▲
-      ▼                                                          │
- ┌──────────┐     ┌──────────────┐     ┌──────────────┐    ┌───────────┐
- │ Stage 1  │────▶│   Stage 2    │────▶│   Stage 3    │───▶│  Dataset  │
- │ Task Def │     │  Sim Gen     │     │ Data Collect  │    │  Export   │
- │ NL→YAML  │     │ YAML→Env    │     │ CaP→Episodes  │    │ (LeRobot) │
- └──────────┘     └──────────────┘     └──────────────┘    └───────────┘
+```mermaid
+flowchart LR
+    NL["🗣️ Natural Language Input"]
+    S1["Stage 1\nTask Definition\nNL → YAML"]
+    S2["Stage 2\nSim Generation\nYAML → IsaacLab"]
+    S3["Stage 3\nData Collection\nCaP → Episodes"]
+    DS["📦 Dataset Export\nLeRobot Format"]
+
+    NL --> S1 --> S2 --> S3 --> DS
+
+    S2 -.-> EV["Evaluator\n4-Category 100pt"]
+    S2 -.-> VLM["SceneVerifier\nCode + VLM"]
+    S3 -.-> JG["Episode Judge\nGeometry + VLM"]
 ```
 
 | Stage | 무엇을 하는가 | 핵심 기술 |
