@@ -1240,6 +1240,81 @@ Use this structure/pattern, but fill in values from the YAML above.
         merged.update(fixed_files)
         return merged
 
+    def refine_from_verification(
+        self, code_dict: dict[str, str], code_eval: dict, yaml_text: str
+    ) -> dict[str, str]:
+        """Refine generated code based on SceneVerifier 4-category feedback.
+
+        Args:
+            code_dict: Current code files (env_cfg.py, run_env.py, mdp/*.py).
+            code_eval: SceneVerifier code_evaluation result with 4-category scores.
+            yaml_text: Original YAML task specification.
+
+        Returns:
+            Updated code_dict with refined files.
+        """
+        # Build feedback from 4-category scores
+        feedback_lines = ["=== SceneVerifier Code Evaluation Feedback ==="]
+        categories = {
+            "scene_fidelity": ("Scene Fidelity", 30),
+            "mdp_correctness": ("MDP Correctness", 25),
+            "task_alignment": ("Task Alignment", 25),
+            "runtime_validity": ("Runtime Validity", 20),
+        }
+        for key, (label, max_score) in categories.items():
+            entry = code_eval.get(key, {})
+            score = entry.get("score", 0)
+            details = entry.get("details", "")
+            feedback_lines.append(f"  {label}: {score}/{max_score} — {details}")
+
+        issues = code_eval.get("issues", [])
+        if issues:
+            feedback_lines.append("\n=== Specific Issues to Fix ===")
+            for issue in issues:
+                feedback_lines.append(f"  - {issue}")
+
+        total = code_eval.get("total_score", 0)
+        feedback_lines.append(f"\n  Total: {total}/100")
+        feedback_lines.append("\nPlease fix the issues above to improve the score.")
+        feedback_lines.append("Focus on the lowest-scoring categories first.")
+
+        feedback = "\n".join(feedback_lines)
+        console.print(f"  [yellow]Refinement:[/yellow] Sending verification feedback to LLM...")
+
+        # Build code section
+        original_parts = []
+        for filename, code in code_dict.items():
+            original_parts.append(f"```python:{filename}\n{code}\n```")
+        original_code = "\n\n".join(original_parts)
+
+        prompt = f"""The following IsaacLab environment code was generated from a YAML task specification,
+but the quality evaluation found issues. Please fix the code to address the feedback below.
+
+=== YAML Task Specification ===
+{yaml_text[:2000]}
+
+=== Current Generated Code ===
+{original_code}
+
+=== Quality Evaluation Feedback ===
+{feedback}
+
+Please output the COMPLETE fixed code for each file that needs changes.
+Use the format: ```python:filename.py ... ```
+Only include files that need modifications."""
+
+        response = self.llm.generate(
+            system_prompt=self.system_prompt,
+            user_prompt=prompt,
+            temperature=0.1,
+            step="isaaclab_verify_refine",
+        )
+
+        fixed_files = self.parse_generated_code(response)
+        merged = dict(code_dict)
+        merged.update(fixed_files)
+        return merged
+
     # ----- Main Pipeline -----
 
     def run(self, yaml_path: str, dry_run: bool = False,
@@ -1395,6 +1470,47 @@ Use this structure/pattern, but fill in values from the YAML above.
                             vlm_pass = img_eval.get("vlm_pass", False)
                             console.print(f"  Image evaluation: front={front_s}/100, top={top_s}/100, pass={vlm_pass}")
 
+                            # Step 7.1: Verification-based refinement
+                            static_score = (
+                                code_eval.get("scene_fidelity", {}).get("score", 0)
+                                + code_eval.get("mdp_correctness", {}).get("score", 0)
+                                + code_eval.get("task_alignment", {}).get("score", 0)
+                            )
+                            verify_threshold = 60  # out of 80 (runtime excluded)
+                            verify_max_refine = 2
+
+                            if (
+                                static_score < verify_threshold
+                                and not use_assembling_kits_template
+                                and not hasattr(self, "_verify_refine_count")
+                            ):
+                                self._verify_refine_count = 0
+
+                            if (
+                                static_score < verify_threshold
+                                and not use_assembling_kits_template
+                                and getattr(self, "_verify_refine_count", 0) < verify_max_refine
+                            ):
+                                self._verify_refine_count = getattr(self, "_verify_refine_count", 0) + 1
+                                console.print(
+                                    f"  [yellow]Score {static_score}/80 < {verify_threshold}.[/yellow] "
+                                    f"Refinement round {self._verify_refine_count}/{verify_max_refine}..."
+                                )
+                                yaml_text_for_refine = Path(yaml_path).read_text()
+                                code_dict = self.refine_from_verification(
+                                    code_dict, code_eval, yaml_text_for_refine
+                                )
+                                self.write_output(code_dict, output_dir)
+                                fixes = self._validate_generated_code(output_dir, robot, task_doc)
+                                for fix in fixes:
+                                    console.print(f"  [yellow]Auto-fix[/yellow]: {fix}")
+                                # Re-enter execution loop (next attempt)
+                                continue
+                            else:
+                                # Clean up refine counter
+                                if hasattr(self, "_verify_refine_count"):
+                                    del self._verify_refine_count
+
                             if verification["overall_pass"]:
                                 console.print("  [green]Scene verification PASSED[/green]")
                             else:
@@ -1408,6 +1524,10 @@ Use this structure/pattern, but fill in values from the YAML above.
                 except Exception as e:
                     console.print(f"  [yellow]Step 7 error:[/yellow] {e}")
                     result["scene_verification_error"] = str(e)
+
+                # Clean up refine counter on exit
+                if hasattr(self, "_verify_refine_count"):
+                    del self._verify_refine_count
 
                 # Save result.json
                 result["timestamp"] = timestamp
