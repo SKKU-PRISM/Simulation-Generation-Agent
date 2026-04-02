@@ -78,20 +78,33 @@ OPENAI_API_KEY=sk-your-key-here
 
 ## ステップ 3：Docker イメージのビルド
 
+このリポジトリには、完全な環境を自動的にセットアップする `Dockerfile` が含まれています。
+
 ```bash
 docker build -t simgen-agent .
 ```
 
-> **ディスク容量**：ビルドには約 **50GB** の空きディスク容量が必要です。
+> **ディスク容量**：約 50GB 必要。**初回ビルド**：約 30〜60 分。Docker レイヤーキャッシュにより、以降のビルドはずっと高速です。
 
-この処理では以下が行われます：
-1. CUDA 12.1 ベースイメージのプル
-2. Python 3.11 およびシステムライブラリのインストール
-3. pip による Isaac Sim 5.1.0 のインストール
-4. IsaacLab v2.3.2 のクローンとインストール
-5. プロジェクト依存関係のインストール
+### Dockerfile の内容
 
-> **初回ビルドにはインターネット速度に応じて約 30〜60 分かかります**。Docker レイヤーキャッシュにより、以降のビルドはずっと高速です。
+リポジトリルートにある `Dockerfile` は、以下を含む自己完結型のイメージをビルドします：
+
+| Layer | What's installed |
+|-------|-----------------|
+| Base | `nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04` |
+| Python | 3.11 (venv at `/opt/isaaclab-env`) |
+| Isaac Sim | 5.1.0 (pip from `pypi.nvidia.com`) |
+| IsaacLab | v2.3.2 (source build from GitHub) |
+| PyTorch | 2.7.0 (CUDA 12.8) |
+| Project | `requirements.txt` + all source code |
+| Entry point | `ENTRYPOINT ["./run_agent.sh"]` |
+
+コンテナのエントリポイントは `run_agent.sh` です。したがって、以下のように実行すると：
+```bash
+docker run simgen-agent "Stack the blocks..."
+```
+コンテナ内部で自動的に `run_agent.sh "Stack the blocks..."` が実行されます。
 
 イメージがビルドされたことを確認：
 ```bash

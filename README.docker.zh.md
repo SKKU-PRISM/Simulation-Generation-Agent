@@ -78,20 +78,33 @@ OPENAI_API_KEY=sk-your-key-here
 
 ## 第 3 步：构建 Docker 镜像
 
+本仓库包含一个 `Dockerfile`，可自动设置完整的运行环境。
+
 ```bash
 docker build -t simgen-agent .
 ```
 
-> **磁盘空间**：构建大约需要 **50GB** 的可用磁盘空间。
+> **磁盘空间**：约需 50GB。**首次构建**：约 30-60 分钟。由于 Docker 层缓存，后续构建会快得多。
 
-此过程将：
-1. 拉取 CUDA 12.1 基础镜像
-2. 安装 Python 3.11 和系统库
-3. 通过 pip 安装 Isaac Sim 5.1.0
-4. 克隆并安装 IsaacLab v2.3.2
-5. 安装项目依赖
+### Dockerfile 的作用
 
-> **首次构建大约需要 30-60 分钟**，取决于您的网络速度。由于 Docker 层缓存，后续构建会快得多。
+仓库根目录中的 `Dockerfile` 构建一个包含以下内容的独立镜像：
+
+| Layer | What's installed |
+|-------|-----------------|
+| Base | `nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04` |
+| Python | 3.11 (venv at `/opt/isaaclab-env`) |
+| Isaac Sim | 5.1.0 (pip from `pypi.nvidia.com`) |
+| IsaacLab | v2.3.2 (source build from GitHub) |
+| PyTorch | 2.7.0 (CUDA 12.8) |
+| Project | `requirements.txt` + all source code |
+| Entry point | `ENTRYPOINT ["./run_agent.sh"]` |
+
+容器的入口点是 `run_agent.sh`，因此当您运行：
+```bash
+docker run simgen-agent "Stack the blocks..."
+```
+它会在容器内自动执行 `run_agent.sh "Stack the blocks..."`。
 
 验证镜像已构建：
 ```bash

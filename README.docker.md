@@ -78,20 +78,33 @@ OPENAI_API_KEY=sk-your-key-here
 
 ## Step 3: Build the Docker Image
 
+This repository includes a `Dockerfile` that sets up the complete environment automatically.
+
 ```bash
 docker build -t simgen-agent .
 ```
 
-> **Disk space**: The build requires approximately **50GB** of free disk space.
+> **Disk space**: ~50GB required. **First build**: ~30-60 minutes. Subsequent builds are much faster due to Docker layer caching.
 
-This will:
-1. Pull the CUDA 12.1 base image
-2. Install Python 3.11 and system libraries
-3. Install Isaac Sim 5.1.0 via pip
-4. Clone and install IsaacLab v2.3.2
-5. Install project dependencies
+### What the Dockerfile does
 
-> **First build takes ~30-60 minutes** depending on your internet speed. Subsequent builds are much faster due to Docker layer caching.
+The `Dockerfile` in the repository root builds a self-contained image with:
+
+| Layer | What's installed |
+|-------|-----------------|
+| Base | `nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04` |
+| Python | 3.11 (venv at `/opt/isaaclab-env`) |
+| Isaac Sim | 5.1.0 (pip from `pypi.nvidia.com`) |
+| IsaacLab | v2.3.2 (source build from GitHub) |
+| PyTorch | 2.7.0 (CUDA 12.8) |
+| Project | `requirements.txt` + all source code |
+| Entry point | `ENTRYPOINT ["./run_agent.sh"]` |
+
+The container's entry point is `run_agent.sh`, so when you run:
+```bash
+docker run simgen-agent "Stack the blocks..."
+```
+it automatically executes `run_agent.sh "Stack the blocks..."` inside the container.
 
 Verify the image was built:
 ```bash
