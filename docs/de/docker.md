@@ -122,6 +122,7 @@ Beschreiben Sie einfach, was der Roboter tun soll:
 ```bash
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
   -e OPENAI_API_KEY="your-key-here" \
   simgen-agent \
@@ -132,6 +133,7 @@ Mit Optionen:
 ```bash
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
   -e OPENAI_API_KEY="your-key-here" \
   simgen-agent \
@@ -143,6 +145,7 @@ docker run --rm --gpus all \
 ```bash
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
   simgen-agent \
   data/input_sample.json results/output.json
@@ -164,6 +167,7 @@ Die Standard-`data/input_sample.json` enthaelt eine Beispiel-FrankaStackTray-Auf
 # Nur Stage 2: IsaacLab-Umgebungscode generieren
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
   simgen-agent \
   --mode isaac-lab --task tasks/franka/stack/franka_stack.yaml
@@ -171,6 +175,7 @@ docker run --rm --gpus all \
 # Nur Stage 3: Datensammlung
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
   simgen-agent \
   --mode data-collection --task tasks/franka/stack/franka_stack.yaml
@@ -178,6 +183,7 @@ docker run --rm --gpus all \
 # Batch-Ausfuehrung (mehrere Aufgaben)
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
   simgen-agent \
   --mode e2e-batch --config configs/docker/e2e_batch_smoke.yaml
@@ -190,6 +196,7 @@ Um Azure OpenAI anstelle der OpenAI-Plattform zu verwenden, übergeben Sie die A
 ```bash
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e AZURE_OPENAI_API_KEY="your-azure-key" \
   -e AZURE_OPENAI_BASE_URL="https://your-resource.openai.azure.com/openai/v1/" \
   -e AZURE_OPENAI_ENDPOINT="https://your-resource.openai.azure.com/" \
@@ -214,6 +221,7 @@ Das Standardmodell ist `gpt-5-mini`. Sie können es mit der Umgebungsvariable `O
 ```bash
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e OPENAI_API_KEY="your-key" \
   -e OPENAI_MODEL="gpt-4o" \
   simgen-agent \

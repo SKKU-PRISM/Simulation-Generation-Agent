@@ -236,6 +236,7 @@ docker build -t simgen-agent .
 # 自然言語入力でフルパイプラインを実行
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e OPENAI_API_KEY="your-key" \
   simgen-agent \
   "Stack the blocks inside the tray on the table" --robot franka --episodes 5
@@ -243,6 +244,7 @@ docker run --rm --gpus all \
 # JSON入力
 docker run --rm --gpus all \
   -v $(pwd)/artifacts:/workspace/artifacts \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e OPENAI_API_KEY="your-key" \
   simgen-agent \
   data/input_sample.json results/output.json
