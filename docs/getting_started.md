@@ -1,6 +1,6 @@
 # Installation Guide
 
-> **[한국어 (Korean)](ko/getting_started.md)**
+🇺🇸 [English](getting_started.md) | 🇰🇷 [한국어](ko/getting_started.md) | 🇨🇳 [中文](zh/getting_started.md) | 🇯🇵 [日本語](ja/getting_started.md) | 🇩🇪 [Deutsch](de/getting_started.md)
 
 Audience: Users running this repo for the first time
 For detailed CLI options and result interpretation: `docs/usage.md`

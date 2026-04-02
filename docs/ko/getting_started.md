@@ -1,5 +1,7 @@
 # 설치 가이드
 
+🇺🇸 [English](../getting_started.md) | 🇰🇷 [한국어](getting_started.md) | 🇨🇳 [中文](../zh/getting_started.md) | 🇯🇵 [日本語](../ja/getting_started.md) | 🇩🇪 [Deutsch](../de/getting_started.md)
+
 대상: 처음 이 레포를 실행하는 사용자
 세부 CLI 옵션과 결과 해석: `docs/usage.md`
 

@@ -1,5 +1,5 @@
 # Usage
-> **[한국어 (Korean)](ko/usage.md)**
+🇺🇸 [English](usage.md) | 🇰🇷 [한국어](ko/usage.md) | 🇨🇳 [中文](zh/usage.md) | 🇯🇵 [日本語](ja/usage.md) | 🇩🇪 [Deutsch](de/usage.md)
 
 Audience: Users who actually run the CLI  
 What this document covers: Representative commands, key options, output structure, interpreting results  

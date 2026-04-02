@@ -1,6 +1,6 @@
 # Pipeline Architecture
 
-> **[한국어 (Korean)](ko/architecture.md)**
+🇺🇸 [English](architecture.md) | 🇰🇷 [한국어](ko/architecture.md) | 🇨🇳 [中文](zh/architecture.md) | 🇯🇵 [日本語](ja/architecture.md) | 🇩🇪 [Deutsch](de/architecture.md)
 
 Audience: Users who want to understand the overall system flow
 This document covers: 3-Stage pipeline structure, internal workings of each Stage, inter-module relationships

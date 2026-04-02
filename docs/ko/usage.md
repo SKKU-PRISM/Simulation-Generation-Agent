@@ -1,5 +1,7 @@
 # 사용법
 
+🇺🇸 [English](../usage.md) | 🇰🇷 [한국어](usage.md) | 🇨🇳 [中文](../zh/usage.md) | 🇯🇵 [日本語](../ja/usage.md) | 🇩🇪 [Deutsch](../de/usage.md)
+
 대상: 실제로 CLI를 실행하는 사용자  
 이 문서가 다루는 것: 대표 명령, 주요 옵션, 출력 구조, 결과 해석  
 설치와 환경 연결: `docs/getting_started.md`

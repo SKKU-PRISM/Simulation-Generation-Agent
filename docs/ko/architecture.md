@@ -1,5 +1,7 @@
 # 파이프라인 아키텍처
 
+🇺🇸 [English](../architecture.md) | 🇰🇷 [한국어](architecture.md) | 🇨🇳 [中文](../zh/architecture.md) | 🇯🇵 [日本語](../ja/architecture.md) | 🇩🇪 [Deutsch](../de/architecture.md)
+
 대상: 전체 시스템 흐름을 이해하고 싶은 사용자
 이 문서가 다루는 것: 3-Stage 파이프라인 구조, 각 Stage의 내부 동작, 모듈 간 관계
 CLI 사용법은 `docs/usage.md`, 설치는 `docs/getting_started.md`

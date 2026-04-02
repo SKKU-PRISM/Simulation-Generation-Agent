@@ -1,6 +1,6 @@
 # Documentation
 
-> **[한국어 (Korean)](ko/README.md)**
+🇺🇸 [English](README.md) | 🇰🇷 [한국어](ko/README.md) | 🇨🇳 [中文](zh/README.md) | 🇯🇵 [日本語](ja/README.md) | 🇩🇪 [Deutsch](de/README.md)
 
 ## Document Index
 
