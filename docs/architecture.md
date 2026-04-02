@@ -118,6 +118,11 @@ YAML 태스크 명세를 IsaacLab `ManagerBasedRLEnv` Python 코드로 자동 �
 │  7. 실패 시 자동 수정  │  에러 로그 → LLM 재생성 (최대 5회)
 │          ▼           │
 │  8. 평가 (선택)       │  4-카테고리 100점 채점
+│          ▼           │
+│  9. 스크린샷 캡처     │  front/top/wrist 3앵글
+│          ▼           │
+│  10. VLM 환경 검증    │  코드 검증 + 이미지별 VLM 점수
+│                      │  (front/top 중 하나 ≥ 70점 → 통과)
 └──────────────────────┘
 ```
 
@@ -137,6 +142,8 @@ outputs/isaaclab/{TaskName}_{timestamp}/
 │   ├── __init__.py     # isaaclab.envs.mdp 재수출 + 커스텀 모듈
 │   ├── rewards.py      # 커스텀 보상 함수
 │   └── terminations.py # 커스텀 종료 조건
+├── debug/              # 환경 스크린샷 (front/top/wrist)
+└── result.json         # 실행 결과 + scene_verification 포함
 └── result.json         # 실행 결과
 ```
 

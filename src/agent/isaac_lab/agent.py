@@ -1364,6 +1364,39 @@ Use this structure/pattern, but fill in values from the YAML above.
                     else:
                         console.print("  [yellow]Warning:[/yellow] Could not detect env class, skipping capture")
 
+                # Step 7: Scene verification (code + VLM)
+                try:
+                    from src.agent.isaac_lab.scene_verifier import SceneVerifier
+                    verifier = SceneVerifier()
+                    if verifier.available:
+                        console.print("[bold]Step 7:[/bold] Scene verification (code + VLM)...")
+                        front_img = output_dir / "debug" / "front.png"
+                        top_img = output_dir / "debug" / "top.png"
+                        env_cfg_path = output_dir / "env_cfg.py"
+
+                        if env_cfg_path.exists() and (front_img.exists() or top_img.exists()):
+                            env_cfg_text = env_cfg_path.read_text()
+                            yaml_text = Path(yaml_path).read_text()
+                            verification = verifier.verify(front_img, top_img, env_cfg_text, yaml_text)
+                            result["scene_verification"] = verification
+
+                            if verification["overall_pass"]:
+                                console.print("  [green]Scene verification PASSED[/green]")
+                            else:
+                                console.print("  [red]Scene verification FAILED[/red]")
+                                for vk in ["code_verification", "front_verification", "top_verification"]:
+                                    vr = verification.get(vk, {})
+                                    issues = vr.get("issues", [])
+                                    for issue in issues:
+                                        console.print(f"    [yellow]{vk}:[/yellow] {issue}")
+                        else:
+                            console.print("  [yellow]Skipped:[/yellow] Missing env_cfg.py or debug images")
+                    else:
+                        console.print("  [yellow]Step 7:[/yellow] SceneVerifier not available (OPENAI_API_KEY?)")
+                except Exception as e:
+                    console.print(f"  [yellow]Step 7 error:[/yellow] {e}")
+                    result["scene_verification_error"] = str(e)
+
                 # Save result.json
                 result["timestamp"] = timestamp
                 result["task_name"] = task_name

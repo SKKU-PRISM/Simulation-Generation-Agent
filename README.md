@@ -19,7 +19,7 @@
 | Stage | 무엇을 하는가 | 핵심 기술 |
 |-------|-------------|----------|
 | **1. Task Definition** | 자연어 → 구조화된 YAML 태스크 명세 | LangChain RAG (FAISS 벡터 검색) + LLM few-shot 생성 |
-| **2. Simulation Generation** | YAML → IsaacLab 환경 Python 코드 | LLM 코드 생성 + PhysX 실행 검증 + 에러 자동 수정 |
+| **2. Simulation Generation** | YAML → IsaacLab 환경 Python 코드 | LLM 코드 생성 + PhysX 실행 검증 + 에러 자동 수정 + VLM 환경 검증 |
 | **3. Data Collection** | 환경 위에서 로봇 조작 + 성공 데이터 수집 | CaP 스킬 코드 생성 + Pinocchio IK + Geometry/VLM 이중 평가 |
 
 상세 아키텍처: `docs/architecture.md`
