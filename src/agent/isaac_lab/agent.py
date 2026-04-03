@@ -1848,7 +1848,7 @@ Only include files that need modifications."""
                                 + code_eval.get("mdp_correctness", {}).get("score", 0)
                                 + code_eval.get("task_alignment", {}).get("score", 0)
                             )
-                            verify_threshold = 40  # out of 75 (runtime excluded)
+                            verify_threshold = 30  # out of 75 (runtime excluded)
                             verify_max_refine = 5
 
                             if (
