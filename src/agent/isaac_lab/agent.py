@@ -1319,6 +1319,29 @@ Use this structure/pattern, but fill in values from the YAML above.
                 py_file.write_text(text)
                 fixes.append(f"Patched {py_file.name}: env.scene → env.scene.keys()")
 
+        # Fix: nested prim paths like {ENV_REGEX_NS}/Tray/Base → {ENV_REGEX_NS}/TrayBase
+        # Exclude Robot paths (used in FrameTransformerCfg)
+        env_cfg_path = output_dir / "env_cfg.py"
+        if env_cfg_path.exists():
+            text = env_cfg_path.read_text()
+            original_text = text
+
+            def _flatten_nested_prim(m):
+                parent = m.group(2)
+                # Don't flatten Robot sub-paths (used by FrameTransformer, sensors)
+                if parent.lower() in ("robot",):
+                    return m.group(0)
+                return f"{m.group(1)}/{parent}{m.group(3)}"
+
+            text = re.sub(
+                r'(\{ENV_REGEX_NS\})/([A-Za-z_][A-Za-z0-9_]*)/([A-Za-z_][A-Za-z0-9_]*)',
+                _flatten_nested_prim,
+                text,
+            )
+            if text != original_text:
+                env_cfg_path.write_text(text)
+                fixes.append("Flattened nested prim paths (e.g. /Tray/Base → /TrayBase)")
+
         fixes.extend(self._apply_robot_specific_fixes(output_dir, robot, task_doc or {}))
         return fixes
 
