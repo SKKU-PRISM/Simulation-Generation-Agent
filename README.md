@@ -50,9 +50,9 @@ All tasks executed end-to-end via `run_agent.sh` inside Docker (16x speed).
 <table>
 <tr>
 <td align="center"><b>Lift</b><br><img src="assets/demos/FrankaLift_16.gif" width="160"></td>
-<td align="center"><b>Lift Sugar Box</b><br><img src="assets/demos/FrankaLiftSugarBox_16.gif" width="160"></td>
+<td align="center"><b>Peg Insert</b><br><img src="assets/demos/FrankaPegInsert.gif" width="160"></td>
 <td align="center"><b>Pick & Place</b><br><img src="assets/demos/FrankaPickPlace_16.gif" width="160"></td>
-<td align="center"><b>Pick & Place Bottle</b><br><img src="assets/demos/FrankaPickPlaceBottle_16.gif" width="160"></td>
+<td align="center"><b>Gear Mesh</b><br><img src="assets/demos/FrankaGearMesh.gif" width="160"></td>
 </tr>
 <tr>
 <td align="center"><b>Pick & Place Box</b><br><img src="assets/demos/FrankaPickPlaceBox_16.gif" width="160"></td>
