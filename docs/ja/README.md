@@ -1,14 +1,32 @@
-# Simulation-Generation-Agent (RAPIDS)
+<p align="center">
+  <a href="https://skku-prism.github.io/rapid_project_test/">
+    <img src="../../assets/branding/prism_logo.png" alt="PRISM" width="280">
+  </a>
+</p>
 
-[<img src="https://flagcdn.com/24x18/us.png" width="20" alt="English"> English](../../README.md) | [<img src="https://flagcdn.com/24x18/kr.png" width="20" alt="한국어"> 한국어](../ko/README.md) | [<img src="https://flagcdn.com/24x18/cn.png" width="20" alt="中文"> 中文](../zh/README.md) | [<img src="https://flagcdn.com/24x18/jp.png" width="20" alt="日本語"> 日本語](README.md) | [<img src="https://flagcdn.com/24x18/de.png" width="20" alt="Deutsch"> Deutsch](../de/README.md)
+<h1 align="center">Simulation-Generation-Agent (RAPIDS)</h1>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
-[![NVIDIA IsaacLab](https://img.shields.io/badge/IsaacLab-v2.3.2-76B900.svg?logo=nvidia)](https://github.com/isaac-sim/IsaacLab)
-[![IsaacSim](https://img.shields.io/badge/IsaacSim-5.1.0-76B900.svg?logo=nvidia)](https://docs.omniverse.nvidia.com/isaacsim/)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker)](docker.md)
-[![OpenAI](https://img.shields.io/badge/LLM-GPT--5-412991.svg?logo=openai)](https://openai.com/)
-[![LeRobot](https://img.shields.io/badge/Dataset-LeRobot%20v3.0-FF6F00.svg)](https://github.com/huggingface/lerobot)
+<p align="center">
+  <a href="https://skku-prism.github.io/rapid_project_test/"><img src="https://img.shields.io/badge/Project-Page-8B5CF6?style=for-the-badge&logo=github" alt="Project Page"></a>
+</p>
+
+<p align="center">
+  <a href="../../README.md"><img src="https://flagcdn.com/24x18/us.png" width="20" alt="English"> English</a> |
+  <a href="../ko/README.md"><img src="https://flagcdn.com/24x18/kr.png" width="20" alt="한국어"> 한국어</a> |
+  <a href="../zh/README.md"><img src="https://flagcdn.com/24x18/cn.png" width="20" alt="中文"> 中文</a> |
+  <a href="README.md"><img src="https://flagcdn.com/24x18/jp.png" width="20" alt="日本語"> 日本語</a> |
+  <a href="../de/README.md"><img src="https://flagcdn.com/24x18/de.png" width="20" alt="Deutsch"> Deutsch</a>
+</p>
+
+<p align="center">
+  <a href="../../LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10%2B-blue.svg" alt="Python 3.10+"></a>
+  <a href="https://github.com/isaac-sim/IsaacLab"><img src="https://img.shields.io/badge/IsaacLab-v2.3.2-76B900.svg?logo=nvidia" alt="IsaacLab"></a>
+  <a href="https://docs.omniverse.nvidia.com/isaacsim/"><img src="https://img.shields.io/badge/IsaacSim-5.1.0-76B900.svg?logo=nvidia" alt="IsaacSim"></a>
+  <a href="docker.md"><img src="https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker" alt="Docker"></a>
+  <a href="https://openai.com/"><img src="https://img.shields.io/badge/LLM-GPT--5-412991.svg?logo=openai" alt="OpenAI"></a>
+  <a href="https://github.com/huggingface/lerobot"><img src="https://img.shields.io/badge/Dataset-LeRobot%20v3.0-FF6F00.svg" alt="LeRobot"></a>
+</p>
 
 自然言語のタスク記述を構造化YAMLスペックに変換し、IsaacLabシミュレーション環境を自動生成し、Code-as-Policies（CaP）によるロボットマニピュレーションを実行し、学習用デモンストレーションデータセットを収集する、エンドツーエンドのロボティクスシミュレーション自動化フレームワークです。
 
