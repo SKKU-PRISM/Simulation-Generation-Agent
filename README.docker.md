@@ -286,6 +286,41 @@ artifacts/
 
 For JSON input mode, results are also written to `results/output.json`.
 
+### Custom Output Directory
+
+By default, pipeline outputs go to `outputs/`. To change this, use `--output-root`:
+
+```bash
+# Local
+./run_agent.sh "Stack the blocks" --output-root /path/to/my/outputs
+
+# Docker
+docker run --rm --gpus all \
+  -v /path/to/my/outputs:/workspace/custom_outputs \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -e OPENAI_API_KEY="your-key" \
+  simgen-agent \
+  "Stack the blocks" --output-root /workspace/custom_outputs
+```
+
+### Dataset Location
+
+After a successful run, the raw dataset is at:
+```
+outputs/data_collection/<TaskName>_<timestamp>/raw_dataset/
+├── episodes/
+│   └── episode_000000/
+│       ├── actions.npy          # joint actions
+│       ├── states.npy           # joint states
+│       ├── gripper_state.npy    # gripper open/close
+│       ├── tcp_world_xyzrpy.npy # TCP pose (world frame)
+│       ├── tcp_robot_xyzrpy.npy # TCP pose (robot frame)
+│       ├── skills.json          # skill sequence log
+│       └── images/
+│           └── front_cam/*.png  # camera frames
+└── metadata.json                # robot info, DOF, joint names
+```
+
 ---
 
 ## Troubleshooting

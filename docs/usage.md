@@ -28,6 +28,7 @@ Just provide a single natural language task description, and the entire NL→YAM
 | `--robot <type>` | Robot type: franka, ur10e, openarm, so101 (default: franka) |
 | `--episodes <n>` | Target number of successful episodes (default: 1) |
 | `--max-attempts <n>` | Maximum number of attempts (default: 3) |
+| `--output-root <dir>` | Base directory for all pipeline outputs (default: `outputs/`) |
 
 ### Running in Docker
 
@@ -40,6 +41,13 @@ docker run --rm --gpus all \
 ```
 
 > **Output path**: Inside Docker, results are saved to `/workspace/artifacts`. Map it to the host using the `-v` option. For local execution, results are saved to `outputs/`.
+>
+> To change the output directory, use `--output-root`:
+> ```bash
+> ./run_agent.sh "Stack the blocks" --output-root /path/to/my/outputs
+> ```
+>
+> After completion, the dataset is at `<output-root>/data_collection/<TaskName>_<timestamp>/raw_dataset/`.
 
 ### Results
 
