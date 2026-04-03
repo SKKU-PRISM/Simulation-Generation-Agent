@@ -49,22 +49,22 @@ All tasks executed end-to-end via `run_agent.sh` inside Docker (16x speed).
 <div align="center">
 <table>
 <tr>
-<td align="center"><b>Lift</b><br><img src="assets/demos/FrankaLift_16.gif" width="200"></td>
-<td align="center"><b>Lift Sugar Box</b><br><img src="assets/demos/FrankaLiftSugarBox_16.gif" width="200"></td>
-<td align="center"><b>Pick & Place</b><br><img src="assets/demos/FrankaPickPlace_16.gif" width="200"></td>
-<td align="center"><b>Pick & Place Bottle</b><br><img src="assets/demos/FrankaPickPlaceBottle_16.gif" width="200"></td>
+<td align="center"><b>Lift</b><br><img src="assets/demos/FrankaLift_16.gif" width="160"></td>
+<td align="center"><b>Lift Sugar Box</b><br><img src="assets/demos/FrankaLiftSugarBox_16.gif" width="160"></td>
+<td align="center"><b>Pick & Place</b><br><img src="assets/demos/FrankaPickPlace_16.gif" width="160"></td>
+<td align="center"><b>Pick & Place Bottle</b><br><img src="assets/demos/FrankaPickPlaceBottle_16.gif" width="160"></td>
 </tr>
 <tr>
-<td align="center"><b>Pick & Place Box</b><br><img src="assets/demos/FrankaPickPlaceBox_16.gif" width="200"></td>
-<td align="center"><b>Pick & Place Can</b><br><img src="assets/demos/FrankaPickPlaceCan_16.gif" width="200"></td>
-<td align="center"><b>Pick & Place Drawer</b><br><img src="assets/demos/FrankaPickPlaceDrawer_16.gif" width="200"></td>
-<td align="center"><b>Pick & Place Tuna</b><br><img src="assets/demos/FrankaPickPlaceTuna_16.gif" width="200"></td>
+<td align="center"><b>Pick & Place Box</b><br><img src="assets/demos/FrankaPickPlaceBox_16.gif" width="160"></td>
+<td align="center"><b>Pick & Place Can</b><br><img src="assets/demos/FrankaPickPlaceCan_16.gif" width="160"></td>
+<td align="center"><b>Pick & Place Drawer</b><br><img src="assets/demos/FrankaPickPlaceDrawer_16.gif" width="160"></td>
+<td align="center"><b>Pick & Place Tuna</b><br><img src="assets/demos/FrankaPickPlaceTuna_16.gif" width="160"></td>
 </tr>
 <tr>
-<td align="center"><b>Stack</b><br><img src="assets/demos/FrankaStack_16.gif" width="200"></td>
-<td align="center"><b>Stack Tray</b><br><img src="assets/demos/FrankaStackTray_16.gif" width="200"></td>
-<td align="center"><b>Multi Pick & Place</b><br><img src="assets/demos/FrankaMultiPickPlace_16.gif" width="200"></td>
-<td align="center"><b>Color Sort</b><br><img src="assets/demos/FrankaColorSort_16.gif" width="200"></td>
+<td align="center"><b>Stack</b><br><img src="assets/demos/FrankaStack_16.gif" width="160"></td>
+<td align="center"><b>Stack Tray</b><br><img src="assets/demos/FrankaStackTray_16.gif" width="160"></td>
+<td align="center"><b>Multi Pick & Place</b><br><img src="assets/demos/FrankaMultiPickPlace_16.gif" width="160"></td>
+<td align="center"><b>Color Sort</b><br><img src="assets/demos/FrankaColorSort_16.gif" width="160"></td>
 </tr>
 </table>
 </div>
