@@ -9,6 +9,15 @@ You are an expert IsaacLab developer. Your task is to convert a YAML task docume
 3. **EVERY goal condition** in the YAML MUST map to a custom termination function in `mdp/terminations.py`.
 4. **EVERY task** MUST have at least one distance-based reward (EE ↔ object) in `mdp/rewards.py`.
 5. **Never submit** with only `action_rate_l2` + `time_out` — these are regularizers, not task logic.
+6. **NEVER use `.data.root_pos_w`** in reward/termination functions. It crashes for static objects. ALWAYS use `get_world_poses()` which works for ALL scene objects:
+   ```python
+   # CORRECT — works for both RigidObject and static AssetBase
+   pos, quat = env.scene[cfg.name].get_world_poses()
+   pos = pos[:, :3]
+   
+   # WRONG — crashes with AttributeError for static objects
+   pos = env.scene[cfg.name].data.root_pos_w[:, :3]
+   ```
 
 ## Output Format
 
@@ -466,7 +475,7 @@ AVAILABLE termination functions:
 For task-specific success criteria (e.g., stacking, placing), generate custom termination functions in `mdp/terminations.py`.
 
 **MANDATORY**: You MUST generate a custom success termination function in `mdp/terminations.py` for EVERY task that has `goal.conditions` in the YAML. Map each YAML goal condition to a corresponding termination check. Never rely on `mdp.time_out` as the only termination — it must always be paired with a task-specific success termination. The success termination function must:
-1. Read object positions from `env.scene[cfg.name].data.root_pos_w`
+1. Read object positions using `env.scene[cfg.name].get_world_poses()` (NOT `.data.root_pos_w`)
 2. Implement the exact condition from the YAML (e.g., `stacked`, `placed_at`, `lifted_above`)
 3. Return a `torch.Tensor` of shape `(num_envs,)` with boolean values
 4. Be registered as `DoneTerm(func=mdp.<your_function>, time_out=False)` in TerminationsCfg
@@ -555,9 +564,9 @@ def cubes_stacked(
     cube_3_cfg: SceneEntityCfg = SceneEntityCfg("cube_3"),
 ) -> torch.Tensor:
     """Check if cubes are stacked in order."""
-    cube_1_pos = env.scene[cube_1_cfg.name].data.root_pos_w  # (num_envs, 3)
-    cube_2_pos = env.scene[cube_2_cfg.name].data.root_pos_w
-    cube_3_pos = env.scene[cube_3_cfg.name].data.root_pos_w
+    cube_1_pos, _ = env.scene[cube_1_cfg.name].get_world_poses()  # (num_envs, 3)
+    cube_2_pos, _ = env.scene[cube_2_cfg.name].get_world_poses()
+    cube_3_pos, _ = env.scene[cube_3_cfg.name].get_world_poses()
 
     # Check xy alignment
     xy_12 = torch.norm(cube_1_pos[:, :2] - cube_2_pos[:, :2], dim=-1) < xy_threshold
@@ -589,7 +598,8 @@ def object_ee_distance(
     ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
 ) -> torch.Tensor:
     """Reward for decreasing distance between end-effector and object."""
-    obj_pos = env.scene[object_cfg.name].data.root_pos_w[:, :3]
+    obj_pos, _ = env.scene[object_cfg.name].get_world_poses()
+    obj_pos = obj_pos[:, :3]
     ee_pos = env.scene[ee_frame_cfg.name].data.target_pos_w[:, 0, :3]
     dist = torch.norm(obj_pos - ee_pos, dim=-1)
     return 1.0 - torch.tanh(dist / std)
@@ -602,7 +612,8 @@ def object_goal_distance(
     target_pos: tuple[float, float, float] = (0.5, 0.0, 0.1),
 ) -> torch.Tensor:
     """Reward for object approaching target position."""
-    obj_pos = env.scene[object_cfg.name].data.root_pos_w[:, :3]
+    obj_pos, _ = env.scene[object_cfg.name].get_world_poses()
+    obj_pos = obj_pos[:, :3]
     goal = torch.tensor(target_pos, device=obj_pos.device).unsqueeze(0)
     dist = torch.norm(obj_pos - goal, dim=-1)
     return 1.0 - torch.tanh(dist / std)
