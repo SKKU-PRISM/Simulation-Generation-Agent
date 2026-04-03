@@ -286,6 +286,41 @@ artifacts/
 
 对于 JSON 输入模式，结果也会写入 `results/output.json`。
 
+### 自定义输出目录
+
+默认情况下，管道输出保存到 `outputs/`。要更改路径，使用 `--output-root`：
+
+```bash
+# 本地
+./run_agent.sh "Stack the blocks" --output-root /path/to/my/outputs
+
+# Docker
+docker run --rm --gpus all \
+  -v /path/to/my/outputs:/workspace/custom_outputs \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -e OPENAI_API_KEY="your-key" \
+  simgen-agent \
+  "Stack the blocks" --output-root /workspace/custom_outputs
+```
+
+### 数据集位置
+
+成功运行后，原始数据集保存在：
+```
+outputs/data_collection/<TaskName>_<timestamp>/raw_dataset/
+├── episodes/
+│   └── episode_000000/
+│       ├── actions.npy          # 关节动作
+│       ├── states.npy           # 关节状态
+│       ├── gripper_state.npy    # 夹爪开合
+│       ├── tcp_world_xyzrpy.npy # TCP 位姿（世界坐标系）
+│       ├── tcp_robot_xyzrpy.npy # TCP 位姿（机器人坐标系）
+│       ├── skills.json          # 技能序列日志
+│       └── images/
+│           └── front_cam/*.png  # 相机帧
+└── metadata.json                # 机器人信息、自由度、关节名称
+```
+
 ---
 
 ## 故障排除

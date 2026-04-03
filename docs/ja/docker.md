@@ -286,6 +286,41 @@ artifacts/
 
 JSON 入力モードの場合、結果は `results/output.json` にも書き出されます。
 
+### カスタム出力ディレクトリ
+
+デフォルトでは、パイプライン出力は `outputs/` に保存されます。変更するには `--output-root` を使用してください：
+
+```bash
+# ローカル
+./run_agent.sh "Stack the blocks" --output-root /path/to/my/outputs
+
+# Docker
+docker run --rm --gpus all \
+  -v /path/to/my/outputs:/workspace/custom_outputs \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -e OPENAI_API_KEY="your-key" \
+  simgen-agent \
+  "Stack the blocks" --output-root /workspace/custom_outputs
+```
+
+### データセットの場所
+
+正常に実行された後、rawデータセットは以下の場所に保存されます：
+```
+outputs/data_collection/<TaskName>_<timestamp>/raw_dataset/
+├── episodes/
+│   └── episode_000000/
+│       ├── actions.npy          # 関節アクション
+│       ├── states.npy           # 関節状態
+│       ├── gripper_state.npy    # グリッパー開閉
+│       ├── tcp_world_xyzrpy.npy # TCPポーズ（ワールドフレーム）
+│       ├── tcp_robot_xyzrpy.npy # TCPポーズ（ロボットフレーム）
+│       ├── skills.json          # スキルシーケンスログ
+│       └── images/
+│           └── front_cam/*.png  # カメラフレーム
+└── metadata.json                # ロボット情報、DOF、関節名
+```
+
 ---
 
 ## トラブルシューティング

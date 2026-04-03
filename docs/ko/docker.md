@@ -286,6 +286,41 @@ artifacts/
 
 JSON 입력 모드의 경우, 결과는 `results/output.json`에도 기록됩니다.
 
+### 사용자 정의 출력 디렉토리
+
+기본적으로 파이프라인 출력은 `outputs/`에 저장됩니다. 변경하려면 `--output-root`를 사용하세요:
+
+```bash
+# 로컬
+./run_agent.sh "Stack the blocks" --output-root /path/to/my/outputs
+
+# Docker
+docker run --rm --gpus all \
+  -v /path/to/my/outputs:/workspace/custom_outputs \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -e OPENAI_API_KEY="your-key" \
+  simgen-agent \
+  "Stack the blocks" --output-root /workspace/custom_outputs
+```
+
+### 데이터셋 위치
+
+성공적인 실행 후 raw 데이터셋은 다음 위치에 저장됩니다:
+```
+outputs/data_collection/<TaskName>_<timestamp>/raw_dataset/
+├── episodes/
+│   └── episode_000000/
+│       ├── actions.npy          # 관절 액션
+│       ├── states.npy           # 관절 상태
+│       ├── gripper_state.npy    # 그리퍼 열기/닫기
+│       ├── tcp_world_xyzrpy.npy # TCP 포즈 (월드 프레임)
+│       ├── tcp_robot_xyzrpy.npy # TCP 포즈 (로봇 프레임)
+│       ├── skills.json          # 스킬 시퀀스 로그
+│       └── images/
+│           └── front_cam/*.png  # 카메라 프레임
+└── metadata.json                # 로봇 정보, DOF, 관절 이름
+```
+
 ---
 
 ## 문제 해결

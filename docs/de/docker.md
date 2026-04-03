@@ -286,6 +286,41 @@ artifacts/
 
 Im JSON-Eingabemodus werden die Ergebnisse auch in `results/output.json` geschrieben.
 
+### Benutzerdefiniertes Ausgabeverzeichnis
+
+Standardmaessig werden Pipeline-Ausgaben in `outputs/` gespeichert. Um den Pfad zu aendern, verwenden Sie `--output-root`:
+
+```bash
+# Lokal
+./run_agent.sh "Stack the blocks" --output-root /path/to/my/outputs
+
+# Docker
+docker run --rm --gpus all \
+  -v /path/to/my/outputs:/workspace/custom_outputs \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
+  -e OPENAI_API_KEY="your-key" \
+  simgen-agent \
+  "Stack the blocks" --output-root /workspace/custom_outputs
+```
+
+### Datensatz-Speicherort
+
+Nach einer erfolgreichen Ausfuehrung befindet sich der Rohdatensatz unter:
+```
+outputs/data_collection/<TaskName>_<timestamp>/raw_dataset/
+├── episodes/
+│   └── episode_000000/
+│       ├── actions.npy          # Gelenkaktionen
+│       ├── states.npy           # Gelenkzustaende
+│       ├── gripper_state.npy    # Greifer oeffnen/schliessen
+│       ├── tcp_world_xyzrpy.npy # TCP-Pose (Weltkoordinaten)
+│       ├── tcp_robot_xyzrpy.npy # TCP-Pose (Roboterkoordinaten)
+│       ├── skills.json          # Skill-Sequenz-Protokoll
+│       └── images/
+│           └── front_cam/*.png  # Kameraframes
+└── metadata.json                # Roboterinfo, DOF, Gelenknamen
+```
+
 ---
 
 ## Fehlerbehebung
