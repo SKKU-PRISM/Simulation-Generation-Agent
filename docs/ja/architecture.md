@@ -90,7 +90,7 @@ flowchart TD
 
     EXEC -- "成功" --> EVAL["8. エバリュエータ（任意）\n4カテゴリ 100点満点"]
     EVAL --> CAP["9. スクリーンショット撮影\nfront / top / wrist"]
-    CAP --> VER["10. SceneVerifier\n① コード: SF/30+MDP/25+TA/25+RV/20\n② VLM: front・top 各0-100"]
+    CAP --> VER["10. SceneVerifier\n① コード: SF/40+MDP/20+TA/15+RV/25\n② VLM: front・top 各0-100"]
 
     VER -- "コード < 40/75" --> REFINE["11. セルフリファインメント\nフィードバックをLLMへ → 再生成（最大5回）"]
     REFINE --> EXEC

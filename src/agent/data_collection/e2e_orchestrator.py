@@ -72,7 +72,7 @@ class E2ERunConfig:
 @dataclass(frozen=True)
 class E2ECollectionConfig:
     config_path: str | None = None
-    llm_model: str = "gpt-5-mini"
+    llm_model: str = "gpt-5"
     vlm_model: str = "gpt-5"
     use_vlm_judge: bool = True
     discard_failed_episodes: bool | None = None
@@ -151,7 +151,7 @@ def load_e2e_batch_config(config_path: str | Path) -> E2EBatchConfig:
 
     collection_cfg = E2ECollectionConfig(
         config_path=collection_section.get("config_path"),
-        llm_model=str(collection_section.get("llm_model", "gpt-5-mini")),
+        llm_model=str(collection_section.get("llm_model", "gpt-5")),
         vlm_model=str(collection_section.get("vlm_model", "gpt-5")),
         use_vlm_judge=bool(collection_section.get("use_vlm_judge", True)),
         discard_failed_episodes=(

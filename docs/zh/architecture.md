@@ -90,7 +90,7 @@ flowchart TD
 
     EXEC -- "成功" --> EVAL["8. 评估器（可选）\n4 类别 100 分"]
     EVAL --> CAP["9. 截图捕获\n前方 / 顶部 / 腕部"]
-    CAP --> VER["10. 场景验证器\n① 代码：SF/30+MDP/25+TA/25+RV/20\n② VLM：前方·顶部各 0-100"]
+    CAP --> VER["10. 场景验证器\n① 代码：SF/40+MDP/20+TA/15+RV/25\n② VLM：前方·顶部各 0-100"]
 
     VER -- "代码 < 40/75" --> REFINE["11. 自我优化\n反馈给 LLM → 重新生成（最多 5 次）"]
     REFINE --> EXEC

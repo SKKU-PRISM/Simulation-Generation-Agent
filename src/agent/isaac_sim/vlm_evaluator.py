@@ -396,7 +396,7 @@ class OllamaVLMEvaluator(BaseVLMEvaluator):
 
 
 class AzureVLMEvaluator(BaseVLMEvaluator):
-    """Evaluates scenes using Azure OpenAI Vision API (gpt-5-mini).
+    """Evaluates scenes using Azure OpenAI Vision API (gpt-5).
 
     Uses the same OPENAI_API_KEY and OPENAI_BASE_URL
     environment variables as the IsaacLab code generation pipeline.
@@ -420,7 +420,7 @@ class AzureVLMEvaluator(BaseVLMEvaluator):
             )
 
         self.client = _OpenAI(api_key=api_key, base_url=base_url)
-        self.model = model or os.environ.get("OPENAI_MODEL", "gpt-5-mini")
+        self.model = model or os.environ.get("OPENAI_MODEL", "gpt-5")
         self.max_tokens = max_tokens
 
     @staticmethod
@@ -1125,7 +1125,7 @@ def create_evaluator(
         return ClaudeGTComparisonEvaluator(gt_image_path=gt_image_path, **kwargs)
 
     if backend == "azure":
-        logger.info("Using Azure OpenAI Vision API (gpt-5-mini)")
+        logger.info("Using Azure OpenAI Vision API (gpt-5)")
         return AzureVLMEvaluator(**kwargs)
 
     if backend == "gemini":
@@ -1153,7 +1153,7 @@ def create_evaluator(
 
         # Without GT image: Azure → Gemini → Claude → Ollama → Mock
         if AzureVLMEvaluator.is_available():
-            logger.info("Auto-selected: Azure OpenAI Vision API (gpt-5-mini)")
+            logger.info("Auto-selected: Azure OpenAI Vision API (gpt-5)")
             return AzureVLMEvaluator(**kwargs)
 
         if GeminiVLMEvaluator.is_available():

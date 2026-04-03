@@ -90,7 +90,7 @@ flowchart TD
 
     EXEC -- "Erfolg" --> EVAL["8. Evaluator (optional)\n4 Kategorien 100 Pkt."]
     EVAL --> CAP["9. Screenshot-Aufnahme\nfront / top / wrist"]
-    CAP --> VER["10. SceneVerifier\n① Code: SF/30+MDP/25+TA/25+RV/20\n② VLM: front·top je 0-100"]
+    CAP --> VER["10. SceneVerifier\n① Code: SF/40+MDP/20+TA/15+RV/25\n② VLM: front·top je 0-100"]
 
     VER -- "Code < 40/75" --> REFINE["11. Selbstverfeinerung\nFeedback an LLM → Neugenerierung (bis zu 5 Mal)"]
     REFINE --> EXEC

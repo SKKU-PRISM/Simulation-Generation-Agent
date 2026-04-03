@@ -357,7 +357,7 @@ class DataCollectionConfig:
     keep_failed_raw_dataset: bool = False
 
     # LLM (CaP code generation)
-    llm_model: str = "gpt-5-mini"
+    llm_model: str = "gpt-5"
 
     # VLM (success judging)
     use_vlm_judge: bool = True
@@ -434,7 +434,7 @@ def load_pipeline_config(config_path: Optional[str] = None) -> DataCollectionCon
         output_dir=dataset.get("output_dir", "outputs/data_collection"),
         discard_failed_episodes=bool(dataset.get("discard_failed_episodes", True)),
         keep_failed_raw_dataset=bool(dataset.get("keep_failed_raw_dataset", False)),
-        llm_model=llm.get("model", "gpt-5-mini"),
+        llm_model=llm.get("model", "gpt-5"),
         use_vlm_judge=vlm.get("enabled", True),
         vlm_backend=vlm.get("backend", "auto"),
         vlm_model=vlm.get("model", "gpt-5"),
