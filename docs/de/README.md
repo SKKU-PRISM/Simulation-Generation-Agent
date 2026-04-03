@@ -18,7 +18,7 @@ pip install -e . && cp .env.example .env  # OPENAI_API_KEY in .env setzen
 ./run_agent.sh "Stack the blocks inside the tray on the table"
 ```
 
-Siehe [docs/de/getting_started.md](docs/de/getting_started.md) fuer die vollstaendige Einrichtung und [docs/de/architecture.md](docs/de/architecture.md) fuer Pipeline-Details.
+Siehe [getting_started.md](getting_started.md) fuer die vollstaendige Einrichtung und [architecture.md](architecture.md) fuer Pipeline-Details.
 
 ---
 
@@ -47,7 +47,7 @@ flowchart LR
 | **2. Simulationsgenerierung** | YAML zu IsaacLab-Umgebungs-Python-Code | LLM-Codegenerierung + PhysX-Laufzeitvalidierung + automatische Fehlerkorrektur + VLM-Szenenverifikation |
 | **3. Datensammlung** | Robotermanipulation in generierter Umgebung + Sammlung erfolgreicher Demonstrationen | CaP-Skill-Codegenerierung + Pinocchio IK + Geometrie-/VLM-Doppelbewertung |
 
-Detaillierte Architektur: [docs/de/architecture.md](docs/de/architecture.md)
+Detaillierte Architektur: [architecture.md](architecture.md)
 
 ## Schnellstart
 
