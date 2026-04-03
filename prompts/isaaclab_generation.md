@@ -520,6 +520,7 @@ ee_frame = FrameTransformerCfg(
 - EXCEPT: ground plane uses `/World/GroundPlane` (shared across all envs)
 - EXCEPT: lights use `/World/light` (shared)
 - Never start a prim path segment with a digit (prefix with letter: `YCB_007_tuna`)
+- **NEVER use nested prim paths** like `{ENV_REGEX_NS}/Tray/Base` or `{ENV_REGEX_NS}/Object/Part` — the parent prim does not exist and will cause `RuntimeError: Unable to find source prim path`. Always use **flat paths**: `{ENV_REGEX_NS}/TrayBase`, `{ENV_REGEX_NS}/TrayWallFront`, etc.
 
 ### 11. Custom MDP Functions
 
@@ -653,7 +654,8 @@ success = DoneTerm(func=mdp.cubes_stacked, params={"xy_threshold": 0.04, ...})
     ```python
     actuators={"drawers": ImplicitActuatorCfg(joint_names_expr=["drawer_top_joint"], effort_limit=87.0, stiffness=10.0, damping=1.0)}
     ```
-20. If `robot_type` is `ur10e`, do not emit any Franka-specific identifiers (`FRANKA_PANDA_CFG`, `panda_hand`, `panda_link0`, `panda_finger.*`) or suction-specific identifiers (`Long_Suction`, `SurfaceGripperCfg`).
+20. DO NOT use nested prim paths like `{ENV_REGEX_NS}/Parent/Child` — this causes `RuntimeError: Unable to find source prim path` because the parent prim doesn't exist. Use flat paths: `{ENV_REGEX_NS}/ParentChild`.
+21. If `robot_type` is `ur10e`, do not emit any Franka-specific identifiers (`FRANKA_PANDA_CFG`, `panda_hand`, `panda_link0`, `panda_finger.*`) or suction-specific identifiers (`Long_Suction`, `SurfaceGripperCfg`).
 
 OpenArm-specific rules:
 - Preserve OpenArm actuator configuration; do not leave `scene.robot.actuators` empty.
