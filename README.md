@@ -46,25 +46,52 @@ See [docs/getting_started.md](docs/getting_started.md) for full setup and [docs/
 
 All tasks executed end-to-end via `run_agent.sh` inside Docker (16x speed).
 
-| | | | |
-|:---:|:---:|:---:|:---:|
-| **Lift** | **Lift Sugar Box** | **Pick & Place** | **Pick & Place Bottle** |
-| [<img src="https://img.shields.io/badge/Play-FrankaLift-blue?style=flat-square&logo=youtube" alt="Lift">](https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaLift_16.mp4) | [<img src="https://img.shields.io/badge/Play-LiftSugarBox-blue?style=flat-square&logo=youtube" alt="LiftSugarBox">](https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaLiftSugarBox_16.mp4) | [<img src="https://img.shields.io/badge/Play-PickPlace-blue?style=flat-square&logo=youtube" alt="PickPlace">](https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaPickPlace_16.mp4) | [<img src="https://img.shields.io/badge/Play-Bottle-blue?style=flat-square&logo=youtube" alt="Bottle">](https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaPickPlaceBottle_16.mp4) |
-| **Pick & Place Box** | **Pick & Place Can** | **Pick & Place Drawer** | **Pick & Place Tuna** |
-| [<img src="https://img.shields.io/badge/Play-Box-blue?style=flat-square&logo=youtube" alt="Box">](https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaPickPlaceBox_16.mp4) | [<img src="https://img.shields.io/badge/Play-Can-blue?style=flat-square&logo=youtube" alt="Can">](https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaPickPlaceCan_16.mp4) | [<img src="https://img.shields.io/badge/Play-Drawer-blue?style=flat-square&logo=youtube" alt="Drawer">](https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaPickPlaceDrawer_16.mp4) | [<img src="https://img.shields.io/badge/Play-Tuna-blue?style=flat-square&logo=youtube" alt="Tuna">](https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaPickPlaceTuna_16.mp4) |
-| **Stack** | **Stack Tray** | **Multi Pick & Place** | **Color Sort** |
-| [<img src="https://img.shields.io/badge/Play-Stack-blue?style=flat-square&logo=youtube" alt="Stack">](https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaStack_16.mp4) | [<img src="https://img.shields.io/badge/Play-StackTray-blue?style=flat-square&logo=youtube" alt="StackTray">](https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaStackTray_16.mp4) | [<img src="https://img.shields.io/badge/Play-MultiPick-blue?style=flat-square&logo=youtube" alt="MultiPick">](https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaMultiPickPlace_16.mp4) | [<img src="https://img.shields.io/badge/Play-ColorSort-blue?style=flat-square&logo=youtube" alt="ColorSort">](https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaColorSort_16.mp4) |
+<table>
+<tr>
+<td align="center"><b>Lift</b><br>
+<video src="https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaLift_16.mp4" autoplay muted loop playsinline width="200"></video></td>
+<td align="center"><b>Lift Sugar Box</b><br>
+<video src="https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaLiftSugarBox_16.mp4" autoplay muted loop playsinline width="200"></video></td>
+<td align="center"><b>Pick & Place</b><br>
+<video src="https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaPickPlace_16.mp4" autoplay muted loop playsinline width="200"></video></td>
+<td align="center"><b>Pick & Place Bottle</b><br>
+<video src="https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaPickPlaceBottle_16.mp4" autoplay muted loop playsinline width="200"></video></td>
+</tr>
+<tr>
+<td align="center"><b>Pick & Place Box</b><br>
+<video src="https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaPickPlaceBox_16.mp4" autoplay muted loop playsinline width="200"></video></td>
+<td align="center"><b>Pick & Place Can</b><br>
+<video src="https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaPickPlaceCan_16.mp4" autoplay muted loop playsinline width="200"></video></td>
+<td align="center"><b>Pick & Place Drawer</b><br>
+<video src="https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaPickPlaceDrawer_16.mp4" autoplay muted loop playsinline width="200"></video></td>
+<td align="center"><b>Pick & Place Tuna</b><br>
+<video src="https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaPickPlaceTuna_16.mp4" autoplay muted loop playsinline width="200"></video></td>
+</tr>
+<tr>
+<td align="center"><b>Stack</b><br>
+<video src="https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaStack_16.mp4" autoplay muted loop playsinline width="200"></video></td>
+<td align="center"><b>Stack Tray</b><br>
+<video src="https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaStackTray_16.mp4" autoplay muted loop playsinline width="200"></video></td>
+<td align="center"><b>Multi Pick & Place</b><br>
+<video src="https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaMultiPickPlace_16.mp4" autoplay muted loop playsinline width="200"></video></td>
+<td align="center"><b>Color Sort</b><br>
+<video src="https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaColorSort_16.mp4" autoplay muted loop playsinline width="200"></video></td>
+</tr>
+</table>
 
 <details>
 <summary><b>More videos (Line Arrange, Gear Mesh, Peg Insert)</b></summary>
 <br>
-
-| Task | Video |
-|------|-------|
-| Line Arrange | [<img src="https://img.shields.io/badge/Play-LineArrange-blue?style=flat-square&logo=youtube" alt="LineArrange">](https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaLineArrange_16.mp4) |
-| Gear Mesh | [<img src="https://img.shields.io/badge/Play-GearMesh-blue?style=flat-square&logo=youtube" alt="GearMesh">](https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaGearMesh.mp4) |
-| Peg Insert | [<img src="https://img.shields.io/badge/Play-PegInsert-blue?style=flat-square&logo=youtube" alt="PegInsert">](https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaPegInsert.mp4) |
-
+<table>
+<tr>
+<td align="center"><b>Line Arrange</b><br>
+<video src="https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaLineArrange_16.mp4" autoplay muted loop playsinline width="200"></video></td>
+<td align="center"><b>Gear Mesh</b><br>
+<video src="https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaGearMesh.mp4" autoplay muted loop playsinline width="200"></video></td>
+<td align="center"><b>Peg Insert</b><br>
+<video src="https://github.com/SKKU-PRISM/Simulation-Generation-Agent/releases/download/v1.0.0/FrankaPegInsert.mp4" autoplay muted loop playsinline width="200"></video></td>
+</tr>
+</table>
 </details>
 
 ---
