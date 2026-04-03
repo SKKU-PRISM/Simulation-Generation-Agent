@@ -655,7 +655,15 @@ success = DoneTerm(func=mdp.cubes_stacked, params={"xy_threshold": 0.04, ...})
     actuators={"drawers": ImplicitActuatorCfg(joint_names_expr=["drawer_top_joint"], effort_limit=87.0, stiffness=10.0, damping=1.0)}
     ```
 20. DO NOT use nested prim paths like `{ENV_REGEX_NS}/Parent/Child` — this causes `RuntimeError: Unable to find source prim path` because the parent prim doesn't exist. Use flat paths: `{ENV_REGEX_NS}/ParentChild`.
-21. For **static/fixed targets** (zones, bins, target areas, markers) that don't move: use `AssetBaseCfg` instead of `RigidObjectCfg`. In custom reward/termination functions, use **hardcoded position values** from the YAML (e.g., `torch.tensor([0.5, 0.2, 0.05])`) instead of `env.scene[zone_cfg.name].data.root_pos_w` — `AssetBaseCfg` objects are `XformPrimView` and have no `.data` attribute.
+21. For **static/fixed targets** (zones, bins, target areas, markers): use `AssetBaseCfg` instead of `RigidObjectCfg` in the scene. These become `XformPrimView` which has **NO `.data` attribute**. In custom reward/termination functions, get their positions using `env.scene[name].get_world_poses()` instead of `.data.root_pos_w`:
+    ```python
+    # WRONG — crashes with AttributeError: 'XformPrimView' has no attribute 'data'
+    zone_pos = env.scene[zone_cfg.name].data.root_pos_w[:, :3]
+    
+    # CORRECT — works for both RigidObject and AssetBase/XformPrimView
+    zone_pos, _ = env.scene[zone_cfg.name].get_world_poses()
+    zone_pos = zone_pos[:, :3]
+    ```
 22. If `robot_type` is `ur10e`, do not emit any Franka-specific identifiers (`FRANKA_PANDA_CFG`, `panda_hand`, `panda_link0`, `panda_finger.*`) or suction-specific identifiers (`Long_Suction`, `SurfaceGripperCfg`).
 
 OpenArm-specific rules:
