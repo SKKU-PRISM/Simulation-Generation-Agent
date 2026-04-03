@@ -270,7 +270,7 @@ def run_task(
     return result
 
 
-def run_pipeline(input_path: Path, output_path: Path) -> dict:
+def run_pipeline(input_path: Path, output_path: Path, output_base: Path | None = None) -> dict:
     """Execute the full pipeline from a JSON input spec."""
     input_data = json.loads(input_path.read_text(encoding="utf-8"))
     tasks = input_data.get("tasks", [])
@@ -283,7 +283,8 @@ def run_pipeline(input_path: Path, output_path: Path) -> dict:
 
     pipeline_start = time.time()
     started_at = datetime.now(timezone.utc).isoformat()
-    work_dir = PROJECT_ROOT / "outputs" / f"challenge_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    base = output_base or (PROJECT_ROOT / "outputs")
+    work_dir = base / f"challenge_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     work_dir.mkdir(parents=True, exist_ok=True)
 
     # Token tracking
@@ -372,6 +373,7 @@ def main():
     )
     parser.add_argument("--input", required=True, help="Input JSON file path")
     parser.add_argument("--output", required=True, help="Output JSON file path")
+    parser.add_argument("--output-dir", default=None, help="Base directory for pipeline outputs (default: outputs/)")
     args = parser.parse_args()
 
     input_path = Path(args.input)
@@ -383,7 +385,8 @@ def main():
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    result = run_pipeline(input_path, output_path)
+    output_base = Path(args.output_dir) if args.output_dir else None
+    result = run_pipeline(input_path, output_path, output_base=output_base)
     output_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
 
 

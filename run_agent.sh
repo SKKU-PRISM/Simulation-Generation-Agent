@@ -40,6 +40,7 @@ Natural language input (main feature):
   --robot <type>         Robot type: franka, ur10e, openarm, so101 (default: franka)
   --episodes <n>         Target successful episodes (default: 1)
   --max-attempts <n>     Maximum total attempts (default: 3)
+  --output-root <dir>    Base directory for all outputs (default: outputs/)
 
 JSON input:
   input_file               JSON task spec (default: ./data/input_sample.json)
@@ -134,6 +135,12 @@ if [[ ${#POSITIONAL[@]} -gt 0 && ${MODE_EXPLICIT} -eq 0 ]]; then
 
   export PYTHONPATH="${REPO_ROOT}"
 
+  # Output directory argument (passed to src/main.py)
+  OUTPUT_DIR_ARG=""
+  if [[ -n "${OUTPUT_ROOT:-}" && "${OUTPUT_ROOT}" != "${DEFAULT_OUTPUT_ROOT}" ]]; then
+    OUTPUT_DIR_ARG="--output-dir ${OUTPUT_ROOT}"
+  fi
+
   # Detect: .json → challenge mode, otherwise → NL full-pipeline mode
   if [[ "${FIRST_ARG}" == *.json ]]; then
     # --- JSON file input (challenge submission) ---
@@ -142,7 +149,7 @@ if [[ ${#POSITIONAL[@]} -gt 0 && ${MODE_EXPLICIT} -eq 0 ]]; then
     mkdir -p "$(dirname "${OUTPUT_FILE}")"
 
     echo "Challenge mode: input=${INPUT_FILE} output=${OUTPUT_FILE}"
-    exec "${PYTHON_BIN}" src/main.py --input "${INPUT_FILE}" --output "${OUTPUT_FILE}"
+    exec "${PYTHON_BIN}" src/main.py --input "${INPUT_FILE}" --output "${OUTPUT_FILE}" ${OUTPUT_DIR_ARG}
   else
     # --- Natural language input → full pipeline (Stage 1→2→3) ---
     TASK_DESC="${FIRST_ARG}"
@@ -163,7 +170,7 @@ JSONEOF
     echo "Full pipeline mode: task=\"${TASK_DESC}\" robot=${ROBOT} episodes=${EPISODES}"
     echo "  Input JSON: ${INPUT_JSON}"
     echo "  Output: ${OUTPUT_FILE}"
-    exec "${PYTHON_BIN}" src/main.py --input "${INPUT_JSON}" --output "${OUTPUT_FILE}"
+    exec "${PYTHON_BIN}" src/main.py --input "${INPUT_JSON}" --output "${OUTPUT_FILE}" ${OUTPUT_DIR_ARG}
   fi
 fi
 
