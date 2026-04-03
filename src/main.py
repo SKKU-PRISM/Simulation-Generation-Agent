@@ -342,6 +342,11 @@ def run_pipeline(input_path: Path, output_path: Path) -> dict:
         console.print(f"  💰 Cost: ~{cost_str}")
     console.print(f"  📄 Output: {output_path}")
     console.print(f"  📁 Logs: {work_dir}/")
+    # Show dataset paths
+    for t in task_results:
+        dc = t.get("steps", {}).get("data_collection", {})
+        if dc.get("output_dir"):
+            console.print(f"  📦 Dataset: {dc['output_dir']}/raw_dataset/")
     console.print(f"{'─' * 54}\n")
 
     output = {
