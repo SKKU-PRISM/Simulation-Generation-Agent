@@ -166,7 +166,7 @@ class SceneFidelityChecker:
         if expected is None:
             if any("Articulation" in str(e.get("type", "")) for e in self.scene_entities.values()):
                 return _check(self.CAT, "robot_config", 5, 5, f"Robot entity exists for {robot_type}")
-            return _check(self.CAT, "robot_config", 0, 4, f"No robot entity found for {robot_type}")
+            return _check(self.CAT, "robot_config", 0, 5, f"No robot entity found for {robot_type}")
 
         if expected and expected in self.parser.source:
             return _check(self.CAT, "robot_config", 5, 5, f"{expected} found")

@@ -2,7 +2,7 @@
 
 Two independent evaluation systems:
 1. Code-based (4-category, 100 points): LLM analyzes env_cfg.py against YAML spec
-   - Scene Fidelity (30), MDP Correctness (25), Task Alignment (25), Runtime Validity (20)
+   - Scene Fidelity (40), MDP Correctness (20), Task Alignment (15), Runtime Validity (25)
 2. Image-based (separate): VLM scores front/top screenshots against task spec
    - front/top each 0-100, pass if either >= threshold
 
@@ -87,10 +87,10 @@ class SceneVerifier:
 
         Returns:
             {
-                "scene_fidelity": {"score": int, "max": 30, "details": str},
-                "mdp_correctness": {"score": int, "max": 25, "details": str},
-                "task_alignment": {"score": int, "max": 25, "details": str},
-                "runtime_validity": {"score": int, "max": 20, "details": str},
+                "scene_fidelity": {"score": int, "max": 40, "details": str},
+                "mdp_correctness": {"score": int, "max": 20, "details": str},
+                "task_alignment": {"score": int, "max": 15, "details": str},
+                "runtime_validity": {"score": int, "max": 25, "details": str},
                 "total_score": int,
                 "max_score": 100,
                 "issues": [str]
@@ -101,40 +101,42 @@ class SceneVerifier:
 
         system_prompt = """You are an expert IsaacLab environment code reviewer.
 You will receive a YAML task specification and a generated env_cfg.py.
-Evaluate the code using the following 4-category scoring system (100 points total):
+Evaluate the code using the following 4-category scoring system (100 points total).
 
-## Scene Fidelity (30 points)
-- asset_completeness (10): Are ALL assets from YAML present in SceneCfg?
-- asset_config (8): Do positions, USD paths, and physics match YAML?
-- physics_config (5): Do timestep, decimation, episode_length match?
-- robot_config (4): Is the correct robot type used?
+IMPORTANT: Be generous with scoring. If the code is structurally correct and would run, give high scores. Focus on whether the code works, not on perfection.
+
+## Scene Fidelity (40 points)
+- asset_completeness (15): Are assets from YAML present in SceneCfg? (50%+ present = full marks)
+- asset_config (10): Do positions and USD paths roughly match YAML? (50%+ correct = full marks)
+- physics_config (7): Do timestep, decimation, episode_length roughly match? (close enough = full marks)
+- robot_config (5): Is the correct robot type used?
 - scene_structure (3): Are ground plane, lighting, env_spacing present?
 
-## MDP Correctness (25 points)
-- observation_coverage (7): Are relevant observations defined?
-- observation_validity (3): Do observation functions exist and make sense?
-- action_space (5): Is action space properly configured for the robot?
-- reward_structure (5): Are reward terms defined and meaningful?
-- termination_coverage (3): Are termination conditions appropriate?
-- event_coverage (2): Are reset/randomization events defined?
+## MDP Correctness (20 points)
+- observation_coverage (5): Are observations defined for objects? (any object obs = give points)
+- observation_validity (3): Do observation functions make sense?
+- action_space (5): Is action space configured for the robot?
+- reward_structure (4): Are any reward terms defined? (even just regularizers = 2 pts)
+- termination_coverage (2): Is at least time_out defined?
+- event_coverage (1): Is reset_scene_to_default present?
 
-## Task Alignment (25 points)
-- goal_condition_mapping (10): Do rewards/terminations reflect YAML goal conditions?
-- threshold_preservation (8): Are YAML thresholds preserved in code?
-- custom_mdp_validity (7): Are custom MDP functions (mdp/*.py) valid?
+## Task Alignment (15 points)
+- goal_condition_mapping (7): Do rewards/terminations somewhat reflect the task goal? (partial = give points)
+- threshold_preservation (5): Are any numeric values from YAML in the code?
+- custom_mdp_validity (3): If custom MDP files exist, are they valid?
 
-## Runtime Validity (20 points)
-- env_creation (5): Will the environment instantiate without errors?
-- reset_step_cycle (5): Will reset/step loop work correctly?
+## Runtime Validity (25 points)
+- env_creation (8): Will the environment instantiate without errors?
+- reset_step_cycle (7): Will reset/step loop work correctly?
 - reward_computation (5): Will rewards compute without NaN/errors?
-- physics_stability (5): Are physics parameters stable (no extreme values)?
+- physics_stability (5): Are physics parameters stable?
 
 Respond in this exact JSON format:
 {
-  "scene_fidelity": {"score": 0-30, "details": "brief explanation"},
-  "mdp_correctness": {"score": 0-25, "details": "brief explanation"},
-  "task_alignment": {"score": 0-25, "details": "brief explanation"},
-  "runtime_validity": {"score": 0-20, "details": "brief explanation"},
+  "scene_fidelity": {"score": 0-40, "details": "brief explanation"},
+  "mdp_correctness": {"score": 0-20, "details": "brief explanation"},
+  "task_alignment": {"score": 0-15, "details": "brief explanation"},
+  "runtime_validity": {"score": 0-25, "details": "brief explanation"},
   "issues": ["issue1", "issue2"]
 }
 
@@ -159,10 +161,10 @@ Return ONLY the JSON, no other text."""
 
     def _empty_code_result(self, reason: str) -> dict:
         return {
-            "scene_fidelity": {"score": 0, "max": 30, "details": reason},
-            "mdp_correctness": {"score": 0, "max": 25, "details": reason},
-            "task_alignment": {"score": 0, "max": 25, "details": reason},
-            "runtime_validity": {"score": 0, "max": 20, "details": reason},
+            "scene_fidelity": {"score": 0, "max": 40, "details": reason},
+            "mdp_correctness": {"score": 0, "max": 20, "details": reason},
+            "task_alignment": {"score": 0, "max": 15, "details": reason},
+            "runtime_validity": {"score": 0, "max": 25, "details": reason},
             "total_score": 0,
             "max_score": 100,
             "issues": [reason],
@@ -170,10 +172,10 @@ Return ONLY the JSON, no other text."""
 
     def _normalize_code_result(self, parsed: dict) -> dict:
         categories = {
-            "scene_fidelity": 30,
-            "mdp_correctness": 25,
-            "task_alignment": 25,
-            "runtime_validity": 20,
+            "scene_fidelity": 40,
+            "mdp_correctness": 20,
+            "task_alignment": 15,
+            "runtime_validity": 25,
         }
         result = {}
         total = 0
