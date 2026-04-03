@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "simulation-generation-agent"
 version = "0.1.0"
-description = "YAML 기반 로보틱스 시뮬레이션 환경 자동 구성 프레임워크"
+description = "YAML-based robotics simulation auto-configuration framework (YAML 기반 로보틱스 시뮬레이션 환경 자동 구성 프레임워크)"
 requires-python = ">=3.10"
 dependencies = [
     "pyyaml>=6.0",
@@ -36,3 +36,15 @@ data-collection = [
 
 [tool.setuptools.packages.find]
 include = ["src*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

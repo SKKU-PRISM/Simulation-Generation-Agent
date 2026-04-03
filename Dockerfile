@@ -1,4 +1,4 @@
-# 1. Base Image 선언 (PyTorch 및 CUDA 환경)
+# 1. Base image declaration (Base Image 선언 — PyTorch 및 CUDA 환경)
 FROM nvidia/cuda:12.1.0-cudnn8-devel-ubuntu22.04
 
 SHELL ["/bin/bash", "-lc"]
@@ -7,7 +7,7 @@ ARG PYTHON_VERSION=3.11
 ARG ISAACSIM_PIP_VERSION=5.1.0
 ARG ISAACLAB_VERSION=v2.3.2
 
-# 2. 환경변수 설정
+# 2. Environment variables (환경변수 설정)
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
@@ -24,7 +24,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     ACCEPT_EULA=Y \
     PRIVACY_CONSENT=Y
 
-# 3. 시스템 패키지 설치 (필요시)
+# 3. System packages (시스템 패키지 설치)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
       software-properties-common \
@@ -75,7 +75,7 @@ RUN apt-get update && \
     ln -sf /etc/vulkan/icd.d/nvidia_icd.json /usr/share/vulkan/icd.d/nvidia_icd.json && \
     rm -rf /var/lib/apt/lists/*
 
-# 4. Python 가상환경 + Isaac Sim + PyTorch
+# 4. Python venv + Isaac Sim + PyTorch (Python 가상환경 + Isaac Sim + PyTorch)
 RUN python${PYTHON_VERSION} -m venv "${VIRTUAL_ENV}" && \
     python -m pip install --no-cache-dir --upgrade pip setuptools wheel && \
     python -m pip install --no-cache-dir \
@@ -85,7 +85,7 @@ RUN python${PYTHON_VERSION} -m venv "${VIRTUAL_ENV}" && \
       -U torch==2.7.0 torchvision==0.22.0 \
       --index-url https://download.pytorch.org/whl/cu128
 
-# 5. IsaacLab 소스 설치
+# 5. IsaacLab source install (IsaacLab 소스 설치)
 RUN git clone --branch "${ISAACLAB_VERSION}" --depth 1 \
       https://github.com/isaac-sim/IsaacLab.git \
       "${ISAACLAB_PATH}" && \
@@ -93,10 +93,10 @@ RUN git clone --branch "${ISAACLAB_VERSION}" --depth 1 \
     python -m pip install --no-cache-dir toml && \
     ./isaaclab.sh -i none
 
-# 6. 작업 디렉토리 설정
+# 6. Working directory (작업 디렉토리 설정)
 WORKDIR /workspace/Simulation-Generation-Agent
 
-# 7. 의존성 파일 복사 및 설치
+# 7. Copy and install dependencies (의존성 파일 복사 및 설치)
 COPY requirements.txt .
 RUN python -m pip install --no-cache-dir -r requirements.txt && \
     python -m pip install --no-cache-dir \
@@ -107,18 +107,18 @@ RUN python -m pip install --no-cache-dir -r requirements.txt && \
     python -m pip install --no-cache-dir --no-build-isolation flatdict==4.0.1 && \
     python -m pip install --no-cache-dir --no-build-isolation -e "${ISAACLAB_PATH}/source/isaaclab"
 
-# 8. 소스 코드 복사
+# 8. Copy source code (소스 코드 복사)
 COPY . .
 
-# 9. 실행 권한 부여
+# 9. Set execute permissions (실행 권한 부여)
 RUN chmod +x run_agent.sh && \
     mkdir -p /workspace/artifacts
 
-# 10. (중요) API Key 등은 빌드 시 넣지 말고 환경변수로 받도록 설정
+# 10. API keys — pass at runtime, NOT at build time (중요: API Key는 빌드 시 넣지 말고 환경변수로 전달)
 ENV OPENAI_API_KEY="" \
     AZURE_OPENAI_API_KEY="" \
     HF_TOKEN=""
 
-# 11. 컨테이너 시작 시 실행 명령어
+# 11. Container entrypoint (컨테이너 시작 시 실행 명령어)
 ENTRYPOINT ["./run_agent.sh"]
 CMD ["--help"]
