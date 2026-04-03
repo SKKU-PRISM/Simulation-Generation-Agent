@@ -2,10 +2,10 @@
 
 Evaluates LLM-generated IsaacLab ManagerBasedRLEnv code against
 the source YAML task document across 4 categories (100 points):
-  1. Scene Fidelity (30)   -- YAML assets vs generated scene
-  2. MDP Correctness (25)  -- obs/action/reward/term/event config
-  3. Task Alignment (25)   -- YAML goal mapped to code
-  4. Runtime Validity (20) -- actual execution in IsaacLab
+  1. Scene Fidelity (40)   -- YAML assets vs generated scene
+  2. MDP Correctness (20)  -- obs/action/reward/term/event config
+  3. Task Alignment (15)   -- YAML goal mapped to code
+  4. Runtime Validity (25) -- actual execution in IsaacLab
 
 Usage:
     python -m src.isaac_lab.evaluator <output_dir> <yaml_path>
@@ -107,7 +107,7 @@ class IsaacLabEvaluator:
                 self._update_obs_validity(checks, runtime_checker.results)
         else:
             # Give partial credit for runtime if skipped
-            for name, max_pts in [("env_creation", 5), ("reset_step_cycle", 5),
+            for name, max_pts in [("env_creation", 8), ("reset_step_cycle", 7),
                                    ("reward_computation", 5), ("physics_stability", 5)]:
                 checks.append(_check("runtime_validity", name, 0, max_pts, "skipped"))
 
