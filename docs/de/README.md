@@ -1,13 +1,13 @@
 <h1 align="center">Simulation-Generation-Agent (RAPIDS)</h1>
 
 <p align="center">
-  <a href="https://skku-prism.github.io/rapid_project_test/">
+  <a href="https://skku-prism.github.io/rapid-project/">
     <img src="../../assets/branding/prism_logo.png" alt="PRISM" width="240">
   </a>
 </p>
 
 <p align="center">
-  <a href="https://skku-prism.github.io/rapid_project_test/"><img src="https://img.shields.io/badge/Project-Page-8B5CF6?style=for-the-badge&logo=github" alt="Project Page"></a>
+  <a href="https://skku-prism.github.io/rapid-project/"><img src="https://img.shields.io/badge/Project-Page-8B5CF6?style=for-the-badge&logo=github" alt="Project Page"></a>
 </p>
 
 ---
