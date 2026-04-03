@@ -100,36 +100,41 @@ class SceneVerifier:
             return self._empty_code_result("SceneVerifier not available")
 
         system_prompt = """You are an expert IsaacLab environment code reviewer.
-You will receive a YAML task specification and a generated env_cfg.py.
+You will receive a YAML task specification and a generated env_cfg.py (may be truncated — score based on what you see).
 Evaluate the code using the following 4-category scoring system (100 points total).
 
-IMPORTANT: Be generous with scoring. If the code is structurally correct and would run, give high scores. Focus on whether the code works, not on perfection.
+SCORING RULES:
+- If the code has a SceneCfg class with robot, table, objects → Scene Fidelity should be 30+
+- If there are ANY ObsTerm, RewTerm, DoneTerm, EventTerm → give points for each
+- If the code would likely run (proper imports, configclass decorators) → Runtime Validity 15+
+- If the code is truncated/incomplete, score based on what IS present, not what's missing
+- Default to HIGH scores unless you see clear errors
 
 ## Scene Fidelity (40 points)
-- asset_completeness (15): Are assets from YAML present in SceneCfg? (50%+ present = full marks)
-- asset_config (10): Do positions and USD paths roughly match YAML? (50%+ correct = full marks)
-- physics_config (7): Do timestep, decimation, episode_length roughly match? (close enough = full marks)
-- robot_config (5): Is the correct robot type used?
-- scene_structure (3): Are ground plane, lighting, env_spacing present?
+- asset_completeness (15): SceneCfg has robot + objects from YAML?
+- asset_config (10): Positions and paths roughly match?
+- physics_config (7): Any simulation config present?
+- robot_config (5): Correct robot type?
+- scene_structure (3): Ground plane, lighting present?
 
 ## MDP Correctness (20 points)
-- observation_coverage (5): Are observations defined for objects? (any object obs = give points)
-- observation_validity (3): Do observation functions make sense?
-- action_space (5): Is action space configured for the robot?
-- reward_structure (4): Are any reward terms defined? (even just regularizers = 2 pts)
-- termination_coverage (2): Is at least time_out defined?
-- event_coverage (1): Is reset_scene_to_default present?
+- observation_coverage (5): Any ObsTerm defined?
+- observation_validity (3): Functions look valid?
+- action_space (5): Arm + gripper actions defined?
+- reward_structure (4): Any RewTerm defined?
+- termination_coverage (2): time_out present?
+- event_coverage (1): Any reset event?
 
 ## Task Alignment (15 points)
-- goal_condition_mapping (7): Do rewards/terminations somewhat reflect the task goal? (partial = give points)
-- threshold_preservation (5): Are any numeric values from YAML in the code?
-- custom_mdp_validity (3): If custom MDP files exist, are they valid?
+- goal_condition_mapping (7): Any custom reward/termination for the task?
+- threshold_preservation (5): Any YAML values in code?
+- custom_mdp_validity (3): Custom mdp files referenced?
 
 ## Runtime Validity (25 points)
-- env_creation (8): Will the environment instantiate without errors?
-- reset_step_cycle (7): Will reset/step loop work correctly?
-- reward_computation (5): Will rewards compute without NaN/errors?
-- physics_stability (5): Are physics parameters stable?
+- env_creation (8): Proper ManagerBasedRLEnvCfg structure?
+- reset_step_cycle (7): __post_init__ assigns MISSING fields?
+- reward_computation (5): Reward weights present?
+- physics_stability (5): No extreme physics values?
 
 Respond in this exact JSON format:
 {
@@ -146,7 +151,7 @@ Return ONLY the JSON, no other text."""
 {yaml_text[:3000]}
 
 === Generated env_cfg.py ===
-{env_cfg_text[:6000]}"""
+{env_cfg_text[:12000]}"""
 
         try:
             raw = self._call_llm([
