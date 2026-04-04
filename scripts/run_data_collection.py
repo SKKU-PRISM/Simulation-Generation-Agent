@@ -107,6 +107,12 @@ def main():
         help="Skip per-task raw -> LeRobot conversion after collection",
     )
     parser.add_argument(
+        "--output-dir",
+        type=str,
+        default=None,
+        help="Override output directory for collected data",
+    )
+    parser.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="Enable verbose logging",
@@ -140,6 +146,8 @@ def main():
         config.target_successful_episodes = args.target_success
     if args.max_attempts is not None:
         config.max_total_attempts = args.max_attempts
+    if args.output_dir is not None:
+        config.output_dir = args.output_dir
 
     # Batch mode
     if args.batch:
