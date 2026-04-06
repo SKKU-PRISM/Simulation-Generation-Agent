@@ -32,6 +32,8 @@ docker run -it --rm --gpus all \
   --env-file .env simgen-agent
 ```
 
+> **注意：** 如果更改了卷挂载路径，请在 TUI 设置（F1）中将 **Output Root** 更新为相同路径。默认值 `outputs/` 与上述标准挂载一致。
+
 ---
 
 ## run_agent.sh — 完整流水线执行（CLI 模式）

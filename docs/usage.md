@@ -32,6 +32,8 @@ docker run -it --rm --gpus all \
   --env-file .env simgen-agent
 ```
 
+> **Note:** If you change the volume mount path (e.g., `-v /my/path:/workspace/Simulation-Generation-Agent/outputs`), update the **Output Root** in TUI Settings (F1) to match. The default `outputs/` matches the standard mount shown above.
+
 ---
 
 ## run_agent.sh — Full Pipeline Execution (CLI Mode)

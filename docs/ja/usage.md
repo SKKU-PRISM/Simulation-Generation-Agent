@@ -32,6 +32,8 @@ docker run -it --rm --gpus all \
   --env-file .env simgen-agent
 ```
 
+> **注意：** ボリュームマウントパスを変更した場合、TUI設定（F1）の **Output Root** も同じパスに更新してください。デフォルト値 `outputs/` は上記の標準マウントと一致しています。
+
 ---
 
 ## run_agent.sh — フルパイプライン実行（CLIモード）

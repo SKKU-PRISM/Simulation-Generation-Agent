@@ -32,6 +32,8 @@ docker run -it --rm --gpus all \
   --env-file .env simgen-agent
 ```
 
+> **Hinweis:** Wenn Sie den Volume-Mount-Pfad aendern, aktualisieren Sie den **Output Root** in den TUI-Einstellungen (F1) entsprechend. Der Standardwert `outputs/` stimmt mit dem oben gezeigten Standard-Mount ueberein.
+
 ---
 
 ## run_agent.sh — Vollstaendige Pipeline-Ausfuehrung (CLI-Modus)

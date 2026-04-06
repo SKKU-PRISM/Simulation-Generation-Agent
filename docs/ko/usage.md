@@ -32,6 +32,8 @@ docker run -it --rm --gpus all \
   --env-file .env simgen-agent
 ```
 
+> **참고:** 볼륨 마운트 경로를 변경한 경우, TUI 설정(F1)의 **Output Root**도 동일하게 변경하세요. 기본값 `outputs/`는 위의 표준 마운트와 일치합니다.
+
 ---
 
 ## run_agent.sh — 전체 파이프라인 실행 (CLI 모드)

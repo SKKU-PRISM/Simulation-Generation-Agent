@@ -232,6 +232,8 @@ docker run -it --rm --gpus all \
 
 Use F1 for settings (including API key configuration), F2 for run history, or type a task description directly. API keys can be configured inside the TUI settings screen — they are saved to `.env` automatically.
 
+> **Note:** If you change the volume mount path, update **Output Root** in TUI Settings (F1) to match. The default `outputs/` corresponds to the standard mount shown above.
+
 ### Show Help
 
 ```bash
