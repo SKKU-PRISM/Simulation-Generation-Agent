@@ -138,7 +138,7 @@ class RapidsApp(App):
                     "  6. Click Upload — converts to LeRobot, validates, and publishes\n\n"
                     "  [bold]Examples:[/]\n"
                     '  "Stack the blocks inside the tray on the table"\n'
-                    '  "Pick up the cube and place it on the target"\n'
+                    '  "Pick up the tomato soup can and place it at the green target pad"\n'
                     '  "Sort the colored blocks into matching bins"\n'
                 )
                 yield Footer()
