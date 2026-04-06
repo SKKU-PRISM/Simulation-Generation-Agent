@@ -34,14 +34,20 @@ Ein End-to-End-Automatisierungsframework fuer Robotersimulation, das natuerlichs
 
 ```bash
 git clone --recurse-submodules <repo-url> && cd Simulation-Generation-Agent
-pip install -e . && cp .env.example .env  # OPENAI_API_KEY in .env setzen
-./run_agent.sh "Stack the blocks inside the tray on the table"
+pip install -e . && cp .env.example .env
+./run_agent.sh                           # Interaktives TUI-Dashboard starten
 ```
 
-**Interaktiver Modus** — Starten Sie ohne Argumente, um das TUI-Dashboard zu oeffnen:
+Das **interaktive TUI** ist die primaere Methode zur Nutzung von RAPIDS. Konfigurieren Sie API-Schluessel, waehlen Sie Roboter und Modell, geben Sie eine Aufgabenbeschreibung ein und beobachten Sie die vollstaendige Pipeline — alles in einer einzigen Terminal-Oberflaeche. **F1** fuer Einstellungen, **F2** fuer den Ausfuehrungsverlauf mit Bewertungen und Datensatz-Informationen.
+
+<details>
+<summary>CLI-Modus (nicht-interaktiv)</summary>
+
 ```bash
-./run_agent.sh
+./run_agent.sh "Stack the blocks inside the tray on the table"
+./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
+</details>
 
 Siehe [getting_started.md](getting_started.md) fuer die vollstaendige Einrichtung und [architecture.md](architecture.md) fuer Pipeline-Details.
 
@@ -88,13 +94,19 @@ cp .env.example .env    # OPENAI_API_KEY setzen
 ### 2. Ausfuehren
 
 ```bash
-# Interaktiver TUI-Modus (empfohlen)
-./run_agent.sh
+./run_agent.sh    # Interaktives TUI-Dashboard starten
+```
 
-# Oder direkter CLI-Modus
+API-Schluessel konfigurieren (F1 → Einstellungen), Roboter/Modell waehlen, Aufgabe eingeben — alles an einem Ort.
+
+<details>
+<summary>CLI-Modus (Fortgeschritten)</summary>
+
+```bash
 ./run_agent.sh "Stack the blocks inside the tray on the table"
 ./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
+</details>
 
 ### 3. Mit Docker ausfuehren
 

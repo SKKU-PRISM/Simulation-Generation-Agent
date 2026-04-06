@@ -34,16 +34,22 @@
 
 ```bash
 git clone --recurse-submodules <repo-url> && cd Simulation-Generation-Agent
-pip install -e . && cp .env.example .env  # .envにOPENAI_API_KEYを設定
-./run_agent.sh "Stack the blocks inside the tray on the table"
+pip install -e . && cp .env.example .env
+./run_agent.sh                           # インタラクティブTUIダッシュボードを起動
 ```
 
-**インタラクティブモード** — 引数なしで起動するとTUIダッシュボードが開きます：
+**インタラクティブTUI**がRAPIDSの主要な使用方法です。APIキーの設定、ロボット/モデルの選択、タスクの入力、パイプラインの実行をすべて単一のターミナルインターフェースで行えます。**F1**で設定、**F2**で実行履歴（スコアとデータセット情報を含む）を閲覧できます。
+
+<details>
+<summary>CLIモード（非対話型）</summary>
+
 ```bash
-./run_agent.sh
+./run_agent.sh "Stack the blocks inside the tray on the table"
+./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
+</details>
 
-完全なセットアップについては[docs/getting_started.md](getting_started.md)を、パイプラインの詳細については[docs/architecture.md](architecture.md)をご覧ください。
+完全なセットアップは[getting_started.md](getting_started.md)、パイプライン詳細は[architecture.md](architecture.md)をご覧ください。
 
 ---
 
@@ -88,13 +94,19 @@ cp .env.example .env    # OPENAI_API_KEYを設定
 ### 2. 実行
 
 ```bash
-# インタラクティブTUIモード（推奨）
-./run_agent.sh
+./run_agent.sh    # インタラクティブTUIダッシュボードを起動
+```
 
-# またはCLIモード
+APIキー設定（F1 → Settings）、ロボット/モデル選択、タスク入力 — すべて一箇所で。
+
+<details>
+<summary>CLIモード（上級者向け）</summary>
+
+```bash
 ./run_agent.sh "Stack the blocks inside the tray on the table"
 ./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
+</details>
 
 ### 3. Dockerで実行
 

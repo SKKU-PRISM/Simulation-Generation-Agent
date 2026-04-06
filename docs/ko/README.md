@@ -32,18 +32,26 @@
 
 An end-to-end robotics simulation automation framework that converts natural language task descriptions into structured YAML specs, auto-generates IsaacLab simulation environments, executes Code-as-Policies (CaP) robot manipulation, and collects training-ready demonstration datasets.
 
-**Quick Start (English):**
+자연어 태스크 설명에서 시작해 YAML 태스크 명세 생성, IsaacLab 시뮬레이션 환경 코드 자동 구성, Code-as-Policies(CaP) 기반 로봇 조작 실행, 학습 가능 데이터셋 수집까지 연결하는 로봇 시뮬레이션 자동화 프레임워크입니다.
+
 ```bash
 git clone --recurse-submodules <repo-url> && cd Simulation-Generation-Agent
-pip install -e . && cp .env.example .env  # Set OPENAI_API_KEY in .env
-./run_agent.sh "Stack the blocks inside the tray on the table"
+pip install -e . && cp .env.example .env
+./run_agent.sh                           # 인터랙티브 TUI 대시보드 실행
 ```
 
-See [docs/getting_started.md](getting_started.md) for full setup and [docs/architecture.md](architecture.md) for pipeline details.
+**인터랙티브 TUI**가 RAPIDS를 사용하는 주요 방법입니다. API 키 설정, 로봇/모델 선택, 태스크 입력, 파이프라인 실행을 하나의 터미널 인터페이스에서 수행할 수 있습니다. **F1**으로 설정, **F2**로 실행 이력과 점수, 데이터셋 정보를 조회할 수 있습니다.
 
----
+<details>
+<summary>CLI 모드 (비대화형)</summary>
 
-자연어 태스크 설명에서 시작해 YAML 태스크 명세 생성, IsaacLab 시뮬레이션 환경 코드 자동 구성, Code-as-Policies(CaP) 기반 로봇 조작 실행, 학습 가능 데이터셋 수집까지 연결하는 로봇 시뮬레이션 자동화 프레임워크입니다.
+```bash
+./run_agent.sh "Stack the blocks inside the tray on the table"
+./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
+```
+</details>
+
+자세한 설정은 [getting_started.md](getting_started.md), 파이프라인 구조는 [architecture.md](architecture.md)를 참조하세요.
 
 ## 파이프라인 개요
 
@@ -86,13 +94,20 @@ cp .env.example .env    # OPENAI_API_KEY를 설정하세요
 ### 2. 실행
 
 ```bash
-# 인터랙티브 TUI 모드 (권장)
-./run_agent.sh
+./run_agent.sh    # 인터랙티브 TUI 대시보드 실행
+```
 
-# 또는 CLI 모드
+API 키 설정(F1 → Settings), 로봇/모델 선택, 태스크 입력 — 모든 것을 한 곳에서.
+
+<details>
+<summary>CLI 모드 (고급)</summary>
+
+```bash
+# CLI 모드
 ./run_agent.sh "Stack the blocks inside the tray on the table"
 ./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
+</details>
 
 ### 3. Docker로 실행
 

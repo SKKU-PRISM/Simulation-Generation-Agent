@@ -34,16 +34,22 @@
 
 ```bash
 git clone --recurse-submodules <repo-url> && cd Simulation-Generation-Agent
-pip install -e . && cp .env.example .env  # 在 .env 中设置 OPENAI_API_KEY
-./run_agent.sh "Stack the blocks inside the tray on the table"
+pip install -e . && cp .env.example .env
+./run_agent.sh                           # 启动交互式 TUI 仪表板
 ```
 
-**交互模式** — 不带参数启动即可打开 TUI 仪表板：
+**交互式 TUI** 是使用 RAPIDS 的主要方式。在单一终端界面中配置 API 密钥、选择机器人和模型、输入任务描述并观看完整流水线运行。按 **F1** 进入设置，**F2** 浏览运行历史（包含评分和数据集信息）。
+
+<details>
+<summary>CLI 模式（非交互式）</summary>
+
 ```bash
-./run_agent.sh
+./run_agent.sh "Stack the blocks inside the tray on the table"
+./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
+</details>
 
-完整安装说明请参阅 [docs/getting_started.md](getting_started.md)，流水线详情请参阅 [docs/architecture.md](architecture.md)。
+完整安装说明请参阅 [getting_started.md](getting_started.md)，流水线详情请参阅 [architecture.md](architecture.md)。
 
 ---
 
@@ -88,13 +94,19 @@ cp .env.example .env    # 设置 OPENAI_API_KEY
 ### 2. 运行
 
 ```bash
-# 交互式 TUI 模式（推荐）
-./run_agent.sh
+./run_agent.sh    # 启动交互式 TUI 仪表板
+```
 
-# 或直接 CLI 模式
+配置 API 密钥（F1 → 设置），选择机器人/模型，输入任务 — 一切尽在一处。
+
+<details>
+<summary>CLI 模式（高级）</summary>
+
+```bash
 ./run_agent.sh "Stack the blocks inside the tray on the table"
 ./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
+</details>
 
 ### 3. 使用 Docker 运行
 

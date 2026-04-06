@@ -34,14 +34,20 @@ An end-to-end robotics simulation automation framework that converts natural lan
 
 ```bash
 git clone --recurse-submodules <repo-url> && cd Simulation-Generation-Agent
-pip install -e . && cp .env.example .env  # Set OPENAI_API_KEY in .env
-./run_agent.sh "Stack the blocks inside the tray on the table"
+pip install -e . && cp .env.example .env
+./run_agent.sh                           # Launch interactive TUI dashboard
 ```
 
-**Interactive mode** — launch without arguments to open the TUI dashboard:
+The **interactive TUI** is the primary way to use RAPIDS. Configure your API keys, select a robot and model, type a task description, and watch the full pipeline run — all from a single terminal interface. Press **F1** for settings, **F2** to browse run history with scores and dataset info.
+
+<details>
+<summary>CLI mode (non-interactive)</summary>
+
 ```bash
-./run_agent.sh
+./run_agent.sh "Stack the blocks inside the tray on the table"
+./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
+</details>
 
 See [docs/getting_started.md](docs/getting_started.md) for full setup and [docs/architecture.md](docs/architecture.md) for pipeline details.
 
@@ -119,13 +125,19 @@ cp .env.example .env    # Set OPENAI_API_KEY
 ### 2. Run
 
 ```bash
-# Interactive TUI mode (recommended)
-./run_agent.sh
+./run_agent.sh    # Opens interactive TUI dashboard
+```
 
-# Or direct CLI mode
+Configure API keys (F1 → Settings), select robot/model, and type a task — everything in one place.
+
+<details>
+<summary>CLI mode (advanced)</summary>
+
+```bash
 ./run_agent.sh "Stack the blocks inside the tray on the table"
 ./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
+</details>
 
 ### 3. Run with Docker
 
