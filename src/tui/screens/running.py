@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import re
 import time
+from threading import Thread
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Footer, Header, RichLog, Static
-from textual.worker import Worker, get_current_worker
 
 from ..runner import run_pipeline
 from ..run_index import append_run, build_run_entry
@@ -18,6 +18,7 @@ from ..run_index import append_run, build_run_entry
 class RunningScreen(Screen):
     BINDINGS = [
         ("ctrl+c", "cancel_run", "Cancel"),
+        ("escape", "cancel_run", "Back"),
     ]
 
     def __init__(self, task_desc: str, config: dict) -> None:
@@ -48,9 +49,10 @@ class RunningScreen(Screen):
         )
 
     def on_mount(self) -> None:
-        self.run_worker(self._execute_pipeline(), exclusive=True)
+        thread = Thread(target=self._run_in_thread, daemon=True)
+        thread.start()
 
-    async def _execute_pipeline(self) -> None:
+    def _run_in_thread(self) -> None:
         log = self.query_one("#run-log", RichLog)
         stage_status = self.query_one("#stage-status", Static)
         footer = self.query_one("#run-footer", Static)
@@ -58,7 +60,6 @@ class RunningScreen(Screen):
         stages = {1: "pending", 2: "pending", 3: "pending"}
 
         def on_line(line: str) -> None:
-            # Strip ANSI codes for parsing
             clean = re.sub(r"\x1b\[[0-9;]*m", "", line)
 
             # Update stage status
@@ -77,9 +78,9 @@ class RunningScreen(Screen):
 
             # Build stage display
             stage_lines = []
+            names = {1: "NL → YAML", 2: "YAML → IsaacLab", 3: "Data Collection"}
             for i in [1, 2, 3]:
                 s = stages[i]
-                names = {1: "NL → YAML", 2: "YAML → IsaacLab", 3: "Data Collection"}
                 if s == "done":
                     stage_lines.append(f"  [green]✅ Stage {i}: {names[i]}[/]")
                 elif s == "fail":
@@ -92,58 +93,59 @@ class RunningScreen(Screen):
                 else:
                     stage_lines.append(f"  [dim]○  Stage {i}: {names[i]}[/]")
 
-            self.call_from_thread(stage_status.update, "\n".join(stage_lines))
+            self.app.call_from_thread(stage_status.update, "\n".join(stage_lines))
 
             # Update elapsed
             elapsed = int(time.time() - self._start_time)
             m, s = divmod(elapsed, 60)
-            self.call_from_thread(
+            self.app.call_from_thread(
                 footer.update,
                 f"\n  [dim]Elapsed: {m}m {s}s[/]"
             )
 
-            # Log line (skip spinner updates)
-            if not clean.startswith("�") and clean.strip():
-                self.call_from_thread(log.write, line)
+            # Log line (skip spinner garbage)
+            if clean.strip() and not clean.startswith("\x00"):
+                self.app.call_from_thread(log.write, line)
 
-        self._result = await self.app.run_in_thread(
-            lambda: run_pipeline(
-                task_desc=self.task_desc,
-                robot=self.config.get("robot", "franka"),
-                episodes=self.config.get("episodes", 1),
-                max_attempts=self.config.get("max_attempts", 3),
-                model=self.config.get("model", "gpt-5"),
-                provider=self.config.get("provider", "openai"),
-                output_dir=self.config.get("output_root", "outputs"),
-                on_line=on_line,
-            )
+        self._result = run_pipeline(
+            task_desc=self.task_desc,
+            robot=self.config.get("robot", "franka"),
+            episodes=self.config.get("episodes", 1),
+            max_attempts=self.config.get("max_attempts", 3),
+            model=self.config.get("model", "gpt-5"),
+            provider=self.config.get("provider", "openai"),
+            output_dir=self.config.get("output_root", "outputs"),
+            on_line=on_line,
         )
 
         # Pipeline finished
         if self._result:
             status = self._result.get("status", "unknown")
             if status == "completed":
-                self.call_from_thread(
+                self.app.call_from_thread(
                     log.write, "\n[bold green]Pipeline completed successfully![/]"
                 )
             else:
-                self.call_from_thread(
+                self.app.call_from_thread(
                     log.write, f"\n[bold yellow]Pipeline finished: {status}[/]"
                 )
 
             # Save to run index
-            entry = build_run_entry(
-                result=self._result,
-                task_desc=self.task_desc,
-                robot=self.config.get("robot", "franka"),
-                model=self.config.get("model", "gpt-5"),
-                provider=self.config.get("provider", "openai"),
-                mode=self.config.get("mode", "full"),
-                episodes_target=self.config.get("episodes", 1),
-            )
-            append_run(entry)
+            try:
+                entry = build_run_entry(
+                    result=self._result,
+                    task_desc=self.task_desc,
+                    robot=self.config.get("robot", "franka"),
+                    model=self.config.get("model", "gpt-5"),
+                    provider=self.config.get("provider", "openai"),
+                    mode=self.config.get("mode", "full"),
+                    episodes_target=self.config.get("episodes", 1),
+                )
+                append_run(entry)
+            except Exception:
+                pass
 
-            self.call_from_thread(
+            self.app.call_from_thread(
                 log.write, "\n[dim]Press Esc to return to home.[/]"
             )
 

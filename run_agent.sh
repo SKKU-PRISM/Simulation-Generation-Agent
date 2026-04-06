@@ -11,6 +11,15 @@ fi
 
 # Interactive TUI mode when no arguments
 if [[ $# -eq 0 ]]; then
+  if [[ ! -t 0 ]]; then
+    echo "Error: Interactive TUI mode requires a terminal (TTY)." >&2
+    echo "  Local:  ./run_agent.sh" >&2
+    echo "  Docker: docker run -it simgen-agent" >&2
+    echo "" >&2
+    echo "For non-interactive usage, provide a task description:" >&2
+    echo "  ./run_agent.sh \"Stack the blocks inside the tray\"" >&2
+    exit 1
+  fi
   export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
   exec "${PYTHON_BIN}" -m src.tui.app
 fi

@@ -148,15 +148,6 @@ class ConfigScreen(Screen):
 
         # Propagate to app
         self.app.config.update(self.config)
-        # Update home status bar
-        home = self.app.query_one("HomeScreen", expect_type=Screen)
-        if hasattr(home, "query_one"):
-            try:
-                from .home import StatusBar
-                bar = home.query_one(StatusBar)
-                bar.update_config(self.config)
-            except Exception:
-                pass
 
     def action_cancel(self) -> None:
         self.app.pop_screen()
