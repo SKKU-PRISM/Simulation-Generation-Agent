@@ -171,7 +171,8 @@ Simulation-Generation-Agent/
 ├── run_agent.sh                  # メインエントリーポイント（フルパイプライン）
 ├── .env.example                  # 環境変数テンプレート
 ├── LICENSE                       # MITライセンス
-├── src/main.py                   # メインエントリーポイント
+├── src/main.py                   # メインエントリーポイント（CLIモード）
+├── src/tui/                      # インタラクティブTUIダッシュボード（Textual）
 ├── scripts/
 │   ├── task_spec_agent/          # ステージ1: 自然言語からYAML
 │   │   ├── task_spec_agent.py    #   メインオーケストレータ

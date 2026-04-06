@@ -228,6 +228,20 @@ docker run --rm --gpus all \
   "Stack the blocks inside the tray on the table"
 ```
 
+### Interaktiver TUI-Modus
+
+Starten Sie das interaktive Terminal-Dashboard innerhalb von Docker. Erfordert `-it`-Flags fuer TTY-Zugriff:
+
+```bash
+docker run -it --rm --gpus all \
+  -v $(pwd)/artifacts:/workspace/artifacts \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  -e OPENAI_API_KEY="your-key" \
+  simgen-agent
+```
+
+Verwenden Sie F1 fuer Einstellungen, F2 fuer den Ausfuehrungsverlauf, oder geben Sie eine Aufgabenbeschreibung direkt ein.
+
 ### Hilfe anzeigen
 
 ```bash

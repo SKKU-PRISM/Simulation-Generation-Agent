@@ -299,13 +299,15 @@ Welches Skript welchen Teil der Pipeline ausfuehrt:
 
 | Skript | Ausfuehrungsumfang | Beschreibung |
 |--------|-------------------|-------------|
-| **`run_agent.sh`** | **Stufe 1 → 2 → 3** | **Haupt-Ausfuehrungseinstiegspunkt (natuerlichsprachliche Eingabe → vollstaendige Pipeline)** |
+| **`run_agent.sh`** (ohne Argumente) | **Interaktives TUI** | **Interaktives Dashboard — Einstellungen, Aufgaben ausfuehren, Verlauf durchsuchen** |
+| **`run_agent.sh "Aufgabe"`** | **Stufe 1 → 2 → 3** | **CLI-Modus — natuerlichsprachliche Eingabe → vollstaendige Pipeline** |
 | `run_agent.sh --mode isaac-lab` | Nur Stufe 2 | YAML → Umgebungscode-Generierung/-Verifikation |
 | `run_agent.sh --mode data-collection` | Nur Stufe 3 | Datensammlung mit vorhandener Umgebung |
 | `run_agent.sh --mode e2e-batch` | Stufe 2 → 3 + Nachverarbeitung | Konfigurationsbasierte grossangelegte Batch-Sammlung |
 | `scripts/run_full_test.sh` | Stufe 1 → 2 → 3 | Sequenzieller Benchmark von 13 Aufgaben |
 
-> `run_agent.sh "natuerlichsprachliche Aufgabe"` ist der **Haupt-Einstiegspunkt**, der mit Stufe 1 (NL→YAML) beginnt.
+> `run_agent.sh` ohne Argumente startet das **interaktive TUI-Dashboard** (TTY erforderlich).
+> `run_agent.sh "natuerlichsprachliche Aufgabe"` fuehrt die Pipeline im **CLI-Modus** aus.
 > Sie koennen auch einzelne Stufen mit der Option `--mode` ausfuehren.
 
 ---

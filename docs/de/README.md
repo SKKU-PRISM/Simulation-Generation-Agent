@@ -171,7 +171,8 @@ Simulation-Generation-Agent/
 ├── run_agent.sh                  # Haupt-Einstiegspunkt (vollstaendige Pipeline)
 ├── .env.example                  # Umgebungsvariablen-Vorlage
 ├── LICENSE                       # MIT-Lizenz
-├── src/main.py                   # Haupt-Einstiegspunkt
+├── src/main.py                   # Haupt-Einstiegspunkt (CLI-Modus)
+├── src/tui/                      # Interaktives TUI-Dashboard (Textual)
 ├── scripts/
 │   ├── task_spec_agent/          # Stufe 1: NL zu YAML
 │   │   ├── task_spec_agent.py    #   Haupt-Orchestrator

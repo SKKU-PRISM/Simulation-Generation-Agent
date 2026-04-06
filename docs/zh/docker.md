@@ -228,6 +228,20 @@ docker run --rm --gpus all \
   "Stack the blocks inside the tray on the table"
 ```
 
+### 交互式 TUI 模式
+
+在 Docker 内启动交互式终端仪表板。需要 `-it` 标志以访问 TTY：
+
+```bash
+docker run -it --rm --gpus all \
+  -v $(pwd)/artifacts:/workspace/artifacts \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  -e OPENAI_API_KEY="your-key" \
+  simgen-agent
+```
+
+使用 F1 配置设置，F2 浏览运行历史，或直接输入任务描述。
+
 ### 显示帮助
 
 ```bash

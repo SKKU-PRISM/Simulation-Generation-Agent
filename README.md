@@ -203,7 +203,8 @@ Simulation-Generation-Agent/
 ├── run_agent.sh                  # Main entry point (full pipeline)
 ├── .env.example                  # Environment variable template
 ├── LICENSE                       # MIT License
-├── src/main.py                   # Main entry point
+├── src/main.py                   # Main entry point (CLI mode)
+├── src/tui/                      # Interactive TUI dashboard (Textual)
 ├── scripts/
 │   ├── task_spec_agent/          # Stage 1: NL to YAML
 │   │   ├── task_spec_agent.py    #   Main orchestrator

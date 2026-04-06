@@ -174,7 +174,8 @@ Simulation-Generation-Agent/
 ├── run_agent.sh                  # 메인 실행 진입점 (전체 파이프라인)
 ├── .env.example                  # 환경변수 템플릿
 ├── LICENSE                       # MIT 라이선스
-├── src/main.py                   # 메인 실행 진입점
+├── src/main.py                   # 메인 실행 진입점 (CLI 모드)
+├── src/tui/                      # 인터랙티브 TUI 대시보드 (Textual)
 ├── scripts/
 │   ├── task_spec_agent/          # Stage 1: NL → YAML
 │   │   ├── task_spec_agent.py    #   메인 오케스트레이터

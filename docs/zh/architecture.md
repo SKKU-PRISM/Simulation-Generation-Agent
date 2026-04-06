@@ -298,13 +298,15 @@ LeRobot Hub (HuggingFace)
 
 | 脚本 | 执行范围 | 描述 |
 |------|----------|------|
-| **`run_agent.sh`** | **阶段 1 → 2 → 3** | **主执行入口（自然语言输入 → 完整流水线）** |
+| **`run_agent.sh`**（无参数） | **交互式 TUI** | **交互式仪表板 — 配置设置、运行任务、浏览历史** |
+| **`run_agent.sh "任务"`** | **阶段 1 → 2 → 3** | **CLI 模式 — 自然语言输入 → 完整流水线** |
 | `run_agent.sh --mode isaac-lab` | 仅阶段 2 | YAML → 环境代码生成/验证 |
 | `run_agent.sh --mode data-collection` | 仅阶段 3 | 使用现有环境进行数据收集 |
 | `run_agent.sh --mode e2e-batch` | 阶段 2 → 3 + 后处理 | 基于配置的大规模批量收集 |
 | `scripts/run_full_test.sh` | 阶段 1 → 2 → 3 | 13 个任务的顺序基准测试 |
 
-> `run_agent.sh "自然语言任务"` 是从阶段 1（NL→YAML）开始的**主入口**。
+> `run_agent.sh` 不带参数启动**交互式 TUI 仪表板**（需要 TTY）。
+> `run_agent.sh "自然语言任务"` 以 **CLI 模式**运行流水线。
 > 也可以使用 `--mode` 选项单独运行各阶段。
 
 ---

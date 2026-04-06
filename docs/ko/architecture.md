@@ -296,13 +296,15 @@ Stage 1, 2, 3이 공유하는 기반 모듈들입니다.
 
 | 스크립트 | 실행 범위 | 설명 |
 |---------|----------|------|
-| **`run_agent.sh`** | **Stage 1 → 2 → 3** | **메인 실행 진입점 (자연어 입력 → 전체 파이프라인)** |
+| **`run_agent.sh`** (인수 없음) | **인터랙티브 TUI** | **인터랙티브 대시보드 — 설정, 태스크 실행, 이력 조회** |
+| **`run_agent.sh "태스크"`** | **Stage 1 → 2 → 3** | **CLI 모드 — 자연어 입력 → 전체 파이프라인** |
 | `run_agent.sh --mode isaac-lab` | Stage 2만 | YAML → 환경 코드 생성/검증 |
 | `run_agent.sh --mode data-collection` | Stage 3만 | 기존 환경으로 데이터 수집 |
 | `run_agent.sh --mode e2e-batch` | Stage 2 → 3 + 후처리 | config 기반 대규모 배치 수집 |
 | `scripts/run_full_test.sh` | Stage 1 → 2 → 3 | 13개 태스크 순차 벤치마크 |
 
-> `run_agent.sh "자연어 태스크"`가 Stage 1(NL→YAML)부터 시작하는 **메인 진입점**입니다.
+> `run_agent.sh` 인수 없이 실행하면 **인터랙티브 TUI 대시보드**가 실행됩니다 (TTY 필요).
+> `run_agent.sh "자연어 태스크"`는 **CLI 모드**로 파이프라인을 실행합니다.
 > `--mode` 옵션으로 개별 Stage를 실행할 수도 있습니다.
 
 ---

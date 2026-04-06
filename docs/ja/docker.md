@@ -228,6 +228,20 @@ docker run --rm --gpus all \
   "Stack the blocks inside the tray on the table"
 ```
 
+### インタラクティブTUIモード
+
+Docker内でインタラクティブターミナルダッシュボードを起動します。TTYアクセスには `-it` フラグが必要です：
+
+```bash
+docker run -it --rm --gpus all \
+  -v $(pwd)/artifacts:/workspace/artifacts \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  -e OPENAI_API_KEY="your-key" \
+  simgen-agent
+```
+
+F1で設定、F2で実行履歴を閲覧、またはタスク記述を直接入力できます。
+
 ### ヘルプの表示
 
 ```bash

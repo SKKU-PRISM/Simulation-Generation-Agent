@@ -298,13 +298,15 @@ Which script runs which part of the pipeline:
 
 | Script | Execution Scope | Description |
 |--------|----------------|-------------|
-| **`run_agent.sh`** | **Stage 1 → 2 → 3** | **Main execution entry point (natural language input → full pipeline)** |
+| **`run_agent.sh`** (no args) | **Interactive TUI** | **Interactive dashboard — configure settings, run tasks, browse history** |
+| **`run_agent.sh "task"`** | **Stage 1 → 2 → 3** | **CLI mode — natural language input → full pipeline** |
 | `run_agent.sh --mode isaac-lab` | Stage 2 only | YAML → environment code generation/verification |
 | `run_agent.sh --mode data-collection` | Stage 3 only | Data collection with existing environment |
 | `run_agent.sh --mode e2e-batch` | Stage 2 → 3 + post-processing | Config-based large-scale batch collection |
 | `scripts/run_full_test.sh` | Stage 1 → 2 → 3 | Sequential benchmark of 13 tasks |
 
-> `run_agent.sh "natural language task"` is the **main entry point** that starts from Stage 1 (NL→YAML).
+> `run_agent.sh` without arguments launches the **interactive TUI dashboard** (requires TTY).
+> `run_agent.sh "natural language task"` runs the pipeline in **CLI mode**.
 > You can also run individual Stages using the `--mode` option.
 
 ---

@@ -171,7 +171,8 @@ Simulation-Generation-Agent/
 ├── run_agent.sh                  # 主入口（完整流水线）
 ├── .env.example                  # 环境变量模板
 ├── LICENSE                       # MIT 许可证
-├── src/main.py                   # 主入口
+├── src/main.py                   # 主入口（CLI 模式）
+├── src/tui/                      # 交互式 TUI 仪表板（Textual）
 ├── scripts/
 │   ├── task_spec_agent/          # 阶段 1：自然语言到 YAML
 │   │   ├── task_spec_agent.py    #   主编排器
