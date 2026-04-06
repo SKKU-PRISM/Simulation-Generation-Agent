@@ -60,6 +60,7 @@ def build_run_entry(
     dc = steps.get("data_collection", {})
     il = steps.get("yaml_to_isaaclab", {})
 
+    # Try multiple paths to find eval_score
     eval_score = il.get("eval_score")
     eval_breakdown = {}
     code_score = il.get("last_code_score", {})
@@ -70,6 +71,8 @@ def build_run_entry(
             "TA": code_score.get("task_alignment", 0),
             "RV": code_score.get("runtime_validity", 0),
         }
+        if eval_score is None:
+            eval_score = code_score.get("total")
 
     return {
         "id": Path(result.get("work_dir", "")).name,
@@ -199,6 +202,20 @@ def import_existing_runs(outputs_dir: str | Path | None = None) -> list[dict[str
                         break
                 except Exception:
                     pass
+
+        # Try to find dataset path from data_collection dirs
+        dc_dir = out_dir / "data_collection"
+        if dc_dir.exists():
+            # Match by task name prefix
+            task_prefix = task_name[:15]  # first 15 chars for matching
+            for dc_run in sorted(dc_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+                if task_prefix in dc_run.name and (dc_run / "raw_dataset" / "metadata.json").exists():
+                    entry["dataset_path"] = str(dc_run)
+                    # Count episodes
+                    episodes_dir = dc_run / "raw_dataset" / "episodes"
+                    if episodes_dir.exists():
+                        entry["episodes_success"] = len(list(episodes_dir.iterdir()))
+                    break
 
         # Extract timestamp from dir name (challenge_run_YYYYMMDD_HHMMSS)
         import re

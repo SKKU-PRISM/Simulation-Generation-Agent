@@ -194,9 +194,11 @@ def run_task(
             rdata = json.loads(latest_result.read_text())
             env_dir = rdata.get("output_dir")
             lab_success = rdata.get("success", False)
+            sv = rdata.get("scene_verification", {})
+            ce = sv.get("code_evaluation", {})
             lab_detail = {
                 "attempts": rdata.get("attempts"),
-                "eval_score": rdata.get("eval_score"),
+                "eval_score": rdata.get("eval_score") or ce.get("total_score"),
                 "evaluation": rdata.get("evaluation"),
                 "error": rdata.get("error"),
             }

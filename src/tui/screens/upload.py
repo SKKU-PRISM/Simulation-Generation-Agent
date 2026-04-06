@@ -197,6 +197,18 @@ class UploadConfigScreen(Screen):
             log.write, f"[cyan]Preparing upload to {repo_id}...[/]"
         )
 
+        # Ensure path points to raw_dataset/ subdirectory
+        if dataset_path:
+            from pathlib import Path
+            dp = Path(dataset_path)
+            if dp.is_dir() and (dp / "raw_dataset").is_dir():
+                dataset_path = str(dp / "raw_dataset")
+            elif dp.is_dir() and not (dp / "metadata.json").exists():
+                # Search for raw_dataset inside
+                candidates = list(dp.glob("**/raw_dataset/metadata.json"))
+                if candidates:
+                    dataset_path = str(candidates[0].parent)
+
         if not dataset_path:
             self.app.call_from_thread(
                 log.write, "[yellow]No raw_dataset path found. Searching...[/]"
