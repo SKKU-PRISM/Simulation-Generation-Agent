@@ -58,7 +58,7 @@ Geben Sie eine natuerlichsprachliche Aufgabenbeschreibung als Argument fuer die 
 
 ```bash
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e OPENAI_API_KEY="your-key" \
   simgen-agent \
   "Stack the blocks inside the tray on the table" --episodes 5

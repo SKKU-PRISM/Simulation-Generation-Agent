@@ -243,7 +243,6 @@ docker build -t simgen-agent .
 
 # 使用自然语言输入运行完整流水线
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e OPENAI_API_KEY="your-key" \
   simgen-agent \
@@ -251,7 +250,6 @@ docker run --rm --gpus all \
 
 # JSON 输入
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e OPENAI_API_KEY="your-key" \
   simgen-agent \

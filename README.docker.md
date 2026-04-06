@@ -121,7 +121,6 @@ Just describe what the robot should do:
 
 ```bash
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
   -e OPENAI_API_KEY="your-key-here" \
@@ -132,7 +131,6 @@ docker run --rm --gpus all \
 With options:
 ```bash
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
   -e OPENAI_API_KEY="your-key-here" \
@@ -144,9 +142,8 @@ docker run --rm --gpus all \
 
 ```bash
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
-  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  --env-file .env \
   simgen-agent \
   data/input_sample.json results/output.json
 ```
@@ -166,25 +163,22 @@ The default `data/input_sample.json` contains a sample FrankaStackTray task. You
 ```bash
 # Stage 2 only: Generate IsaacLab environment code
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
-  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  --env-file .env \
   simgen-agent \
   --mode isaac-lab --task tasks/franka/stack/franka_stack.yaml
 
 # Stage 3 only: Data collection
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
-  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  --env-file .env \
   simgen-agent \
   --mode data-collection --task tasks/franka/stack/franka_stack.yaml
 
 # Batch execution (multiple tasks)
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
-  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  --env-file .env \
   simgen-agent \
   --mode e2e-batch --config configs/docker/e2e_batch_smoke.yaml
 ```
@@ -195,7 +189,6 @@ To use Azure OpenAI instead of the OpenAI platform, pass Azure credentials via `
 
 ```bash
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e AZURE_OPENAI_API_KEY="your-azure-key" \
   -e AZURE_OPENAI_BASE_URL="https://your-resource.openai.azure.com/openai/v1/" \
@@ -220,7 +213,6 @@ The default model is `gpt-5`. To override, pass the `OPENAI_MODEL` environment v
 
 ```bash
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e OPENAI_API_KEY="your-key" \
   -e OPENAI_MODEL="gpt-4o" \
@@ -376,7 +368,7 @@ Either OPENAI_API_KEY or AZURE_OPENAI_API_KEY must be set.
 -e OPENAI_API_KEY="sk-your-key"
 
 # Option 2: From .env file
--e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)"
+--env-file .env
 
 # Option 3: Export first
 export OPENAI_API_KEY="sk-your-key"

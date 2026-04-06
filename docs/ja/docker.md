@@ -121,7 +121,6 @@ docker images | grep simgen-agent
 
 ```bash
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
   -e OPENAI_API_KEY="your-key-here" \
@@ -132,7 +131,6 @@ docker run --rm --gpus all \
 オプション付き：
 ```bash
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
   -e OPENAI_API_KEY="your-key-here" \
@@ -144,9 +142,8 @@ docker run --rm --gpus all \
 
 ```bash
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
-  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  --env-file .env \
   simgen-agent \
   data/input_sample.json results/output.json
 ```
@@ -166,25 +163,22 @@ docker run --rm --gpus all \
 ```bash
 # Stage 2 のみ：IsaacLab 環境コードの生成
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
-  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  --env-file .env \
   simgen-agent \
   --mode isaac-lab --task tasks/franka/stack/franka_stack.yaml
 
 # Stage 3 のみ：データ収集
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
-  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  --env-file .env \
   simgen-agent \
   --mode data-collection --task tasks/franka/stack/franka_stack.yaml
 
 # バッチ実行（複数タスク）
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
-  -e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)" \
+  --env-file .env \
   simgen-agent \
   --mode e2e-batch --config configs/docker/e2e_batch_smoke.yaml
 ```
@@ -195,7 +189,6 @@ OpenAI プラットフォームの代わりに Azure OpenAI を使用するに�
 
 ```bash
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e AZURE_OPENAI_API_KEY="your-azure-key" \
   -e AZURE_OPENAI_BASE_URL="https://your-resource.openai.azure.com/openai/v1/" \
@@ -220,7 +213,6 @@ docker run --rm --gpus all \
 
 ```bash
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e OPENAI_API_KEY="your-key" \
   -e OPENAI_MODEL="gpt-4o" \
@@ -376,7 +368,7 @@ Either OPENAI_API_KEY or AZURE_OPENAI_API_KEY must be set.
 -e OPENAI_API_KEY="sk-your-key"
 
 # 方法 2：.env ファイルから
--e OPENAI_API_KEY="$(grep OPENAI_API_KEY .env | cut -d= -f2)"
+--env-file .env
 
 # 方法 3：先に export
 export OPENAI_API_KEY="sk-your-key"

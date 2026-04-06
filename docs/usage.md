@@ -59,7 +59,7 @@ Provide a natural language task description as argument for non-interactive exec
 
 ```bash
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e OPENAI_API_KEY="your-key" \
   simgen-agent \
   "Stack the blocks inside the tray on the table" --episodes 5
