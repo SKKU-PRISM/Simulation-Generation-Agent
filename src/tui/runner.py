@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
@@ -31,10 +32,13 @@ def run_pipeline(
         process_holder: If provided, the subprocess.Popen object is appended
             so the caller can kill it on cancellation.
 
-    Returns the parsed results/output.json dict.
+    Returns the parsed result JSON dict.
     """
     python_bin = os.environ.get("PYTHON_BIN", sys.executable)
-    output_json = PROJECT_ROOT / "results" / "output.json"
+
+    # Timestamped output to prevent overwrites
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_json = PROJECT_ROOT / output_dir / "results" / f"output_{timestamp}.json"
     output_json.parent.mkdir(parents=True, exist_ok=True)
 
     input_data = {
@@ -60,6 +64,7 @@ def run_pipeline(
         str(PROJECT_ROOT / "src" / "main.py"),
         "--input", input_path,
         "--output", str(output_json),
+        "--output-dir", str(PROJECT_ROOT / output_dir),
     ]
 
     try:

@@ -205,7 +205,8 @@ def import_existing_runs(outputs_dir: str | Path | None = None) -> list[dict[str
         m = re.search(r"(\d{8})_(\d{6})$", run_id)
         if m:
             try:
-                dt_str = f"{m.group(1)}T{m.group(2)[:2]}:{m.group(2)[2:4]}:{m.group(2)[4:6]}"
+                d, t = m.group(1), m.group(2)
+                dt_str = f"{d[:4]}-{d[4:6]}-{d[6:8]}T{t[:2]}:{t[2:4]}:{t[4:6]}"
                 entry["started_at"] = dt_str
             except Exception:
                 pass
