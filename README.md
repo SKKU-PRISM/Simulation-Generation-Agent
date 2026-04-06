@@ -136,12 +136,14 @@ docker build -t simgen-agent .
 # Interactive TUI mode
 docker run -it --rm --gpus all \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
   --env-file .env \
   simgen-agent
 
 # Or direct CLI mode
 docker run --rm --gpus all \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
   -e OPENAI_API_KEY="your-key" \
   simgen-agent \
   "Stack the blocks inside the tray on the table" --episodes 5

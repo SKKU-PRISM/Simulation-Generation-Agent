@@ -29,6 +29,7 @@ Docker에서 인터랙티브 모드를 사용하려면 `-it` 옵션을 추가하
 ```bash
 docker run -it --rm --gpus all \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
   --env-file .env \
   simgen-agent
 ```

@@ -235,6 +235,7 @@ docker run --rm --gpus all \
 ```bash
 docker run -it --rm --gpus all \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
   --env-file .env \
   simgen-agent
 ```

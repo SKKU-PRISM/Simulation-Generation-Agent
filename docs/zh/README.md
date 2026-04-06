@@ -105,12 +105,14 @@ docker build -t simgen-agent .
 # 交互式 TUI 模式
 docker run -it --rm --gpus all \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
   --env-file .env \
   simgen-agent
 
 # 或直接 CLI 模式
 docker run --rm --gpus all \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
   -e OPENAI_API_KEY="your-key" \
   simgen-agent \
   "Stack the blocks inside the tray on the table" --episodes 5
