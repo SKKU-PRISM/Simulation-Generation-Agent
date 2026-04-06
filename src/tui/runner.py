@@ -7,7 +7,6 @@ import os
 import subprocess
 import sys
 import tempfile
-import time
 from pathlib import Path
 from typing import Callable
 
@@ -24,8 +23,13 @@ def run_pipeline(
     provider: str = "openai",
     output_dir: str = "outputs",
     on_line: Callable[[str], None] | None = None,
+    process_holder: list | None = None,
 ) -> dict:
     """Run the full pipeline and stream output lines via callback.
+
+    Args:
+        process_holder: If provided, the subprocess.Popen object is appended
+            so the caller can kill it on cancellation.
 
     Returns the parsed results/output.json dict.
     """
@@ -33,7 +37,6 @@ def run_pipeline(
     output_json = PROJECT_ROOT / "results" / "output.json"
     output_json.parent.mkdir(parents=True, exist_ok=True)
 
-    # Create temp input JSON
     input_data = {
         "tasks": [{"task_description": task_desc, "robot": robot}],
         "config": {"target_success": episodes, "max_attempts": max_attempts},
@@ -69,6 +72,9 @@ def run_pipeline(
             env=env,
         )
 
+        if process_holder is not None:
+            process_holder.append(process)
+
         for line in iter(process.stdout.readline, ""):
             stripped = line.rstrip()
             if stripped and on_line:
@@ -80,6 +86,10 @@ def run_pipeline(
             return json.loads(output_json.read_text(encoding="utf-8"))
         return {"status": "error", "message": f"exit code {process.returncode}"}
 
+    except FileNotFoundError:
+        return {"status": "error", "message": f"Python binary not found: {python_bin}"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
     finally:
         try:
             os.unlink(input_path)

@@ -140,34 +140,77 @@ def import_existing_runs(outputs_dir: str | Path | None = None) -> list[dict[str
         if run_id in existing_ids:
             continue
 
-        # Try to find results
-        result_files = list(run_dir.glob("*/step2_isaaclab.log"))
-        if not result_files:
+        # Find task subdirectories (each has step logs)
+        task_dirs = [d for d in run_dir.iterdir() if d.is_dir()]
+        if not task_dirs:
             continue
 
-        # Try to read output.json if available
-        for output_json in [project_root / "results" / "output.json"]:
-            if output_json.exists():
+        task_dir = task_dirs[0]  # first (usually only) task
+        task_name = task_dir.name
+
+        # Try to extract info from logs
+        entry: dict[str, Any] = {
+            "id": run_id,
+            "task": task_name,
+            "robot": "franka",
+            "model": "gpt-5",
+            "provider": "openai",
+            "mode": "full",
+            "status": "unknown",
+            "started_at": "",
+            "finished_at": "",
+            "work_dir": str(run_dir),
+        }
+
+        # Check step logs to determine status
+        step1_ok = (task_dir / "step1_nl_to_yaml.log").exists()
+        step2_log = task_dir / "step2_isaaclab.log"
+        step3_log = task_dir / "step3_data_collection.log"
+
+        if step3_log.exists():
+            entry["status"] = "completed"
+        elif step2_log.exists():
+            entry["status"] = "partial"
+        elif step1_ok:
+            entry["status"] = "partial"
+
+        # Try to get eval score from isaaclab result.json
+        isaaclab_dirs = sorted(
+            (out_dir / "isaaclab").glob("*"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        ) if (out_dir / "isaaclab").exists() else []
+
+        for idir in isaaclab_dirs:
+            result_json = idir / "result.json"
+            if result_json.exists():
                 try:
-                    data = json.loads(output_json.read_text())
-                    if data.get("work_dir", "").endswith(run_id):
-                        tasks = data.get("tasks", [])
-                        if tasks:
-                            entry = {
-                                "id": run_id,
-                                "task": tasks[0].get("description", "unknown"),
-                                "robot": "franka",
-                                "model": "gpt-5",
-                                "provider": "openai",
-                                "mode": "full",
-                                "status": data.get("status", "unknown"),
-                                "started_at": data.get("started_at", ""),
-                                "finished_at": data.get("finished_at", ""),
-                                "work_dir": str(run_dir),
-                            }
-                            new_runs.append(entry)
+                    rdata = json.loads(result_json.read_text())
+                    sv = rdata.get("scene_verification", {})
+                    ce = sv.get("code_evaluation", {})
+                    if ce:
+                        entry["eval_score"] = ce.get("total_score")
+                        entry["eval_breakdown"] = {
+                            "SF": ce.get("scene_fidelity", {}).get("score", 0),
+                            "MDP": ce.get("mdp_correctness", {}).get("score", 0),
+                            "TA": ce.get("task_alignment", {}).get("score", 0),
+                            "RV": ce.get("runtime_validity", {}).get("score", 0),
+                        }
+                        break
                 except Exception:
                     pass
+
+        # Extract timestamp from dir name (challenge_run_YYYYMMDD_HHMMSS)
+        import re
+        m = re.search(r"(\d{8})_(\d{6})$", run_id)
+        if m:
+            try:
+                dt_str = f"{m.group(1)}T{m.group(2)[:2]}:{m.group(2)[2:4]}:{m.group(2)[4:6]}"
+                entry["started_at"] = dt_str
+            except Exception:
+                pass
+
+        new_runs.append(entry)
 
     if new_runs:
         all_runs = new_runs + existing

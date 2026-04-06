@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from textual.app import ComposeResult
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Static
 
-from ..run_index import load_runs, import_existing_runs
-from ..theme import status_icon
+from ..run_index import import_existing_runs, load_runs
 
 
 class HistoryScreen(Screen):
@@ -26,7 +27,6 @@ class HistoryScreen(Screen):
         table = self.query_one("#history-table", DataTable)
         table.add_columns("#", "Status", "Task", "Robot", "Ep", "Score", "Model", "Date")
 
-        # Import existing runs if index is empty
         runs = load_runs()
         if not runs:
             try:
@@ -61,7 +61,6 @@ class HistoryScreen(Screen):
             started = run.get("started_at", "")
             if started:
                 try:
-                    from datetime import datetime
                     dt = datetime.fromisoformat(started.replace("Z", "+00:00"))
                     date_str = dt.strftime("%m-%d %H:%M")
                 except Exception:

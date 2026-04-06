@@ -125,21 +125,33 @@ class ConfigScreen(Screen):
         robot_set = self.query_one("#robot-select", RadioSet)
         robots = ["franka", "ur10e", "openarm", "so101"]
         idx = robot_set.pressed_index
-        if 0 <= idx < len(robots):
+        if idx is not None and 0 <= idx < len(robots):
             self.config["robot"] = robots[idx]
 
-        # Text inputs
-        self.config["episodes"] = int(self.query_one("#episodes-input", Input).value or 1)
-        self.config["max_attempts"] = int(self.query_one("#max-attempts-input", Input).value or 3)
+        # Text inputs (with validation)
+        def _int(widget_id: str, default: int) -> int:
+            try:
+                return int(self.query_one(widget_id, Input).value or default)
+            except (ValueError, TypeError):
+                return default
+
+        def _float(widget_id: str, default: float) -> float:
+            try:
+                return float(self.query_one(widget_id, Input).value or default)
+            except (ValueError, TypeError):
+                return default
+
+        self.config["episodes"] = _int("#episodes-input", 1)
+        self.config["max_attempts"] = _int("#max-attempts-input", 3)
         self.config["model"] = self.query_one("#model-input", Input).value or "gpt-5"
-        self.config["temperature"] = float(self.query_one("#temp-input", Input).value or 0.1)
-        self.config["max_tokens"] = int(self.query_one("#max-tokens-input", Input).value or 16000)
+        self.config["temperature"] = _float("#temp-input", 0.1)
+        self.config["max_tokens"] = _int("#max-tokens-input", 16000)
         self.config["vlm_model"] = self.query_one("#vlm-model-input", Input).value or "gpt-5"
         self.config["output_root"] = self.query_one("#output-root-input", Input).value or "outputs/"
         self.config["dataset_dir"] = self.query_one("#dataset-dir-input", Input).value or "outputs/data_collection/"
-        self.config["execution_timeout"] = int(self.query_one("#timeout-input", Input).value or 300)
-        self.config["max_retries"] = int(self.query_one("#retries-input", Input).value or 5)
-        self.config["recording_fps"] = int(self.query_one("#fps-input", Input).value or 20)
+        self.config["execution_timeout"] = _int("#timeout-input", 300)
+        self.config["max_retries"] = _int("#retries-input", 5)
+        self.config["recording_fps"] = _int("#fps-input", 20)
 
         # Toggles
         self.config["vlm_enabled"] = self.query_one("#vlm-toggle", Checkbox).value

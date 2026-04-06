@@ -3,20 +3,16 @@
 from __future__ import annotations
 
 from textual.app import ComposeResult
-from textual.containers import Container, Vertical
+from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import Footer, Header, Input, Static
 
 
 class StatusBar(Static):
-    """Shows current config summary."""
-
-    def __init__(self, config: dict) -> None:
-        self._config = config
-        super().__init__()
+    """Shows current config summary — reads from app.config directly."""
 
     def render(self) -> str:
-        c = self._config
+        c = self.app.config if hasattr(self.app, "config") else {}
         robot = c.get("robot", "franka")
         provider = c.get("provider", "openai")
         model = c.get("model", "gpt-5")
@@ -34,10 +30,6 @@ class StatusBar(Static):
             f"  [bold cyan]Mode:[/] {mode_label}"
         )
 
-    def update_config(self, config: dict) -> None:
-        self._config = config
-        self.refresh()
-
 
 class HomeScreen(Screen):
     BINDINGS = [
@@ -47,10 +39,6 @@ class HomeScreen(Screen):
         ("escape", "quit", "Quit"),
     ]
 
-    def __init__(self, config: dict) -> None:
-        self.config = config
-        super().__init__()
-
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical(id="home-layout"):
@@ -58,7 +46,7 @@ class HomeScreen(Screen):
                 "\n  [bold cyan]🤖 RAPIDS — Simulation Generation Agent[/]\n",
                 id="title",
             )
-            yield StatusBar(self.config)
+            yield StatusBar(id="status-bar")
             yield Static("─" * 60, classes="separator")
             yield Static(
                 "\n  Describe a task for the robot to perform.\n"
@@ -68,6 +56,13 @@ class HomeScreen(Screen):
             yield Input(placeholder="Enter task description...", id="task-input")
             yield Static("", id="feedback")
         yield Footer()
+
+    def on_screen_resume(self) -> None:
+        """Refresh status bar when returning from another screen."""
+        try:
+            self.query_one("#status-bar", StatusBar).refresh()
+        except Exception:
+            pass
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         value = event.value.strip()
@@ -92,7 +87,7 @@ class HomeScreen(Screen):
                 )
             return
 
-        # Run pipeline with the task description
+        # Run pipeline with current app config
         self.app.run_task(value)
 
     def action_settings(self) -> None:
