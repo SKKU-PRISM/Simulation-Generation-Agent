@@ -6,7 +6,7 @@ from textual.app import ComposeResult
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Header, Static
 
-from ..run_index import load_runs
+from ..run_index import load_runs, import_existing_runs
 from ..theme import status_icon
 
 
@@ -24,9 +24,16 @@ class HistoryScreen(Screen):
 
     def on_mount(self) -> None:
         table = self.query_one("#history-table", DataTable)
-        table.add_columns("#", "Status", "Task", "Robot", "Ep", "Score", "Date")
+        table.add_columns("#", "Status", "Task", "Robot", "Ep", "Score", "Model", "Date")
 
+        # Import existing runs if index is empty
         runs = load_runs()
+        if not runs:
+            try:
+                runs = import_existing_runs()
+            except Exception:
+                pass
+
         completed = partial = failed = 0
 
         for i, run in enumerate(runs):
@@ -42,11 +49,13 @@ class HistoryScreen(Screen):
                 status_str = "[red]failed[/]"
 
             task = run.get("task", "unknown")
-            if len(task) > 30:
-                task = task[:27] + "..."
+            if len(task) > 25:
+                task = task[:22] + "..."
 
             score = run.get("eval_score")
             score_str = str(score) if score is not None else "-"
+
+            model = run.get("model", "-")
 
             date_str = ""
             started = run.get("started_at", "")
@@ -65,6 +74,7 @@ class HistoryScreen(Screen):
                 run.get("robot", "-"),
                 str(run.get("episodes_success", run.get("episodes_target", "-"))),
                 score_str,
+                model,
                 date_str,
                 key=str(i),
             )

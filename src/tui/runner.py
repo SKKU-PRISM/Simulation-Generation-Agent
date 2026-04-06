@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -28,8 +29,8 @@ def run_pipeline(
 
     Returns the parsed results/output.json dict.
     """
-    python_bin = os.environ.get("PYTHON_BIN", "python3")
-    output_json = Path(output_dir) / "results" / "output.json"
+    python_bin = os.environ.get("PYTHON_BIN", sys.executable)
+    output_json = PROJECT_ROOT / "results" / "output.json"
     output_json.parent.mkdir(parents=True, exist_ok=True)
 
     # Create temp input JSON

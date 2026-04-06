@@ -103,9 +103,18 @@ class RunningScreen(Screen):
                 f"\n  [dim]Elapsed: {m}m {s}s[/]"
             )
 
-            # Log line (skip spinner garbage)
-            if clean.strip() and not clean.startswith("\x00"):
-                self.app.call_from_thread(log.write, line)
+            # Log line — skip spinner frames and cursor control sequences
+            if (
+                clean.strip()
+                and not clean.startswith("\x00")
+                and "⠋" not in clean and "⠙" not in clean and "⠹" not in clean
+                and "⠸" not in clean and "⠼" not in clean and "⠴" not in clean
+                and "⠦" not in clean and "⠧" not in clean and "⠇" not in clean
+                and "⠏" not in clean
+                and "\x1b[2K" not in line and "\x1b[1A" not in line
+                and "elapsed:" not in clean.lower()
+            ):
+                self.app.call_from_thread(log.write, clean)
 
         self._result = run_pipeline(
             task_desc=self.task_desc,
