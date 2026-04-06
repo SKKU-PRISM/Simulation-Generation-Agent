@@ -15,6 +15,7 @@ langchain-core>=0.2.0
 langchain-community>=0.2.0
 faiss-cpu>=1.7.0,<1.10.0
 sentence-transformers>=2.2.0
+textual>=0.80.0
 
 # Data collection extras
 pin>=2.6.0

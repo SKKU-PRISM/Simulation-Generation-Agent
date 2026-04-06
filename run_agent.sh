@@ -9,6 +9,12 @@ if [[ ! -x "${PYTHON_BIN}" ]]; then
   PYTHON_BIN="${PYTHON_BIN_FALLBACK:-python3}"
 fi
 
+# Interactive TUI mode when no arguments
+if [[ $# -eq 0 ]]; then
+  export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
+  exec "${PYTHON_BIN}" -m src.tui.app
+fi
+
 DEFAULT_MODE="e2e-batch"
 DEFAULT_OUTPUT_ROOT="${SIMGEN_ARTIFACT_ROOT:-/workspace/artifacts}"
 DEFAULT_E2E_CONFIG="configs/docker/e2e_batch_release.yaml"
