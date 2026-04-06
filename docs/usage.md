@@ -18,8 +18,9 @@ Launch `run_agent.sh` without arguments to open the interactive terminal dashboa
 
 The TUI provides:
 - **Task input** — type a natural language task description and press Enter to run the full pipeline
-- **Settings (F1)** — configure pipeline mode, LLM provider/model, robot, episodes, paths, and advanced options
+- **Settings (F1)** — configure pipeline mode, LLM provider/model, robot, episodes, API keys, paths, and advanced options
 - **Run History (F2)** — browse past runs with arrow keys, press Enter to view detailed results including environment scores and dataset info
+- **Upload (U in History)** — select a completed run and upload its dataset to HuggingFace (convert → validate → publish)
 - **Help (F3)** — keyboard shortcuts and slash commands
 
 Slash commands: `/config`, `/history`, `/help`, `/quit`

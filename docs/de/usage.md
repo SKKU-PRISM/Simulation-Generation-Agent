@@ -20,6 +20,7 @@ Das TUI bietet:
 - **Aufgabeneingabe** — Geben Sie eine natuerlichsprachliche Aufgabenbeschreibung ein und druecken Sie Enter, um die gesamte Pipeline auszufuehren
 - **Einstellungen (F1)** — Pipeline-Modus, LLM-Anbieter/Modell, Roboter, Episoden, Pfade und erweiterte Optionen konfigurieren
 - **Ausfuehrungsverlauf (F2)** — Vergangene Laeufe mit Pfeiltasten durchsuchen, Enter fuer detaillierte Ergebnisse (Umgebungsbewertungen, Datensatz-Infos)
+- **Upload (U in History)** — Einen abgeschlossenen Lauf auswaehlen und den Datensatz auf HuggingFace hochladen (Konvertierung → Validierung → Veroeffentlichung)
 - **Hilfe (F3)** — Tastenkuerzel und Slash-Befehle
 
 Slash-Befehle: `/config`, `/history`, `/help`, `/quit`

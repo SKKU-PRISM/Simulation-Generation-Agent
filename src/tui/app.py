@@ -126,6 +126,7 @@ class RapidsApp(App):
                     "  F1        — Settings\n"
                     "  F2        — Run History\n"
                     "  F3        — Help\n"
+                    "  U         — Upload dataset (in History screen)\n"
                     "  Esc       — Back / Quit\n"
                     "  Ctrl+C    — Cancel running pipeline\n\n"
                     "  [bold]Examples:[/]\n"

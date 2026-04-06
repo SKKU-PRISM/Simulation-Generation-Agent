@@ -13,6 +13,7 @@ from ..run_index import import_existing_runs, load_runs
 
 class HistoryScreen(Screen):
     BINDINGS = [
+        ("u", "upload", "Upload"),
         ("escape", "back", "Back"),
     ]
 
@@ -81,7 +82,8 @@ class HistoryScreen(Screen):
         summary = (
             f"  [green]✅ completed: {completed}[/]  "
             f"[yellow]⚠️  partial: {partial}[/]  "
-            f"[red]❌ failed: {failed}[/]"
+            f"[red]❌ failed: {failed}[/]  "
+            f"[dim]│ Press [bold]U[/bold] to upload dataset[/]"
         )
         self.query_one("#history-summary", Static).update(f"\n{summary}\n")
 
@@ -94,6 +96,10 @@ class HistoryScreen(Screen):
                 self.app.push_screen(DetailScreen(runs[idx]))
         except (ValueError, IndexError):
             pass
+
+    def action_upload(self) -> None:
+        from .upload import UploadSelectScreen
+        self.app.push_screen(UploadSelectScreen())
 
     def action_back(self) -> None:
         self.app.pop_screen()
