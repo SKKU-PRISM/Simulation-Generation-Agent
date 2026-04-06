@@ -16,16 +16,15 @@ from ..run_index import append_run, build_run_entry
 
 
 SPINNER_CHARS = set("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+PROGRESS_FRAMES = ["◐", "◓", "◑", "◒"]
 
 
 def _is_noise(line: str) -> bool:
     """Return True if line is spinner/cursor noise that should not be logged."""
     if not line.strip():
         return True
-    # Cursor control sequences
     if "\x1b[2K" in line or "\x1b[1A" in line:
         return True
-    # Spinner characters
     if any(c in line for c in SPINNER_CHARS):
         return True
     return False
@@ -44,13 +43,18 @@ class RunningScreen(Screen):
         self._result: dict | None = None
         self._process_holder: list = []
         self._finished = False
+        self._tick = 0
+        # Shared state for stage tracking
+        self._stages = {1: "pending", 2: "pending", 3: "pending"}
+        self._stage_times: dict[int, str] = {}
+        self._stage_start: dict[int, float] = {}
         super().__init__()
 
     def compose(self) -> ComposeResult:
         yield Header()
         with Vertical(id="running-layout"):
             yield Static(self._build_header(), id="run-header")
-            yield Static(self._build_initial_stages(), id="stage-status")
+            yield Static(self._build_stage_display(), id="stage-status")
             yield Static("", id="elapsed-bar")
             yield Static("  [bold]── Log ──────────────────────────────────[/]\n")
             yield RichLog(id="run-log", highlight=True, markup=True, wrap=True, max_lines=200)
@@ -66,86 +70,106 @@ class RunningScreen(Screen):
             f"[bold]Model:[/] {c.get('model', 'gpt-5')}\n"
         )
 
-    def _build_initial_stages(self) -> str:
-        return (
-            "  [dim]○  Stage 1: NL → YAML[/]\n"
-            "  [dim]○  Stage 2: YAML → IsaacLab[/]\n"
-            "  [dim]○  Stage 3: Data Collection[/]"
-        )
+    def _build_stage_display(self) -> str:
+        names = {1: "NL → YAML", 2: "YAML → IsaacLab", 3: "Data Collection"}
+        lines = []
+        frame = PROGRESS_FRAMES[self._tick % len(PROGRESS_FRAMES)]
+
+        for i in [1, 2, 3]:
+            s = self._stages[i]
+            t = self._stage_times.get(i, "")
+            time_str = f"  {t}" if t else ""
+
+            if s == "done":
+                lines.append(f"  [green]✅ Stage {i}: {names[i]}[/]{time_str}")
+            elif s == "fail":
+                lines.append(f"  [red]❌ Stage {i}: {names[i]}[/]{time_str}")
+            elif s == "running":
+                # Show animated progress with elapsed time
+                stage_elapsed = ""
+                if i in self._stage_start:
+                    se = int(time.time() - self._stage_start[i])
+                    sm, ss = divmod(se, 60)
+                    stage_elapsed = f" ({sm}m {ss}s)" if sm else f" ({ss}s)"
+                bar_width = 20
+                filled = (self._tick % bar_width)
+                progress_bar = "░" * filled + "█" + "░" * (bar_width - filled - 1)
+                lines.append(
+                    f"  [cyan]{frame} Stage {i}: {names[i]}[/]"
+                    f"  [cyan]{progress_bar}[/]"
+                    f"[dim]{stage_elapsed}[/]"
+                )
+            else:
+                lines.append(f"  [dim]○  Stage {i}: {names[i]}[/]")
+
+        return "\n".join(lines)
 
     def on_mount(self) -> None:
-        self.set_interval(1.0, self._update_elapsed)
+        self.set_interval(0.5, self._update_display)
         thread = Thread(target=self._run_in_thread, daemon=True)
         thread.start()
 
-    def _update_elapsed(self) -> None:
+    def _update_display(self) -> None:
+        self._tick += 1
         if self._finished:
             return
+        # Update elapsed
         elapsed = int(time.time() - self._start_time)
         m, s = divmod(elapsed, 60)
         try:
-            bar = self.query_one("#elapsed-bar", Static)
-            bar.update(f"  [dim]Elapsed: {m}m {s}s[/]")
+            self.query_one("#elapsed-bar", Static).update(
+                f"  [dim]Total elapsed: {m}m {s}s[/]"
+            )
+            # Refresh stage display with animation
+            self.query_one("#stage-status", Static).update(
+                self._build_stage_display()
+            )
         except Exception:
             pass
 
     def _run_in_thread(self) -> None:
         log = self.query_one("#run-log", RichLog)
-        stage_status = self.query_one("#stage-status", Static)
-
-        stages = {1: "pending", 2: "pending", 3: "pending"}
-        stage_times: dict[int, str] = {}
-
-        def _build_stage_display() -> str:
-            names = {1: "NL → YAML", 2: "YAML → IsaacLab", 3: "Data Collection"}
-            lines = []
-            for i in [1, 2, 3]:
-                s = stages[i]
-                t = stage_times.get(i, "")
-                time_str = f"  {t}" if t else ""
-                if s == "done":
-                    lines.append(f"  [green]✅ Stage {i}: {names[i]}[/]{time_str}")
-                elif s == "fail":
-                    lines.append(f"  [red]❌ Stage {i}: {names[i]}[/]{time_str}")
-                elif s == "running":
-                    lines.append(f"  [cyan]⏳ Stage {i}: {names[i]}  ...[/]")
-                else:
-                    lines.append(f"  [dim]○  Stage {i}: {names[i]}[/]")
-            return "\n".join(lines)
 
         def on_line(line: str) -> None:
             clean = re.sub(r"\x1b\[[0-9;]*m", "", line)
 
             # Detect stage transitions
             if "Stage 1" in clean and "✅" in clean:
-                stages[1] = "done"
+                self._stages[1] = "done"
                 m = re.search(r"(\d+m?\s*\d+s)", clean)
                 if m:
-                    stage_times[1] = m.group(1)
+                    self._stage_times[1] = m.group(1)
             elif "Stage 2" in clean and "✅" in clean:
-                stages[2] = "done"
+                self._stages[2] = "done"
                 m = re.search(r"(\d+m?\s*\d+s)", clean)
                 if m:
-                    stage_times[2] = m.group(1)
+                    self._stage_times[2] = m.group(1)
             elif "Stage 3" in clean and "✅" in clean:
-                stages[3] = "done"
+                self._stages[3] = "done"
                 m = re.search(r"(\d+m?\s*\d+s)", clean)
                 if m:
-                    stage_times[3] = m.group(1)
+                    self._stage_times[3] = m.group(1)
             elif "Stage 1" in clean and "❌" in clean:
-                stages[1] = "fail"
+                self._stages[1] = "fail"
             elif "Stage 2" in clean and "❌" in clean:
-                stages[2] = "fail"
+                self._stages[2] = "fail"
             elif "Stage 3" in clean and "❌" in clean:
-                stages[3] = "fail"
-            elif "Stage 1" in clean and stages[1] == "pending":
-                stages[1] = "running"
-            elif "Stage 2" in clean and stages[2] == "pending":
-                stages[2] = "running"
-            elif "Stage 3" in clean and stages[3] == "pending":
-                stages[3] = "running"
+                self._stages[3] = "fail"
+            elif "Stage 1" in clean and self._stages[1] == "pending":
+                self._stages[1] = "running"
+                self._stage_start[1] = time.time()
+            elif "Stage 2" in clean and self._stages[2] == "pending":
+                self._stages[2] = "running"
+                self._stage_start[2] = time.time()
+            elif "Stage 3" in clean and self._stages[3] == "pending":
+                self._stages[3] = "running"
+                self._stage_start[3] = time.time()
 
-            self.app.call_from_thread(stage_status.update, _build_stage_display())
+            # Update stage display immediately on transitions
+            self.app.call_from_thread(
+                self.query_one("#stage-status", Static).update,
+                self._build_stage_display(),
+            )
 
             # Log meaningful lines only
             if not _is_noise(line):
@@ -195,7 +219,6 @@ class RunningScreen(Screen):
             )
 
     def action_cancel_run(self) -> None:
-        # Kill subprocess if running
         for proc in self._process_holder:
             try:
                 proc.kill()
