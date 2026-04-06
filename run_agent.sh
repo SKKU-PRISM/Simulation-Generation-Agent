@@ -123,6 +123,11 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -h|--help)
+      if [[ -t 0 && $# -eq 1 ]]; then
+        # TTY available and --help is the only arg (e.g. Docker CMD default)
+        export PYTHONPATH="${REPO_ROOT}:${PYTHONPATH:-}"
+        exec "${PYTHON_BIN}" -m src.tui.app
+      fi
       print_help
       exit 0
       ;;
