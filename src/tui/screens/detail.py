@@ -107,6 +107,20 @@ class DetailScreen(Screen):
                     f"  [bold]{'Total':20s} {eval_score:3d}/{max_total}[/]"
                 )
 
+        # VLM Image Score (SceneVerifier)
+        image_score = r.get("image_score")
+        if image_score:
+            lines.append("")
+            lines.append(f"  [bold]── VLM Scene Verification ────────────────────[/]")
+            front = image_score.get("front", 0)
+            top = image_score.get("top", 0)
+            front_bar = score_bar(front, 100)
+            top_bar = score_bar(top, 100)
+            front_color = score_color(front, 100)
+            top_color = score_color(top, 100)
+            lines.append(f"  {'Front View':20s} {front:3d}/100  {front_bar}  [{front_color}]{front:3d}%[/]")
+            lines.append(f"  {'Top View':20s} {top:3d}/100  {top_bar}  [{top_color}]{top:3d}%[/]")
+
         # Data Collection Results
         geo_ok = r.get("geometry_successful", 0)
         vlm_ok = r.get("vlm_successful", 0)

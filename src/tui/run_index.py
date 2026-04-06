@@ -97,6 +97,7 @@ def build_run_entry(
         "geometry_successful": dc.get("geometry_successful", 0),
         "vlm_successful": dc.get("vlm_successful", 0),
         "target_met": dc.get("target_met"),
+        "image_score": il.get("last_image_score"),
     }
 
 
@@ -202,6 +203,13 @@ def import_existing_runs(outputs_dir: str | Path | None = None) -> list[dict[str
                             "TA": ce.get("task_alignment", {}).get("score", 0),
                             "RV": ce.get("runtime_validity", {}).get("score", 0),
                         }
+                    ie = sv.get("image_evaluation", {})
+                    if ie:
+                        entry["image_score"] = {
+                            "front": ie.get("front", {}).get("score", 0),
+                            "top": ie.get("top", {}).get("score", 0),
+                        }
+                    if ce or ie:
                         break
                 except Exception:
                     pass
