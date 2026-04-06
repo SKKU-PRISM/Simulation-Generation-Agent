@@ -234,9 +234,8 @@ Docker 내부에서 인터랙티브 터미널 대시보드를 실행합니다. T
 
 ```bash
 docker run -it --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
-  -e OPENAI_API_KEY="your-key" \
+  --env-file .env \
   simgen-agent
 ```
 

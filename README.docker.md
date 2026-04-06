@@ -234,13 +234,12 @@ Launch the interactive terminal dashboard inside Docker. Requires `-it` flags fo
 
 ```bash
 docker run -it --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
-  -e OPENAI_API_KEY="your-key" \
+  --env-file .env \
   simgen-agent
 ```
 
-Use F1 for settings, F2 for run history, or type a task description directly.
+Use F1 for settings (including API key configuration), F2 for run history, or type a task description directly. API keys can be configured inside the TUI settings screen — they are saved to `.env` automatically.
 
 ### Show Help
 

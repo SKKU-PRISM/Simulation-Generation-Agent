@@ -28,7 +28,7 @@ TUI 提供以下功能：
 ```bash
 docker run -it --rm --gpus all \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
-  -e OPENAI_API_KEY="your-key" \
+  --env-file .env \
   simgen-agent
 ```
 

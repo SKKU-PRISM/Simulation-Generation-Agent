@@ -1,9 +1,12 @@
-"""Config screen — pipeline settings."""
+"""Config screen — pipeline settings with API key management."""
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from textual.app import ComposeResult
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import VerticalScroll
 from textual.screen import Screen
 from textual.widgets import (
     Button,
@@ -17,6 +20,34 @@ from textual.widgets import (
     Static,
 )
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+
+# Placeholder shown when a key is already set (never reveal actual value)
+_KEY_PLACEHOLDER = "\u2022" * 12  # ••••••••••••
+
+
+def _has_env_key(var_name: str) -> bool:
+    """Check if an API key env var is set and non-empty."""
+    val = os.environ.get(var_name, "")
+    return bool(val and val != "your-key" and not val.startswith("your-"))
+
+
+def _update_env_file(env_path: Path, key: str, value: str) -> None:
+    """Update or append a key=value pair in a .env file."""
+    lines: list[str] = []
+    found = False
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped.startswith(f"{key}=") or stripped.startswith(f"{key} ="):
+                lines.append(f"{key}={value}")
+                found = True
+            else:
+                lines.append(line)
+    if not found:
+        lines.append(f"{key}={value}")
+    env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
 
 class ConfigScreen(Screen):
     BINDINGS = [
@@ -24,7 +55,7 @@ class ConfigScreen(Screen):
     ]
 
     def __init__(self, config: dict) -> None:
-        self.config = dict(config)  # working copy
+        self.config = dict(config)
         super().__init__()
 
     def compose(self) -> ComposeResult:
@@ -57,6 +88,40 @@ class ConfigScreen(Screen):
             yield Input(value=str(self.config.get("temperature", 0.1)), id="temp-input")
             yield Label("  Max Tokens")
             yield Input(value=str(self.config.get("max_tokens", 16000)), id="max-tokens-input", type="integer")
+
+            # API Keys
+            yield Static("\n  [bold]── API Keys ─────────────────────────[/]")
+            yield Static("  [dim]Keys are saved to .env and masked for security.[/]")
+
+            yield Label("  OpenAI API Key")
+            yield Input(
+                value=_KEY_PLACEHOLDER if _has_env_key("OPENAI_API_KEY") else "",
+                id="openai-key-input",
+                password=True,
+                placeholder="sk-...",
+            )
+
+            yield Label("  Azure OpenAI API Key")
+            yield Input(
+                value=_KEY_PLACEHOLDER if _has_env_key("AZURE_OPENAI_API_KEY") else "",
+                id="azure-key-input",
+                password=True,
+                placeholder="Azure API key...",
+            )
+            yield Label("  Azure OpenAI Base URL")
+            yield Input(
+                value=os.environ.get("AZURE_OPENAI_BASE_URL", ""),
+                id="azure-url-input",
+                placeholder="https://your-resource.openai.azure.com/openai/v1/",
+            )
+
+            yield Label("  HuggingFace Token")
+            yield Input(
+                value=_KEY_PLACEHOLDER if _has_env_key("HF_TOKEN") else "",
+                id="hf-token-input",
+                password=True,
+                placeholder="hf_...",
+            )
 
             # Robot
             yield Static("\n  [bold]── Robot ─────────────────────────────[/]")
@@ -100,6 +165,7 @@ class ConfigScreen(Screen):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "save-btn":
             self._apply_config()
+            self._save_api_keys()
             self.app.pop_screen()
 
     def _apply_config(self) -> None:
@@ -160,6 +226,30 @@ class ConfigScreen(Screen):
 
         # Propagate to app
         self.app.config.update(self.config)
+
+    def _save_api_keys(self) -> None:
+        """Save API keys to .env file and set in current process env."""
+        env_path = PROJECT_ROOT / ".env"
+
+        key_fields = [
+            ("openai-key-input", "OPENAI_API_KEY"),
+            ("azure-key-input", "AZURE_OPENAI_API_KEY"),
+            ("hf-token-input", "HF_TOKEN"),
+        ]
+
+        for widget_id, env_var in key_fields:
+            value = self.query_one(f"#{widget_id}", Input).value
+            # Skip if empty, unchanged placeholder, or masked
+            if not value or value == _KEY_PLACEHOLDER:
+                continue
+            _update_env_file(env_path, env_var, value)
+            os.environ[env_var] = value
+
+        # Azure Base URL (not a secret, no masking needed)
+        azure_url = self.query_one("#azure-url-input", Input).value
+        if azure_url:
+            _update_env_file(env_path, "AZURE_OPENAI_BASE_URL", azure_url)
+            os.environ["AZURE_OPENAI_BASE_URL"] = azure_url
 
     def action_cancel(self) -> None:
         self.app.pop_screen()
