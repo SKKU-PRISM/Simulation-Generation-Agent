@@ -88,11 +88,11 @@ cp .env.example .env    # OPENAI_API_KEYを設定
 ### 2. 実行
 
 ```bash
-./run_agent.sh "Stack the blocks inside the tray on the table"
-```
+# インタラクティブTUIモード（推奨）
+./run_agent.sh
 
-オプション付き:
-```bash
+# またはCLIモード
+./run_agent.sh "Stack the blocks inside the tray on the table"
 ./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
 
@@ -102,16 +102,22 @@ cp .env.example .env    # OPENAI_API_KEYを設定
 git submodule update --init --recursive
 docker build -t simgen-agent .
 
+# インタラクティブTUIモード
+docker run -it --rm --gpus all \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  --env-file .env \
+  simgen-agent
+
+# またはCLIモード
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e OPENAI_API_KEY="your-key" \
   simgen-agent \
   "Stack the blocks inside the tray on the table" --episodes 5
 ```
 
-> **出力パス**: Docker内では、結果は`/workspace/artifacts`に保存されます。
-> `-v`フラグによりホスト上の`./artifacts/`にマッピングされます。
-> ローカル実行の場合、出力は`outputs/`に保存されます。
+> **出力パス**: Docker内では`/workspace/artifacts`に、ローカルでは`outputs/`に保存されます。
+> APIキーはTUI設定（F1）または`--env-file .env`で設定できます。
 
 ### 4. 個別ステージの実行（上級者向け）
 

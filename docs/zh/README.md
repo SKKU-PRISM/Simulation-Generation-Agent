@@ -88,11 +88,11 @@ cp .env.example .env    # 设置 OPENAI_API_KEY
 ### 2. 运行
 
 ```bash
-./run_agent.sh "Stack the blocks inside the tray on the table"
-```
+# 交互式 TUI 模式（推荐）
+./run_agent.sh
 
-带选项运行：
-```bash
+# 或直接 CLI 模式
+./run_agent.sh "Stack the blocks inside the tray on the table"
 ./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
 
@@ -102,16 +102,22 @@ cp .env.example .env    # 设置 OPENAI_API_KEY
 git submodule update --init --recursive
 docker build -t simgen-agent .
 
+# 交互式 TUI 模式
+docker run -it --rm --gpus all \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  --env-file .env \
+  simgen-agent
+
+# 或直接 CLI 模式
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e OPENAI_API_KEY="your-key" \
   simgen-agent \
   "Stack the blocks inside the tray on the table" --episodes 5
 ```
 
-> **输出路径**：在 Docker 中，结果保存到 `/workspace/artifacts`。
-> `-v` 标志将其映射到主机上的 `./artifacts/`。
-> 本地运行时，输出到 `outputs/`。
+> **输出路径**：Docker 中结果保存到 `/workspace/artifacts`，本地运行输出到 `outputs/`。
+> API 密钥可以在 TUI 设置（F1）中配置，或通过 `--env-file .env` 传递。
 
 ### 4. 单独执行各阶段（高级）
 

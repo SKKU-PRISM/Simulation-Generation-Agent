@@ -88,11 +88,11 @@ cp .env.example .env    # OPENAI_API_KEY setzen
 ### 2. Ausfuehren
 
 ```bash
-./run_agent.sh "Stack the blocks inside the tray on the table"
-```
+# Interaktiver TUI-Modus (empfohlen)
+./run_agent.sh
 
-Mit Optionen:
-```bash
+# Oder direkter CLI-Modus
+./run_agent.sh "Stack the blocks inside the tray on the table"
 ./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
 
@@ -102,16 +102,22 @@ Mit Optionen:
 git submodule update --init --recursive
 docker build -t simgen-agent .
 
+# Interaktiver TUI-Modus
+docker run -it --rm --gpus all \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  --env-file .env \
+  simgen-agent
+
+# Oder direkter CLI-Modus
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e OPENAI_API_KEY="your-key" \
   simgen-agent \
   "Stack the blocks inside the tray on the table" --episodes 5
 ```
 
-> **Ausgabepfad**: In Docker werden Ergebnisse unter `/workspace/artifacts` gespeichert.
-> Das `-v`-Flag bildet diesen Pfad auf `./artifacts/` auf dem Host ab.
-> Bei lokaler Ausfuehrung werden Ausgaben unter `outputs/` gespeichert.
+> **Ausgabepfad**: In Docker unter `/workspace/artifacts`, lokal unter `outputs/`.
+> API-Schluessel koennen in den TUI-Einstellungen (F1) oder ueber `--env-file .env` konfiguriert werden.
 
 ### 4. Einzelne Stufen ausfuehren (Fortgeschritten)
 

@@ -119,11 +119,11 @@ cp .env.example .env    # Set OPENAI_API_KEY
 ### 2. Run
 
 ```bash
-./run_agent.sh "Stack the blocks inside the tray on the table"
-```
+# Interactive TUI mode (recommended)
+./run_agent.sh
 
-With options:
-```bash
+# Or direct CLI mode
+./run_agent.sh "Stack the blocks inside the tray on the table"
 ./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
 
@@ -133,8 +133,14 @@ With options:
 git submodule update --init --recursive
 docker build -t simgen-agent .
 
+# Interactive TUI mode
+docker run -it --rm --gpus all \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  --env-file .env \
+  simgen-agent
+
+# Or direct CLI mode
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
   -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e OPENAI_API_KEY="your-key" \
   simgen-agent \
@@ -144,6 +150,7 @@ docker run --rm --gpus all \
 > **Output path**: Inside Docker, results are saved to `/workspace/artifacts`.
 > The `-v` flag maps it to `./artifacts/` on the host.
 > For local runs, outputs go to `outputs/`.
+> API keys can be configured in the TUI settings (F1) or via `--env-file .env`.
 
 ### 4. Individual Stage Execution (Advanced)
 

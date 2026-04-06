@@ -86,16 +86,11 @@ cp .env.example .env    # OPENAI_API_KEY를 설정하세요
 ### 2. 실행
 
 ```bash
-./run_agent.sh "Stack the blocks inside the tray on the table"
-```
-
-**인터랙티브 모드** — 인수 없이 실행하면 TUI 대시보드가 열립니다:
-```bash
+# 인터랙티브 TUI 모드 (권장)
 ./run_agent.sh
-```
 
-옵션:
-```bash
+# 또는 CLI 모드
+./run_agent.sh "Stack the blocks inside the tray on the table"
 ./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
 ```
 
@@ -105,16 +100,23 @@ cp .env.example .env    # OPENAI_API_KEY를 설정하세요
 git submodule update --init --recursive
 docker build -t simgen-agent .
 
+# 인터랙티브 TUI 모드
+docker run -it --rm --gpus all \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  --env-file .env \
+  simgen-agent
+
+# 또는 CLI 모드
 docker run --rm --gpus all \
-  -v $(pwd)/artifacts:/workspace/artifacts \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
   -e OPENAI_API_KEY="your-key" \
   simgen-agent \
   "Stack the blocks inside the tray on the table" --episodes 5
 ```
 
 > **출력 경로**: Docker 내부에서는 `/workspace/artifacts`에 결과가 저장됩니다.
-> 위 `-v` 옵션으로 호스트의 `./artifacts/`에 매핑됩니다.
 > 로컬 실행 시에는 `outputs/` 디렉토리에 저장됩니다.
+> API 키는 TUI 설정(F1)에서 구성하거나 `--env-file .env`로 전달할 수 있습니다.
 
 ### 4. 개별 Stage 실행 (고급)
 
