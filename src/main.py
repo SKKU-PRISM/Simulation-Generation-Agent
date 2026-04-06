@@ -146,6 +146,7 @@ def run_task(
     result = {"name": task_name, "description": task_desc, "steps": {}}
 
     # Stage 1: NL → YAML
+    print(f"  ▶ Stage 1: NL → YAML — starting...", flush=True)
     step1_cmd = [
         PYTHON_BIN,
         "scripts/task_spec_agent/task_spec_agent.py",
@@ -176,6 +177,7 @@ def run_task(
         return result
 
     # Stage 2: YAML → IsaacLab
+    print(f"  ▶ Stage 2: YAML → IsaacLab — starting...", flush=True)
     step2_cmd = [PYTHON_BIN, "scripts/run_isaac_lab.py", str(yaml_path)]
     ok, _, _ = _run_step(
         step2_cmd, "Stage 2: YAML → IsaacLab",
@@ -234,6 +236,7 @@ def run_task(
         return result
 
     # Stage 3: Data Collection
+    print(f"  ▶ Stage 3: Data Collection — starting...", flush=True)
     step3_cmd = [
         PYTHON_BIN,
         "scripts/run_data_collection.py",
