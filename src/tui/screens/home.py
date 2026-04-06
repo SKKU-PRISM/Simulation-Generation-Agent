@@ -48,6 +48,21 @@ class HomeScreen(Screen):
             )
             yield StatusBar(id="status-bar")
             yield Static("─" * 60, classes="separator")
+            # Docker mount warning
+            import os
+            from pathlib import Path
+            outputs_dir = Path("outputs")
+            in_docker = os.path.exists("/.dockerenv") or os.path.exists("/workspace/IsaacLab")
+            if in_docker and not outputs_dir.is_mount():
+                yield Static(
+                    "  [bold yellow]⚠ Warning:[/] [yellow]outputs/ is not mounted. "
+                    "Results will be lost when the container exits.[/]\n"
+                    "  [dim]Use: docker run -it --rm --gpus all "
+                    "-v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs "
+                    "--env-file .env simgen-agent[/]\n",
+                    id="mount-warning",
+                )
+
             yield Static(
                 "\n  Describe a task for the robot to perform.\n"
                 "  Type [bold]/config[/] for settings, [bold]/history[/] for past runs.\n",
