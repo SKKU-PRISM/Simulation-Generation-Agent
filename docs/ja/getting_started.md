@@ -160,7 +160,7 @@ python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube" --robot fr
 
 自然言語のタスク記述を引数として指定すると、NL→YAML→IsaacLab→DataCollectionのパイプライン全体が自動的に実行されます。
 
-실행 시 터미널에 깔끔한 진행 상태가 표시됩니다:
+実行時にターミナルに進捗状況が表示されます：
 ```
 🚀 RAPIDS Pipeline — "Stack the blocks inside the tray on the table"
    Robot: franka | Target: 1 episodes
@@ -180,7 +180,7 @@ python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube" --robot fr
 
 
 
-실행 시 터미널에 진행 상태가 표시됩니다:
+オプション付きの実行例：
 オプション:
 ```bash
 ./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5

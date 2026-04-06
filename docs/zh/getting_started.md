@@ -160,7 +160,7 @@ python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube" --robot fr
 
 提供自然语言任务描述作为参数，整个 NL→YAML→IsaacLab→DataCollection 流水线将自动运行。
 
-실행 시 터미널에 깔끔한 진행 상태가 표시됩니다:
+运行时终端会显示进度信息：
 ```
 🚀 RAPIDS Pipeline — "Stack the blocks inside the tray on the table"
    Robot: franka | Target: 1 episodes
@@ -180,7 +180,7 @@ python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube" --robot fr
 
 
 
-실행 시 터미널에 진행 상태가 표시됩니다:
+带选项的执行示例：
 选项：
 ```bash
 ./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5

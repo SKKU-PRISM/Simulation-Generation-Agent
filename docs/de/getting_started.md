@@ -160,7 +160,7 @@ Starten Sie ohne Argumente, um das interaktive TUI-Dashboard zu oeffnen. Konfigu
 
 Geben Sie eine natuerlichsprachliche Aufgabenbeschreibung als Argument an, und die gesamte NL→YAML→IsaacLab→Datensammlungs-Pipeline wird automatisch ausgefuehrt.
 
-실행 시 터미널에 깔끔한 진행 상태가 표시됩니다:
+Beim Ausfuehren werden saubere Fortschrittsmeldungen im Terminal angezeigt:
 ```
 🚀 RAPIDS Pipeline — "Stack the blocks inside the tray on the table"
    Robot: franka | Target: 1 episodes
@@ -180,7 +180,7 @@ Geben Sie eine natuerlichsprachliche Aufgabenbeschreibung als Argument an, und d
 
 
 
-실행 시 터미널에 진행 상태가 표시됩니다:
+Ausfuehrung mit Optionen:
 Optionen:
 ```bash
 ./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5
