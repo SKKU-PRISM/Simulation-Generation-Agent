@@ -207,32 +207,28 @@ def run_task(
 
     step2_info = {"success": bool(lab_success), "env_dir": env_dir}
     step2_info.update({k: v for k, v in lab_detail.items() if v is not None})
-    # Extract verification scores from log
-    step2_log = task_dir / "step2_isaaclab.log"
-    if step2_log.exists():
-        import re as _re
-        log_text = step2_log.read_text(errors="replace")
-        scores = _re.findall(
-            r"Code evaluation: (\d+)/100.*?"
-            r"scene_fidelity: (\d+)/30.*?"
-            r"mdp_correctness: (\d+)/25.*?"
-            r"task_alignment: (\d+)/25.*?"
-            r"runtime_validity: (\d+)/20",
-            log_text, _re.DOTALL,
-        )
-        if scores:
-            last = scores[-1]
-            step2_info["last_code_score"] = {
-                "total": int(last[0]),
-                "scene_fidelity": int(last[1]),
-                "mdp_correctness": int(last[2]),
-                "task_alignment": int(last[3]),
-                "runtime_validity": int(last[4]),
-            }
-        img_scores = _re.findall(r"Image evaluation: front=(\d+)/100, top=(\d+)/100", log_text)
-        if img_scores:
-            last_img = img_scores[-1]
-            step2_info["last_image_score"] = {"front": int(last_img[0]), "top": int(last_img[1])}
+    # Extract verification scores from result.json (more reliable than log parsing)
+    if latest_result:
+        try:
+            rdata2 = json.loads(latest_result.read_text())
+            sv2 = rdata2.get("scene_verification", {})
+            ce2 = sv2.get("code_evaluation", {})
+            if ce2:
+                step2_info["last_code_score"] = {
+                    "total": ce2.get("total_score", 0),
+                    "scene_fidelity": ce2.get("scene_fidelity", {}).get("score", 0),
+                    "mdp_correctness": ce2.get("mdp_correctness", {}).get("score", 0),
+                    "task_alignment": ce2.get("task_alignment", {}).get("score", 0),
+                    "runtime_validity": ce2.get("runtime_validity", {}).get("score", 0),
+                }
+            ie2 = sv2.get("image_evaluation", {})
+            if ie2:
+                step2_info["last_image_score"] = {
+                    "front": ie2.get("front", {}).get("score", 0),
+                    "top": ie2.get("top", {}).get("score", 0),
+                }
+        except Exception:
+            pass
     result["steps"]["yaml_to_isaaclab"] = step2_info
     if not lab_success:
         return result
@@ -268,6 +264,10 @@ def run_task(
                 dc_result["total_episodes"] = cdata.get("total_episodes", 0)
                 dc_result["output_dir"] = str(coll_json.parent)
                 dc_result["success"] = cdata.get("pipeline_completed", False)
+                # VLM judge results
+                dc_result["vlm_successful"] = cdata.get("vlm_successful_episodes", 0)
+                dc_result["geometry_successful"] = cdata.get("geometry_successful_episodes", 0)
+                dc_result["target_met"] = cdata.get("target_met", False)
             except Exception:
                 pass
 

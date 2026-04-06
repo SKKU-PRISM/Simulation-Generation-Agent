@@ -94,6 +94,9 @@ def build_run_entry(
         "eval_breakdown": eval_breakdown,
         "dataset_path": dc.get("output_dir", ""),
         "work_dir": result.get("work_dir", ""),
+        "geometry_successful": dc.get("geometry_successful", 0),
+        "vlm_successful": dc.get("vlm_successful", 0),
+        "target_met": dc.get("target_met"),
     }
 
 

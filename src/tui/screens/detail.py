@@ -107,6 +107,19 @@ class DetailScreen(Screen):
                     f"  [bold]{'Total':20s} {eval_score:3d}/{max_total}[/]"
                 )
 
+        # Data Collection Results
+        geo_ok = r.get("geometry_successful", 0)
+        vlm_ok = r.get("vlm_successful", 0)
+        target_met = r.get("target_met")
+        if geo_ok or vlm_ok:
+            lines.append("")
+            lines.append(f"  [bold]── Data Collection Judge ─────────────────────[/]")
+            lines.append(f"  Geometry pass:  {geo_ok} episodes")
+            lines.append(f"  VLM pass:       {vlm_ok} episodes")
+            if target_met is not None:
+                target_icon = "[green]✅[/]" if target_met else "[yellow]⚠️[/]"
+                lines.append(f"  Target met:     {target_icon} {target_met}")
+
         # Dataset
         dataset_path = r.get("dataset_path", "")
         ep_target = r.get("episodes_target", 0)
