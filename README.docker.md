@@ -233,7 +233,9 @@ docker run --rm --gpus all \
 Launch the interactive terminal dashboard inside Docker. Requires `-it` flags for TTY access:
 
 ```bash
-docker run -it --rm --gpus all --env-file .env simgen-agent
+docker run -it --rm --gpus all \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  --env-file .env simgen-agent
 ```
 
 Use F1 for settings (including API key configuration), F2 for run history, or type a task description directly. API keys can be configured inside the TUI settings screen — they are saved to `.env` automatically.

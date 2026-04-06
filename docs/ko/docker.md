@@ -233,7 +233,9 @@ docker run --rm --gpus all \
 Docker 내부에서 인터랙티브 터미널 대시보드를 실행합니다. TTY 접근을 위해 `-it` 플래그가 필요합니다:
 
 ```bash
-docker run -it --rm --gpus all --env-file .env simgen-agent
+docker run -it --rm --gpus all \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  --env-file .env simgen-agent
 ```
 
 F1으로 설정, F2로 실행 이력 조회, 또는 태스크 설명을 직접 입력할 수 있습니다.

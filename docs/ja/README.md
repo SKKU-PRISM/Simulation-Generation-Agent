@@ -103,7 +103,9 @@ git submodule update --init --recursive
 docker build -t simgen-agent .
 
 # インタラクティブTUIモード
-docker run -it --rm --gpus all --env-file .env simgen-agent
+docker run -it --rm --gpus all \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  --env-file .env simgen-agent
 
 # またはCLIモード
 docker run --rm --gpus all \

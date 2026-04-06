@@ -26,7 +26,9 @@ TUIの機能：
 
 Dockerではインタラクティブモードに `-it` を使用：
 ```bash
-docker run -it --rm --gpus all --env-file .env simgen-agent
+docker run -it --rm --gpus all \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  --env-file .env simgen-agent
 ```
 
 ---

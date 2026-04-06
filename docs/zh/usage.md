@@ -26,7 +26,9 @@ TUI 提供以下功能：
 
 在 Docker 中使用 `-it` 启动交互模式：
 ```bash
-docker run -it --rm --gpus all --env-file .env simgen-agent
+docker run -it --rm --gpus all \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  --env-file .env simgen-agent
 ```
 
 ---

@@ -26,7 +26,9 @@ Slash-Befehle: `/config`, `/history`, `/help`, `/quit`
 
 In Docker verwenden Sie `-it` fuer den interaktiven Modus:
 ```bash
-docker run -it --rm --gpus all --env-file .env simgen-agent
+docker run -it --rm --gpus all \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  --env-file .env simgen-agent
 ```
 
 ---

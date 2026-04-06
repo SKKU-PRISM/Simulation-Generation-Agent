@@ -134,7 +134,9 @@ git submodule update --init --recursive
 docker build -t simgen-agent .
 
 # Interactive TUI mode (configure everything inside the dashboard)
-docker run -it --rm --gpus all --env-file .env simgen-agent
+docker run -it --rm --gpus all \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  --env-file .env simgen-agent
 
 # Or direct CLI mode
 docker run --rm --gpus all \
