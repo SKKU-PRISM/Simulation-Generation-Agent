@@ -144,13 +144,21 @@ python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube" --robot fr
 
 ## 6. 初回実行の推奨手順
 
-### 最も簡単な実行 -- 自然言語を1行入力するだけ
+### インタラクティブモード（初めての方におすすめ）
+
+```bash
+./run_agent.sh
+```
+
+引数なしで起動するとインタラクティブTUIダッシュボードが開きます。F1で設定、F2で実行履歴を閲覧、タスク記述を直接入力して実行できます。
+
+### CLIモード -- 自然言語を1行入力
 
 ```bash
 ./run_agent.sh "Stack the blocks inside the tray on the table"
 ```
 
-自然言語のタスク記述を入力するだけで、NL→YAML→IsaacLab→DataCollectionのパイプライン全体が自動的に実行されます。
+自然言語のタスク記述を引数として指定すると、NL→YAML→IsaacLab→DataCollectionのパイプライン全体が自動的に実行されます。
 
 실행 시 터미널에 깔끔한 진행 상태가 표시됩니다:
 ```

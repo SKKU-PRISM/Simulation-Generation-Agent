@@ -8,9 +8,32 @@ Installation and environment setup: `docs/getting_started.md`
 This document is the **source-of-truth for how to run and interpret results**. Internal implementation details and schema background are separated into other documents.
 Pipeline architecture: [docs/architecture.md](architecture.md)
 
-## run_agent.sh — Full Pipeline Execution (Main Feature)
+## Interactive TUI Mode
 
-Just provide a single natural language task description, and the entire NL→YAML→IsaacLab→DataCollection pipeline runs automatically.
+Launch `run_agent.sh` without arguments to open the interactive terminal dashboard:
+
+```bash
+./run_agent.sh
+```
+
+The TUI provides:
+- **Task input** — type a natural language task description and press Enter to run the full pipeline
+- **Settings (F1)** — configure pipeline mode, LLM provider/model, robot, episodes, paths, and advanced options
+- **Run History (F2)** — browse past runs with arrow keys, press Enter to view detailed results including environment scores and dataset info
+- **Help (F3)** — keyboard shortcuts and slash commands
+
+Slash commands: `/config`, `/history`, `/help`, `/quit`
+
+In Docker, use `-it` for interactive mode:
+```bash
+docker run -it --gpus all -e OPENAI_API_KEY="your-key" simgen-agent
+```
+
+---
+
+## run_agent.sh — Full Pipeline Execution (CLI Mode)
+
+Provide a natural language task description as argument for non-interactive execution:
 
 ```bash
 # Natural language input

@@ -38,6 +38,11 @@ pip install -e . && cp .env.example .env  # .envにOPENAI_API_KEYを設定
 ./run_agent.sh "Stack the blocks inside the tray on the table"
 ```
 
+**インタラクティブモード** — 引数なしで起動するとTUIダッシュボードが開きます：
+```bash
+./run_agent.sh
+```
+
 完全なセットアップについては[docs/getting_started.md](getting_started.md)を、パイプラインの詳細については[docs/architecture.md](architecture.md)をご覧ください。
 
 ---

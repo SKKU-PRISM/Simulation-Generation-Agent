@@ -89,6 +89,11 @@ cp .env.example .env    # OPENAI_API_KEY를 설정하세요
 ./run_agent.sh "Stack the blocks inside the tray on the table"
 ```
 
+**인터랙티브 모드** — 인수 없이 실행하면 TUI 대시보드가 열립니다:
+```bash
+./run_agent.sh
+```
+
 옵션:
 ```bash
 ./run_agent.sh "Stack the blocks inside the tray on the table" --robot franka --episodes 5

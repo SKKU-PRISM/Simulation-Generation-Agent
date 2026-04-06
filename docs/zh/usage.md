@@ -8,9 +8,32 @@
 本文档是**如何运行和解读结果的权威参考**。内部实现细节和 schema 背景请参阅其他文档。
 流水线架构：[docs/architecture.md](architecture.md)
 
-## run_agent.sh — 完整流水线执行（主要功能）
+## 交互式 TUI 模式
 
-只需提供一条自然语言任务描述，整个 NL→YAML→IsaacLab→DataCollection 流水线将自动运行。
+不带参数启动 `run_agent.sh` 即可打开交互式终端仪表板：
+
+```bash
+./run_agent.sh
+```
+
+TUI 提供以下功能：
+- **任务输入** — 输入自然语言任务描述，按 Enter 运行完整流水线
+- **设置 (F1)** — 配置流水线模式、LLM 提供商/模型、机器人、回合数、路径及高级选项
+- **运行历史 (F2)** — 使用方向键浏览历史记录，按 Enter 查看详细结果（环境评分、数据集信息）
+- **帮助 (F3)** — 快捷键和斜杠命令
+
+斜杠命令：`/config`、`/history`、`/help`、`/quit`
+
+在 Docker 中使用 `-it` 启动交互模式：
+```bash
+docker run -it --gpus all -e OPENAI_API_KEY="your-key" simgen-agent
+```
+
+---
+
+## run_agent.sh — 完整流水线执行（CLI 模式）
+
+提供自然语言任务描述作为参数，进行非交互式执行：
 
 ```bash
 # 自然语言输入

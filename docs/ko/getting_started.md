@@ -144,13 +144,21 @@ python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube" --robot fr
 
 ## 6. 첫 성공 실행 권장 순서
 
-### 가장 간단한 실행 — 자연어 한 줄
+### 인터랙티브 모드 (처음 사용하는 분에게 권장)
+
+```bash
+./run_agent.sh
+```
+
+인수 없이 실행하면 인터랙티브 TUI 대시보드가 열립니다. 설정(F1), 실행 이력(F2)을 확인하고, 태스크 설명을 직접 입력할 수 있습니다.
+
+### CLI 모드 — 자연어 한 줄
 
 ```bash
 ./run_agent.sh "Stack the blocks inside the tray on the table"
 ```
 
-자연어 태스크 설명 하나만 입력하면 NL→YAML→IsaacLab→DataCollection 전체 파이프라인이 자동 실행됩니다.
+자연어 태스크 설명을 인수로 전달하면 NL→YAML→IsaacLab→DataCollection 전체 파이프라인이 자동 실행됩니다.
 
 실행 시 터미널에 깔끔한 진행 상태가 표시됩니다:
 ```

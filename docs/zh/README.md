@@ -38,6 +38,11 @@ pip install -e . && cp .env.example .env  # 在 .env 中设置 OPENAI_API_KEY
 ./run_agent.sh "Stack the blocks inside the tray on the table"
 ```
 
+**交互模式** — 不带参数启动即可打开 TUI 仪表板：
+```bash
+./run_agent.sh
+```
+
 完整安装说明请参阅 [docs/getting_started.md](getting_started.md)，流水线详情请参阅 [docs/architecture.md](architecture.md)。
 
 ---

@@ -144,13 +144,21 @@ python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube" --robot fr
 
 ## 6. 首次成功运行的推荐顺序
 
-### 最简执行 -- 一行自然语言
+### 交互模式（推荐首次使用者）
+
+```bash
+./run_agent.sh
+```
+
+不带参数启动即可打开交互式 TUI 仪表板。使用 F1 配置设置，F2 浏览运行历史，直接输入任务描述即可运行。
+
+### CLI 模式 -- 一行自然语言
 
 ```bash
 ./run_agent.sh "Stack the blocks inside the tray on the table"
 ```
 
-只需提供自然语言任务描述，整个 NL->YAML->IsaacLab->DataCollection 流水线将自动运行。
+提供自然语言任务描述作为参数，整个 NL→YAML→IsaacLab→DataCollection 流水线将自动运行。
 
 실행 시 터미널에 깔끔한 진행 상태가 표시됩니다:
 ```

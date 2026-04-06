@@ -9,9 +9,32 @@
 이 문서는 **실행 방법과 결과 해석의 source-of-truth**다. 내부 구현 상세나 schema 배경 설명은 다른 문서로 분리한다.
 파이프라인 아키텍처: [docs/architecture.md](architecture.md)
 
-## run_agent.sh — 전체 파이프라인 실행 (메인 기능)
+## 인터랙티브 TUI 모드
 
-자연어 태스크 설명 하나만 넣으면 NL→YAML→IsaacLab→DataCollection 전체 파이프라인이 자동 실행됩니다.
+`run_agent.sh`를 인수 없이 실행하면 인터랙티브 터미널 대시보드가 열립니다:
+
+```bash
+./run_agent.sh
+```
+
+TUI에서 제공하는 기능:
+- **태스크 입력** — 자연어 태스크 설명을 입력하고 Enter를 누르면 전체 파이프라인이 실행됩니다
+- **설정 (F1)** — 파이프라인 모드, LLM 프로바이더/모델, 로봇, 에피소드 수, 경로, 고급 옵션을 설정합니다
+- **실행 이력 (F2)** — 방향키로 과거 실행을 탐색하고, Enter를 눌러 환경 점수와 데이터셋 정보를 포함한 상세 결과를 확인합니다
+- **도움말 (F3)** — 키보드 단축키와 슬래시 명령 안내
+
+슬래시 명령: `/config`, `/history`, `/help`, `/quit`
+
+Docker에서 인터랙티브 모드를 사용하려면 `-it` 옵션을 추가하세요:
+```bash
+docker run -it --gpus all -e OPENAI_API_KEY="your-key" simgen-agent
+```
+
+---
+
+## run_agent.sh — 전체 파이프라인 실행 (CLI 모드)
+
+자연어 태스크 설명을 인수로 전달하면 비인터랙티브 모드로 전체 파이프라인이 자동 실행됩니다.
 
 ```bash
 # 자연어 입력

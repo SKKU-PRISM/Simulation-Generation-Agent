@@ -8,9 +8,32 @@ Installation und Umgebungseinrichtung: `docs/de/getting_started.md`
 Dieses Dokument ist die **massgebliche Quelle fuer Ausfuehrung und Ergebnisinterpretation**. Interne Implementierungsdetails und Schema-Hintergruende sind in andere Dokumente ausgelagert.
 Pipeline-Architektur: [docs/de/architecture.md](architecture.md)
 
-## run_agent.sh -- Vollstaendige Pipeline-Ausfuehrung (Hauptfunktion)
+## Interaktiver TUI-Modus
 
-Geben Sie einfach eine einzige natuerlichsprachliche Aufgabenbeschreibung ein, und die gesamte NL→YAML→IsaacLab→Datensammlungs-Pipeline wird automatisch ausgefuehrt.
+Starten Sie `run_agent.sh` ohne Argumente, um das interaktive Terminal-Dashboard zu oeffnen:
+
+```bash
+./run_agent.sh
+```
+
+Das TUI bietet:
+- **Aufgabeneingabe** — Geben Sie eine natuerlichsprachliche Aufgabenbeschreibung ein und druecken Sie Enter, um die gesamte Pipeline auszufuehren
+- **Einstellungen (F1)** — Pipeline-Modus, LLM-Anbieter/Modell, Roboter, Episoden, Pfade und erweiterte Optionen konfigurieren
+- **Ausfuehrungsverlauf (F2)** — Vergangene Laeufe mit Pfeiltasten durchsuchen, Enter fuer detaillierte Ergebnisse (Umgebungsbewertungen, Datensatz-Infos)
+- **Hilfe (F3)** — Tastenkuerzel und Slash-Befehle
+
+Slash-Befehle: `/config`, `/history`, `/help`, `/quit`
+
+In Docker verwenden Sie `-it` fuer den interaktiven Modus:
+```bash
+docker run -it --gpus all -e OPENAI_API_KEY="your-key" simgen-agent
+```
+
+---
+
+## run_agent.sh — Vollstaendige Pipeline-Ausfuehrung (CLI-Modus)
+
+Geben Sie eine natuerlichsprachliche Aufgabenbeschreibung als Argument fuer die nicht-interaktive Ausfuehrung an:
 
 ```bash
 # Natuerlichsprachliche Eingabe

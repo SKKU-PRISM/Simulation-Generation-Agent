@@ -38,6 +38,11 @@ pip install -e . && cp .env.example .env  # Set OPENAI_API_KEY in .env
 ./run_agent.sh "Stack the blocks inside the tray on the table"
 ```
 
+**Interactive mode** — launch without arguments to open the TUI dashboard:
+```bash
+./run_agent.sh
+```
+
 See [docs/getting_started.md](docs/getting_started.md) for full setup and [docs/architecture.md](docs/architecture.md) for pipeline details.
 
 ---

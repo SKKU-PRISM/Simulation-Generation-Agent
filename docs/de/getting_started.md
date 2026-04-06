@@ -144,13 +144,21 @@ python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube" --robot fr
 
 ## 6. Empfohlene Reihenfolge fuer den ersten erfolgreichen Lauf
 
-### Einfachste Ausfuehrung -- Eine einzige Zeile natuerlicher Sprache
+### Interaktiver Modus (Empfohlen fuer Erstbenutzer)
+
+```bash
+./run_agent.sh
+```
+
+Starten Sie ohne Argumente, um das interaktive TUI-Dashboard zu oeffnen. Konfigurieren Sie Einstellungen (F1), durchsuchen Sie den Ausfuehrungsverlauf (F2), und geben Sie Aufgabenbeschreibungen direkt ein.
+
+### CLI-Modus -- Eine einzige Zeile natuerlicher Sprache
 
 ```bash
 ./run_agent.sh "Stack the blocks inside the tray on the table"
 ```
 
-Geben Sie einfach eine natuerlichsprachliche Aufgabenbeschreibung ein, und die gesamte NL->YAML->IsaacLab->Datensammlungs-Pipeline wird automatisch ausgefuehrt.
+Geben Sie eine natuerlichsprachliche Aufgabenbeschreibung als Argument an, und die gesamte NL→YAML→IsaacLab→Datensammlungs-Pipeline wird automatisch ausgefuehrt.
 
 실행 시 터미널에 깔끔한 진행 상태가 표시됩니다:
 ```

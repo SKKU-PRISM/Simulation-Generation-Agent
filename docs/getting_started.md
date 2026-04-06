@@ -144,13 +144,21 @@ python3 scripts/task_spec_agent/task_spec_agent.py "Pick up the cube" --robot fr
 
 ## 6. Recommended Order for Your First Successful Run
 
-### Simplest Execution -- A Single Line of Natural Language
+### Interactive Mode (Recommended for First-Time Users)
+
+```bash
+./run_agent.sh
+```
+
+Launch without arguments to open the interactive TUI dashboard. Configure settings (F1), browse run history (F2), and type task descriptions directly.
+
+### CLI Mode -- A Single Line of Natural Language
 
 ```bash
 ./run_agent.sh "Stack the blocks inside the tray on the table"
 ```
 
-Simply provide a natural language task description, and the entire NL→YAML→IsaacLab→DataCollection pipeline runs automatically.
+Provide a natural language task description as argument, and the entire NL→YAML→IsaacLab→DataCollection pipeline runs automatically.
 
 You'll see clean progress updates:
 ```
