@@ -26,7 +26,10 @@ TUI 提供以下功能：
 
 在 Docker 中使用 `-it` 启动交互模式：
 ```bash
-docker run -it --gpus all -e OPENAI_API_KEY="your-key" simgen-agent
+docker run -it --rm --gpus all \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  -e OPENAI_API_KEY="your-key" \
+  simgen-agent
 ```
 
 ---

@@ -26,7 +26,10 @@ Slash commands: `/config`, `/history`, `/help`, `/quit`
 
 In Docker, use `-it` for interactive mode:
 ```bash
-docker run -it --gpus all -e OPENAI_API_KEY="your-key" simgen-agent
+docker run -it --rm --gpus all \
+  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
+  -e OPENAI_API_KEY="your-key" \
+  simgen-agent
 ```
 
 ---
