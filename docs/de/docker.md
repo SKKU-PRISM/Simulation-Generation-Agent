@@ -233,11 +233,7 @@ docker run --rm --gpus all \
 Starten Sie das interaktive Terminal-Dashboard innerhalb von Docker. Erfordert `-it`-Flags fuer TTY-Zugriff:
 
 ```bash
-docker run -it --rm --gpus all \
-  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
-  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
-  --env-file .env \
-  simgen-agent
+docker run -it --rm --gpus all --env-file .env simgen-agent
 ```
 
 Verwenden Sie F1 fuer Einstellungen, F2 fuer den Ausfuehrungsverlauf, oder geben Sie eine Aufgabenbeschreibung direkt ein.

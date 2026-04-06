@@ -133,12 +133,8 @@ cp .env.example .env    # Set OPENAI_API_KEY
 git submodule update --init --recursive
 docker build -t simgen-agent .
 
-# Interactive TUI mode
-docker run -it --rm --gpus all \
-  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
-  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
-  --env-file .env \
-  simgen-agent
+# Interactive TUI mode (configure everything inside the dashboard)
+docker run -it --rm --gpus all --env-file .env simgen-agent
 
 # Or direct CLI mode
 docker run --rm --gpus all \

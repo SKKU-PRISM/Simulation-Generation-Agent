@@ -27,11 +27,7 @@ TUI에서 제공하는 기능:
 
 Docker에서 인터랙티브 모드를 사용하려면 `-it` 옵션을 추가하세요:
 ```bash
-docker run -it --rm --gpus all \
-  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
-  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
-  --env-file .env \
-  simgen-agent
+docker run -it --rm --gpus all --env-file .env simgen-agent
 ```
 
 ---

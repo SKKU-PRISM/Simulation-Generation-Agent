@@ -233,11 +233,7 @@ docker run --rm --gpus all \
 在 Docker 内启动交互式终端仪表板。需要 `-it` 标志以访问 TTY：
 
 ```bash
-docker run -it --rm --gpus all \
-  -v $(pwd)/outputs:/workspace/Simulation-Generation-Agent/outputs \
-  -v $(pwd)/results:/workspace/Simulation-Generation-Agent/results \
-  --env-file .env \
-  simgen-agent
+docker run -it --rm --gpus all --env-file .env simgen-agent
 ```
 
 使用 F1 配置设置，F2 浏览运行历史，或直接输入任务描述。
